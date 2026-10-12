@@ -864,6 +864,61 @@ async function loadGenres() {
   renderGenres(STATIC_GENRES);   // Fallback: statische Liste
 }
 
+// Reusable client-side sortable table for the finder result boxes.
+// columns: [{ label, get(item), type: "string"|"number"|"raw", sortable }].
+// A "raw" column (the snippet) renders HTML verbatim and is never sortable.
+// defaultIdx picks the initial sort column; it starts descending so the
+// highest numeric value (most tracks / most fans) is on top.
+function renderSortableTable(box, items, columns, defaultIdx) {
+  let sortIdx = defaultIdx;
+  let sortDir = -1;   // -1 = descending, 1 = ascending
+
+  const cmp = (a, b) => {
+    const col = columns[sortIdx];
+    if (col.type === "number") {
+      const na = Number(col.get(a)), nb = Number(col.get(b));
+      const va = isNaN(na) ? -Infinity : na;
+      const vb = isNaN(nb) ? -Infinity : nb;
+      return (va - vb) * sortDir;
+    }
+    const sa = String(col.get(a) == null ? "" : col.get(a));
+    const sb = String(col.get(b) == null ? "" : col.get(b));
+    return sa.localeCompare(sb, undefined, {sensitivity: "base"}) * sortDir;
+  };
+
+  const draw = () => {
+    const sorted = columns[sortIdx].sortable ? items.slice().sort(cmp) : items;
+    const head = columns.map((col, i) => {
+      if (!col.sortable) return `<th>${col.label}</th>`;
+      const arrow = (i === sortIdx) ? (sortDir === 1 ? " ▲" : " ▼") : "";
+      return `<th class="sortable" data-col="${i}" role="button" ` +
+        `tabindex="0">${col.label}${arrow}</th>`;
+    }).join("");
+    const body = sorted.map(it =>
+      "<tr>" + columns.map(col =>
+        col.type === "raw"
+          ? `<td>${col.get(it)}</td>`
+          : `<td class="${col.type === "number" ? "mono" : ""}">${esc(col.get(it))}</td>`
+      ).join("") + "</tr>").join("");
+    box.innerHTML =
+      `<table class="finder-table"><thead><tr>${head}</tr></thead>` +
+      `<tbody>${body}</tbody></table>`;
+    box.querySelectorAll("th.sortable").forEach(th => {
+      const activate = () => {
+        const i = Number(th.dataset.col);
+        if (i === sortIdx) { sortDir = -sortDir; }
+        else { sortIdx = i; sortDir = -1; }
+        draw();
+      };
+      th.addEventListener("click", activate);
+      th.addEventListener("keydown", ev => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); activate(); }
+      });
+    });
+  };
+  draw();
+}
+
 async function searchDeezerPlaylists(q) {
   const box = document.getElementById("dz-pl-results");
   if (!box) return;
@@ -880,12 +935,11 @@ async function searchDeezerPlaylists(q) {
       box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
       return;
     }
-    const rows = d.results.map(p =>
-      `<tr><td>${esc(p.title)}</td><td class="mono">${esc(p.nb_tracks)}</td>` +
-      `<td>${snippetCell(p.snippet)}</td></tr>`).join("");
-    box.innerHTML =
-      `<table class="finder-table"><thead><tr><th>${t("finder.col.title")}</th><th>${t("finder.col.tracks")}</th>` +
-      `<th>${t("finder.col.snippet")}</th></tr></thead><tbody>${rows}</tbody></table>`;
+    renderSortableTable(box, d.results, [
+      {label: t("finder.col.title"), get: p => p.title, type: "string", sortable: true},
+      {label: t("finder.col.tracks"), get: p => p.nb_tracks, type: "number", sortable: true},
+      {label: t("finder.col.snippet"), get: p => snippetCell(p.snippet), type: "raw", sortable: false},
+    ], 1);   // default sort: Tracks, descending
   } catch (e) {
     box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
   }
@@ -907,12 +961,11 @@ async function searchDeezerArtists(q) {
       box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
       return;
     }
-    const rows = d.results.map(a =>
-      `<tr><td>${esc(a.name)}</td><td class="mono">${esc(a.nb_fan)}</td>` +
-      `<td>${snippetCell(a.snippet)}</td></tr>`).join("");
-    box.innerHTML =
-      `<table class="finder-table"><thead><tr><th>${t("finder.col.artist")}</th><th>${t("finder.col.fans")}</th>` +
-      `<th>${t("finder.col.snippet")}</th></tr></thead><tbody>${rows}</tbody></table>`;
+    renderSortableTable(box, d.results, [
+      {label: t("finder.col.artist"), get: a => a.name, type: "string", sortable: true},
+      {label: t("finder.col.fans"), get: a => a.nb_fan, type: "number", sortable: true},
+      {label: t("finder.col.snippet"), get: a => snippetCell(a.snippet), type: "raw", sortable: false},
+    ], 1);   // default sort: Fans, descending
   } catch (e) {
     box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
   }
@@ -928,8 +981,13 @@ async function checkLastfmTag(q) {
     const d = await r.json();
     if (d && d.ok) {
       const samples = (d.sample || []).map(s => `<li>${esc(s)}</li>`).join("");
+      // Show the real tag total honestly; fall back to a plain "valid" line
+      // when Last.fm did not report a numeric total.
+      const headline = (d.total != null)
+        ? t("finder.lastfm.hit", {tag: esc(d.tag), total: esc(d.total)})
+        : t("finder.lastfm.valid", {tag: esc(d.tag)});
       box.innerHTML =
-        `<div class="lf-hit">${t("finder.lastfm.hit", {tag: esc(d.tag), count: d.sample_count ? ` (${esc(d.sample_count)})` : ""})}</div>` +
+        `<div class="lf-hit">${headline}</div>` +
         (samples ? `<ul class="lf-samples">${samples}</ul>` : "") +
         snippetCell(d.snippet);
     } else {

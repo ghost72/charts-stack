@@ -188,20 +188,53 @@ def test_lastfm_tag_no_key(monkeypatch):
 
 def test_lastfm_tag_success(monkeypatch):
     monkeypatch.setattr(config, "LASTFM_API_KEY", "KEY")
-    payload = {"tracks": {"track": [
-        {"name": "Song A", "artist": {"name": "Artist A"}},
-        {"name": "Song B", "artist": {"name": "Artist B"}},
-    ]}}
+    payload = {"tracks": {
+        "track": [
+            {"name": "Song A", "artist": {"name": "Artist A"}},
+            {"name": "Song B", "artist": {"name": "Artist B"}},
+        ],
+        "@attr": {"total": "1795"},
+    }}
     _patch_get(monkeypatch, resp=_FakeResp(200, payload))
     out = collector.lastfm_tag_check("pop")
     assert out["ok"] is True
     assert out["configured"] is True
     assert out["tag"] == "pop"
-    assert out["sample_count"] == 2
+    # The honest total comes from @attr.total (the real playlist size),
+    # not from the small probe sample.
+    assert out["total"] == 1795
+    assert "sample_count" not in out
     assert out["sample"][0] == "Artist A - Song A"
     snip = json.loads(out["snippet"])
     assert snip == {"service": "lastfm", "method": "tag.getTopTracks",
                     "tag": "pop", "limit": 100, "enabled": True}
+
+
+def test_lastfm_tag_total_missing(monkeypatch):
+    # When Last.fm omits @attr.total (or it is non-numeric), total is None
+    # so the UI can fall back to the plain "valid" message.
+    monkeypatch.setattr(config, "LASTFM_API_KEY", "KEY")
+    payload = {"tracks": {"track": [
+        {"name": "Song A", "artist": {"name": "Artist A"}},
+    ]}}
+    _patch_get(monkeypatch, resp=_FakeResp(200, payload))
+    out = collector.lastfm_tag_check("pop")
+    assert out["ok"] is True
+    assert out["total"] is None
+
+
+def test_lastfm_tag_sample_capped_at_10(monkeypatch):
+    # Up to 10 preview examples are returned (fetch limit raised to 20).
+    monkeypatch.setattr(config, "LASTFM_API_KEY", "KEY")
+    tracks = [{"name": f"Song {i}", "artist": {"name": f"Artist {i}"}}
+              for i in range(20)]
+    payload = {"tracks": {"track": tracks, "@attr": {"total": "500"}}}
+    calls = []
+    _patch_get(monkeypatch, resp=_FakeResp(200, payload), capture=calls)
+    out = collector.lastfm_tag_check("pop")
+    assert out["ok"] is True
+    assert len(out["sample"]) == 10
+    assert calls[0][1]["params"]["limit"] == 20
 
 
 def test_lastfm_tag_multiword_allowed(monkeypatch):
