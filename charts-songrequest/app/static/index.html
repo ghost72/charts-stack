@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{{LANG}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Song Request</title>
+<title data-i18n="doc_title">Song Request</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="manifest" href="/static/manifest.json">
@@ -14,28 +14,55 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="topbar"><a href="/logout">Abmelden</a></div>
+  <div class="topbar"><a href="/logout" data-i18n="logout">Abmelden</a></div>
   <div class="card">
     <div class="logo">🎵</div>
-    <h1>Song Request</h1>
-    <div class="subtitle">Song suchen, laden und in die Library holen</div>
+    <h1 data-i18n="heading">Song Request</h1>
+    <div class="subtitle" data-i18n="subtitle">Song suchen, laden und in die Library holen</div>
 
     <form id="form">
-      <label for="artist">Künstler</label>
-      <input id="artist" name="artist" type="text" placeholder="z. B. Dermot Kennedy" autocomplete="off" autofocus>
+      <label for="artist" data-i18n="label_artist">Künstler</label>
+      <input id="artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off" autofocus>
 
-      <label for="title">Titel</label>
-      <input id="title" name="title" type="text" placeholder="z. B. Kiss Me" autocomplete="off">
+      <label for="title" data-i18n="label_title">Titel</label>
+      <input id="title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
 
-      <button id="btn" type="submit">Suchen &amp; laden</button>
+      <button id="btn" type="submit" data-i18n="btn_search">Suchen &amp; laden</button>
     </form>
 
     <div id="status" class="status"></div>
 
-    <div class="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
+    <div class="hint" data-i18n-html="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
   </div>
 
 <script>
+// Injected i18n subset (songrequest.ui.* re-based) + client translator. Mirrors
+// the Python loader's {name} substitution (split/join, not regex) and its
+// missing-key -> key-name fallback. English fallback is already merged in by
+// the server before injection.
+const I18N = {{I18N}};
+function t(key, params) {
+  let s = I18N[key];
+  if (s === undefined) return key;
+  if (params) for (const k in params)
+    s = s.split("{" + k + "}").join(String(params[k]));
+  return s;
+}
+// One-shot static-markup sweep: textContent for [data-i18n], placeholder for
+// [data-i18n-ph], innerHTML for [data-i18n-html] (the hint line carries inert
+// <br> markup). Runs once at the end of this script.
+function applyStaticI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.placeholder = t(el.dataset.i18nPh);
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+}
+
 const form = document.getElementById('form');
 const btn = document.getElementById('btn');
 const status = document.getElementById('status');
@@ -51,9 +78,8 @@ function esc(s) {
 
 async function sendRequest(artist, title) {
   btn.disabled = true;
-  btn.textContent = 'Suche läuft …';
-  showStatus('searching', '<span class="spinner"></span>',
-    'Suche in slskd und prüfe die Qualität … das kann einen Moment dauern.');
+  btn.textContent = t('btn_searching');
+  showStatus('searching', '<span class="spinner"></span>', t('js_searching'));
 
   try {
     const resp = await fetch('/api/request', {
@@ -65,10 +91,10 @@ async function sendRequest(artist, title) {
       // Bessere Version gefunden -> wird automatisch geladen.
       var newBr = data.bitrate > 0 ? (data.bitrate + ' kbps') : ('≥ ' + 256 + ' kbps');
       showStatus('ok', '⬆️',
-        '<b>Bessere Version wird geladen</b><br>' +
+        t('js_upgrade_head') + '<br>' +
         esc(data.artist) + ' – ' + esc(data.title) + '<br>' +
         '<span style="color:rgba(255,255,255,0.55)">' +
-        newBr + ' statt bisher ' + data.old_bitrate + ' kbps – ersetzt die vorhandene, falls wirklich besser.</span>');
+        t('js_upgrade_tail', {new: newBr, old: data.old_bitrate}) + '</span>');
       form.reset();
       document.getElementById('artist').focus();
     } else if (data.ok && data.already) {
@@ -80,25 +106,25 @@ async function sendRequest(artist, title) {
         esc(data.artist) + ' – ' + esc(data.title) +
         (data.bitrate ? ' (' + data.bitrate + ' kbps)' : '') + '<br>' +
         '<span style="color:rgba(255,255,255,0.55)">' +
-        esc(data.message || 'Kein Download nötig.') + '</span>');
+        esc(data.message || t('js_no_download')) + '</span>');
       form.reset();
       document.getElementById('artist').focus();
     } else if (data.ok) {
       // Neuzugang.
       showStatus('ok', '✅',
-        '<b>Gefunden &amp; Download gestartet</b><br>' +
+        t('js_found_head') + '<br>' +
         esc(data.artist) + ' – ' + esc(data.title) + ' (' + data.bitrate + ' kbps)<br>' +
-        '<span style="color:rgba(255,255,255,0.55)">Landet in Kürze automatisch in der Library.</span>');
+        '<span style="color:rgba(255,255,255,0.55)">' + t('js_found_tail') + '</span>');
       form.reset();
       document.getElementById('artist').focus();
     } else {
-      showStatus('err', '⚠️', esc(data.error) || 'Unbekannter Fehler.');
+      showStatus('err', '⚠️', esc(data.error) || t('js_unknown_error'));
     }
   } catch (err) {
-    showStatus('err', '⚠️', 'Netzwerkfehler – bitte erneut versuchen.');
+    showStatus('err', '⚠️', t('js_network_error'));
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Suchen & laden';
+    btn.textContent = t('btn_search');
   }
 }
 
@@ -107,11 +133,13 @@ form.addEventListener('submit', (e) => {
   const artist = document.getElementById('artist').value.trim();
   const title = document.getElementById('title').value.trim();
   if (!artist || !title) {
-    showStatus('err', '⚠️', 'Bitte Künstler und Titel angeben.');
+    showStatus('err', '⚠️', t('js_need_fields'));
     return;
   }
   sendRequest(artist, title);
 });
+
+applyStaticI18n();
 </script>
 </body>
 </html>

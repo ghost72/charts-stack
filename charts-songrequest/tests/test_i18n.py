@@ -15,9 +15,13 @@ die drei zentralen Dateien auch beim Erweitern dieses Dienstes synchron bleiben.
 Alle Tests laufen OHNE Netzwerk/Docker.
 """
 
+import importlib
 import json
 import pathlib
+import re
 import string
+
+import pytest
 
 from app import i18n
 
@@ -89,3 +93,71 @@ def test_shipped_no_empty_values():
     for c in _SHIPPED:
         for key, value in _load_shipped(c).items():
             assert value != "", f"empty value for {key} in {c}.json"
+
+
+# --- TestClient render proof (server->frontend handoff) ----------------------
+
+def _client(monkeypatch, lang):
+    """Build a TestClient with a stub session and the chosen language.
+
+    Reloads config + main so module-level constants (login users) and the i18n
+    table pick up the per-test env. Returns (client, main_module).
+    """
+    from fastapi.testclient import TestClient
+    # A user so config.APP_USERS is non-empty (main raises otherwise).
+    monkeypatch.setenv("SONGREQUEST_USERS", "roger:secret")
+    monkeypatch.setenv("CHARTS_LANG", lang)
+    import app.config as config_mod
+    importlib.reload(config_mod)
+    i18n.setup(lang=lang, lang_dir=_LANG_DIR)
+    import app.main as main_mod
+    importlib.reload(main_mod)
+    token = "test-token"
+    main_mod._sessions[token] = "roger"
+    client = TestClient(main_mod.app)
+    client.cookies.set("session", token)
+    return client, main_mod
+
+
+def _extract_i18n(html):
+    """Parse the injected `const I18N = {...};` object from the rendered page."""
+    # json.dumps emits the whole object on ONE line, so anchor the capture to
+    # that line (greedy up to the trailing };) rather than a non-greedy match
+    # that could stop at a '};' inside a value.
+    m = re.search(r"const I18N = (\{.*\});\s*$", html, re.M)
+    assert m, "const I18N object not found in rendered HTML"
+    return json.loads(m.group(1))
+
+
+@pytest.mark.parametrize("lang", ["de", "en", "fr"])
+def test_index_render_handoff(monkeypatch, lang):
+    client, _ = _client(monkeypatch, lang)
+    r = client.get("/")
+    assert r.status_code == 200
+    html = r.text
+    assert f'<html lang="{lang}">' in html
+    i18n_obj = _extract_i18n(html)
+    # a known UI key is present
+    assert "subtitle" in i18n_obj
+    # language-correct sample string
+    expected = {
+        "de": "Song suchen, laden und in die Library holen",
+        "en": "Search for a song, download it and add it to the library",
+        "fr": "Rechercher un morceau, le t\u00e9l\u00e9charger et "
+              "l'ajouter \u00e0 la biblioth\u00e8que",
+    }[lang]
+    assert i18n_obj["subtitle"] == expected
+
+
+def test_index_de_byte_identical_subtitle(monkeypatch):
+    client, _ = _client(monkeypatch, "de")
+    i18n_obj = _extract_i18n(client.get("/").text)
+    # de must be byte-identical to today's German UI
+    assert i18n_obj["subtitle"] == "Song suchen, laden und in die Library holen"
+
+
+# Restore import-time state so test ordering never leaks a language.
+@pytest.fixture(autouse=True)
+def _restore_setup():
+    yield
+    i18n.setup()
