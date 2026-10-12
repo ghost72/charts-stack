@@ -1,0 +1,68 @@
+[
+  {
+    "name": "charts.m3u",
+    "title": "Aktuelle Hits & Charts 🔥🎶",
+    "missing": "missing.txt",
+    "genre_filter": true,
+    "sources": [
+      { "service": "deezer", "type": "chart",    "source": "0",          "limit": 100,   "enabled": true },
+      { "service": "deezer", "type": "playlist", "source": "1313617925", "limit": "all", "enabled": true },
+      { "service": "lastfm", "method": "geo.getTopTracks", "country": "Switzerland", "limit": 100, "enabled": true },
+      { "service": "lastfm", "method": "chart.getTopTracks", "limit": 100, "enabled": true }
+    ]
+  },
+  {
+    "name": "mundart.m3u",
+    "title": "Schweizer Mundart",
+    "missing": "missing-mundart.txt",
+    "exclude_artists": ["Nemo", "Trauffer"],
+    "sources": [
+      { "service": "deezer", "type": "playlist", "source": "658561775", "limit": "all", "enabled": true }
+    ]
+  },
+
+  "---- EXAMPLES BELOW: copy into your own playlist to use ----",
+
+  {
+    "name": "pop.m3u",
+    "title": "Pop",
+    "missing": "missing-pop.txt",
+    "sources": [
+      { "service": "deezer", "type": "chart",  "source": "132",    "limit": 100, "enabled": true },
+      { "service": "lastfm", "method": "tag.getTopTracks", "tag": "pop", "limit": 100, "enabled": true }
+    ]
+  },
+  {
+    "name": "country.m3u",
+    "title": "Country",
+    "missing": "missing-country.txt",
+    "sources": [
+      { "service": "deezer", "type": "playlist", "source": "1294431447", "limit": "all", "enabled": true },
+      { "service": "lastfm", "method": "tag.getTopTracks", "tag": "country", "limit": 100, "enabled": true }
+    ]
+  },
+  {
+    "name": "schlager.m3u",
+    "title": "Schlager",
+    "missing": "missing-schlager.txt",
+    "sources": [
+      { "service": "deezer", "type": "playlist", "source": "8699026122", "limit": "all", "enabled": true },
+      { "service": "lastfm", "method": "tag.getTopTracks", "tag": "schlager", "limit": 100, "enabled": true }
+    ]
+  },
+  {
+    "name": "mundart-artists.m3u",
+    "title": "Mundart (Künstler-Top)",
+    "missing": "missing-mundart-artists.txt",
+    "sources": [
+      { "service": "deezer", "type": "playlist", "source": "14877041603", "limit": "all", "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "16529",   "limit": 50, "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "449929",  "limit": 50, "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "71287",   "limit": 50, "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "187153",  "limit": 50, "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "4459005", "limit": 50, "enabled": true },
+      { "service": "deezer", "type": "artist", "source": "99572",   "limit": 50, "enabled": true }
+    ]
+  }
+]
+

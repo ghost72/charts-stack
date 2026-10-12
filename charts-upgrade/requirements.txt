@@ -1,0 +1,4 @@
+httpx==0.28.1
+slskd-api==0.2.4
+mutagen==1.47.0
+numpy==2.1.3
