@@ -16,3 +16,6 @@ __pycache__/
 
 # Local workspace files and OS clutter
 .DS_Store
+
+# Internal planning notes (not for public release)
+docs/

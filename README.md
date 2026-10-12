@@ -1,15 +1,226 @@
 # charts-stack
 
-**[Deutsch](#deutsch) · [English](#english)**
+**[English](#english) · [Deutsch](#deutsch)**
 
-Ein selbst-gehosteter Verbund kleiner Docker-Dienste, der aus Online-Charts und
-deinem Hörverhalten automatisch Musik-Playlists für **Navidrome** baut und
-fehlende Songs über **Soulseek (slskd)** nachlädt. Eine „Spotify-artige"
-Erfahrung für die eigene Musiksammlung – ohne Abo, komplett lokal.
+A self-hosted set of small Docker services that turns online charts and your
+listening habits into music playlists for **Navidrome** and fills missing songs
+via **Soulseek (slskd)**. A "Spotify-like" experience for your own music
+collection – no subscription, fully local.
 
-> ⚠️ **Rechtlicher Hinweis:** Dieses Projekt lädt Musik über das Soulseek-P2P-
-> Netz. Lade nur Inhalte herunter, zu denen du berechtigt bist. Du bist selbst
-> für die Einhaltung des Urheberrechts in deinem Land verantwortlich.
+> ⚠️ **Legal notice:** This project downloads music over the Soulseek P2P
+> network. Only download content you are entitled to. You are responsible for
+> complying with copyright law in your country.
+
+---
+
+## English
+
+### What does the stack do?
+
+Several independent services plus slskd as the download engine. The processing
+services are coupled **only through shared folders** (one music, one charts
+folder) – no service calls another directly. The whole stack is **one** compose
+project with **one** central `.env`.
+
+| Service | Job | Interval |
+| --- | --- | --- |
+| **charts-sync** | Fetches Deezer/Last.fm charts, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
+| **charts-hitparade** | Fetches the official Swiss charts (Top 100) weekly, writes `hitparade.m3u` + `missing-hitparade.txt` | Sun 20:00 |
+| **charts-flashback** | Collects the FLASHBACK FM main stream rotation (all decades mixed) and grows the library (downloads, no playlist; year tag for the decade NSPs) | 2 h |
+| **charts-download** | Reads `missing-*.txt`, searches/downloads via slskd, writes the **manifest** | 60 min |
+| **charts-import** | Imports finished downloads into the library (tags, cover, ReplayGain, optional Lidarr unmonitor) | 30 min |
+| **charts-digest** | Sends a daily Pushover summary of songs newly added to the library (grouped by source) | daily 09:00 |
+| **charts-recommend** | Grows the shared library from the public listening taste of several ListenBrainz users (downloads, no playlist) | 24 h |
+| **charts-upgrade** | Replaces low-bitrate songs with better versions | on-demand |
+| **charts-songrequest** | Web UI (FastAPI) to request individual songs manually (multi-user login) | on-demand |
+| **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
+| **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections and run stats | service |
+| **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
+
+### The glue: two shared folders + the manifest
+
+All services share **one host folder** (`MUSIC_ROOT`, e.g. `/volume2/music`) with
+two subfolders:
+
+- **`MUSIC_ROOT/Music`** – your Navidrome library (read + playlists written).
+- **`MUSIC_ROOT/Charts`** – slskd downloads, the `missing-*.txt`, state, and the
+  **manifest** (`.charts-manifest.json`).
+
+The **manifest** is the glue: charts-download/-songrequest write clean metadata
+per downloaded file; charts-import reads it and tags/imports the file correctly.
+slskd downloads into `Charts/` (its `/downloads`), which is exactly where
+charts-import looks.
+
+### Requirements
+
+- Docker + Docker Compose (tested on Synology DSM 7, but runs anywhere).
+- **Navidrome** as the music server (the `.m3u` playlists land in its library).
+- A **Soulseek account** (free) for slskd.
+- Optional: **Last.fm** API key (genre filter + recommendations), **ListenBrainz**
+  account (recommendations), **Lidarr** (unmonitor), **Pushover** (notifications).
+
+### Installation (one project, one `.env`)
+
+The whole stack is **one** project: a single `compose.yml` with all services
+and one central `.env`. You only copy one folder and fill in one file.
+
+```bash
+# 1. Copy this charts-stack folder to your server.
+
+# 2. Set up slskd first (API key + Soulseek login) – see slskd/README.md.
+#    This produces the API key you enter into the .env next.
+
+# 3. Create and fill in one central .env:
+cp .env.example .env
+#    REQUIRED (otherwise at least one service will NOT start):
+#      MUSIC_ROOT, SLSKD_API_KEY, PUID/PGID,
+#      SONGREQUEST_USERS   (charts-songrequest crashes otherwise - security gate),
+#      DASHBOARD_PASSWORD  (charts-dashboard crashes otherwise - security gate).
+#    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
+
+# 4. Create the three data subfolders BEFORE the first start with the right
+#    ownership (otherwise Docker creates them as root on bind-mount and the
+#    services, running as PUID:PGID, cannot write):
+mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
+chown -R 1027:100 "$MUSIC_ROOT"   # use your own PUID:PGID (Synology default here)
+
+# 5. Start – all services together:
+docker compose up -d --build
+```
+
+**With the Synology Container Manager:** Project → Create → point the path at
+this `charts-stack` folder → it finds `compose.yml` and `.env` automatically.
+After **code changes**, **rebuild** the affected services (Container Manager:
+Project → Action → Build; CLI: `docker compose up -d --build <service>`).
+`charts-watchdog` is a pure shell script with no image of its own – there a
+restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
+rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
+
+### Connecting Navidrome
+
+charts-stack only produces the `.m3u` playlists and sorts the music into
+`MUSIC_ROOT/Music` – playback happens through **Navidrome** (a separate service,
+not part of this stack). To make them work together:
+
+- Navidrome must mount the **same** `MUSIC_ROOT/Music` folder as its music
+  library that charts-import fills.
+- Enable **playlist scanning** in Navidrome (setting `ND_PLAYLISTSPATH` / "import
+  `.m3u` automatically") so the playlists written by charts-sync (`charts.m3u`,
+  `mundart.m3u`) show up in Navidrome.
+- Navidrome scans periodically; new songs/playlists appear after the next scan.
+
+That's it. The services talk to each other over the automatically created
+project network (e.g. charts-download → `http://slskd:5030`); you don't need to
+create a network. All variables have sensible defaults – in the `.env` you only
+set your own/required values.
+
+**What runs when:** slskd is a permanent service; charts-sync (12 h) generates
+playlists + `missing-*.txt`; charts-download (60 min) downloads the missing
+songs; charts-import (30 min) imports them; charts-recommend (24 h),
+charts-upgrade and charts-songrequest are optional. charts-dashboard (status UI)
+and charts-watchdog (Pushover alerts) run optionally alongside; the small
+`charts-docker-proxy` is infrastructure, runs automatically via the `compose.yml`
+and needs **no** configuration (it only grants the status services read-only
+Docker access).
+
+**Controlling individual services:** from the charts-stack folder, e.g.
+`docker compose restart slskd` or `docker compose up -d charts-sync`.
+
+### The MISSING_FILES wiring (recommend → download)
+
+For **charts-download** to also fetch the download list from
+**charts-recommend**, its **one** combined `missing-recommend.txt` must be in the
+`MISSING_FILES` variable of the central `.env`. It is pre-filled in
+`.env.example`:
+
+```
+MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-flashback.txt;/charts/missing-hitparade.txt;/charts/missing-recommend.txt
+```
+
+Without this, charts-recommend still writes the lists but charts-download ignores
+them. (Missing files are harmless – just a log warning.)
+
+> **Decades (80s/90s …):** These no longer run through a dedicated charts-sync
+> playlist, but through **charts-flashback** (fills the library from the
+> FLASHBACK FM rotation) + **Navidrome Smart Playlists (NSP)** that filter the
+> library by year. charts-sync only fetches the international + Swiss charts and
+> Mundart. Reason: the NSPs cover the *whole* library (broader + better quality
+> than a single Deezer playlist).
+
+### Your own chart sources (Deezer / Last.fm)
+
+In `charts-sync` the `CHARTS` variable (JSON) defines the playlists and their
+sources. Each source may carry an optional, backward-compatible `service` field
+(`deezer`/`lastfm`). The bundled IDs are **examples** – replace them with your
+own. The full field and ID reference plus ready-made examples (country, 80s/90s,
+…) is in **[`CHARTS-SOURCES.en.md`](CHARTS-SOURCES.en.md)**. New source IDs are
+easy to find via the **source finder** in the
+[charts-dashboard](charts-dashboard) (Deezer playlist search, genre table,
+Last.fm tag check). See `charts-sync/README.en.md`.
+
+**On/off per service:** `charts-hitparade` and `charts-flashback` each have a
+switch `HITPARADE_ENABLED` / `FLASHBACK_ENABLED` (`true`/`false`, default
+`true`). `false` pauses the service (container stays, no error) – shown in the
+dashboard as a grey **`idle`** status instead of red.
+
+### Monitoring: dashboard & watchdog
+
+Two services keep an eye on the stack:
+
+- **charts-dashboard** – a web UI (default port `5057`) that shows at a glance:
+  are all containers running, is slskd logged in to the Soulseek server, is
+  Lidarr reachable, and what each service processed last (exact run stats).
+  Password-protected with its **own** login (user `admin` + `DASHBOARD_PASSWORD`).
+  See `charts-dashboard/README.en.md`.
+- **charts-watchdog** – no UI, a silent guard: it watches all containers and
+  sends **one** Pushover message when one fails (and an all-clear on recovery).
+  See `charts-watchdog/README.en.md`.
+
+Neither accesses the Docker socket directly; both go **read-only** through a
+small `charts-docker-proxy` (read requests only, no container start/stop).
+Dashboard and watchdog therefore run as an unprivileged user, not as root. The
+run stats come from small JSON files each service writes into
+`Charts/.charts-status/`.
+
+### Language (logs, Pushover, dashboard)
+
+Every user-facing text – log messages, Pushover notifications and the dashboard
+UI – is switchable through **one** variable:
+
+```
+CHARTS_LANG=        # empty = English (default) | de = German | fr = French
+```
+
+- The variable lives in the central `.env` and applies to **all** services
+  (each container receives it plus the shared `./lang` folder mounted
+  read-only). After a change restart the services (`docker compose up -d`); a
+  pure `.env` change only needs a restart.
+- Translations live **centrally** in `lang/en.json`, `lang/de.json` and
+  `lang/fr.json` – one file per language, shared across all services (like the
+  `.env`). English is the default and fallback: a text missing in the chosen
+  language falls back to English, and if that is missing too, to the key name.
+  An unknown `CHARTS_LANG` (typo) silently falls back to English – no service
+  crashes over it.
+- **Code comments are intentionally not translated** (they target developers,
+  not users).
+
+#### Contributing a language
+
+1. Copy `lang/en.json` to `lang/<code>.json` (e.g. `lang/it.json` for Italian –
+   `<code>` is any short code you then set in `CHARTS_LANG`).
+2. Translate **the values** (the text on the right), **not the keys** (left).
+3. Leave placeholders unchanged: `{name}` fields (Python services) and `%s`
+   (the `watchdog.*` keys only) must match `en.json` in count and – for
+   `{name}` – in name. Do not add extra curly braces.
+4. Set `CHARTS_LANG=<code>`, restart the services. Any key missing from your
+   file shows the English text, so you can start incomplete.
+
+A test (`charts-sync/tests/test_i18n.py`) ensures all shipped language files
+carry the same keys and placeholders.
+
+### License
+
+MIT – see [LICENSE](LICENSE).
 
 ---
 
@@ -248,214 +459,3 @@ mitgelieferten Sprachdateien dieselben Schlüssel und Platzhalter haben.
 ### Lizenz
 
 MIT – siehe [LICENSE](LICENSE).
-
----
-
-## English
-
-### What does the stack do?
-
-Several independent services plus slskd as the download engine. The processing
-services are coupled **only through shared folders** (one music, one charts
-folder) – no service calls another directly. The whole stack is **one** compose
-project with **one** central `.env`.
-
-| Service | Job | Interval |
-| --- | --- | --- |
-| **charts-sync** | Fetches Deezer/Last.fm charts, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
-| **charts-hitparade** | Fetches the official Swiss charts (Top 100) weekly, writes `hitparade.m3u` + `missing-hitparade.txt` | Sun 20:00 |
-| **charts-flashback** | Collects the FLASHBACK FM main stream rotation (all decades mixed) and grows the library (downloads, no playlist; year tag for the decade NSPs) | 2 h |
-| **charts-download** | Reads `missing-*.txt`, searches/downloads via slskd, writes the **manifest** | 60 min |
-| **charts-import** | Imports finished downloads into the library (tags, cover, ReplayGain, optional Lidarr unmonitor) | 30 min |
-| **charts-digest** | Sends a daily Pushover summary of songs newly added to the library (grouped by source) | daily 09:00 |
-| **charts-recommend** | Grows the shared library from the public listening taste of several ListenBrainz users (downloads, no playlist) | 24 h |
-| **charts-upgrade** | Replaces low-bitrate songs with better versions | on-demand |
-| **charts-songrequest** | Web UI (FastAPI) to request individual songs manually (multi-user login) | on-demand |
-| **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
-| **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections and run stats | service |
-| **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
-
-### The glue: two shared folders + the manifest
-
-All services share **one host folder** (`MUSIC_ROOT`, e.g. `/volume2/music`) with
-two subfolders:
-
-- **`MUSIC_ROOT/Music`** – your Navidrome library (read + playlists written).
-- **`MUSIC_ROOT/Charts`** – slskd downloads, the `missing-*.txt`, state, and the
-  **manifest** (`.charts-manifest.json`).
-
-The **manifest** is the glue: charts-download/-songrequest write clean metadata
-per downloaded file; charts-import reads it and tags/imports the file correctly.
-slskd downloads into `Charts/` (its `/downloads`), which is exactly where
-charts-import looks.
-
-### Requirements
-
-- Docker + Docker Compose (tested on Synology DSM 7, but runs anywhere).
-- **Navidrome** as the music server (the `.m3u` playlists land in its library).
-- A **Soulseek account** (free) for slskd.
-- Optional: **Last.fm** API key (genre filter + recommendations), **ListenBrainz**
-  account (recommendations), **Lidarr** (unmonitor), **Pushover** (notifications).
-
-### Installation (one project, one `.env`)
-
-The whole stack is **one** project: a single `compose.yml` with all services
-and one central `.env`. You only copy one folder and fill in one file.
-
-```bash
-# 1. Copy this charts-stack folder to your server.
-
-# 2. Set up slskd first (API key + Soulseek login) – see slskd/README.md.
-#    This produces the API key you enter into the .env next.
-
-# 3. Create and fill in one central .env:
-cp .env.example .env
-#    REQUIRED (otherwise at least one service will NOT start):
-#      MUSIC_ROOT, SLSKD_API_KEY, PUID/PGID,
-#      SONGREQUEST_USERS   (charts-songrequest crashes otherwise - security gate),
-#      DASHBOARD_PASSWORD  (charts-dashboard crashes otherwise - security gate).
-#    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
-
-# 4. Create the three data subfolders BEFORE the first start with the right
-#    ownership (otherwise Docker creates them as root on bind-mount and the
-#    services, running as PUID:PGID, cannot write):
-mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
-chown -R 1027:100 "$MUSIC_ROOT"   # use your own PUID:PGID (Synology default here)
-
-# 5. Start – all services together:
-docker compose up -d --build
-```
-
-**With the Synology Container Manager:** Project → Create → point the path at
-this `charts-stack` folder → it finds `compose.yml` and `.env` automatically.
-After **code changes**, **rebuild** the affected services (Container Manager:
-Project → Action → Build; CLI: `docker compose up -d --build <service>`).
-`charts-watchdog` is a pure shell script with no image of its own – there a
-restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
-rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
-
-### Connecting Navidrome
-
-charts-stack only produces the `.m3u` playlists and sorts the music into
-`MUSIC_ROOT/Music` – playback happens through **Navidrome** (a separate service,
-not part of this stack). To make them work together:
-
-- Navidrome must mount the **same** `MUSIC_ROOT/Music` folder as its music
-  library that charts-import fills.
-- Enable **playlist scanning** in Navidrome (setting `ND_PLAYLISTSPATH` / "import
-  `.m3u` automatically") so the playlists written by charts-sync (`charts.m3u`,
-  `mundart.m3u`) show up in Navidrome.
-- Navidrome scans periodically; new songs/playlists appear after the next scan.
-
-That's it. The services talk to each other over the automatically created
-project network (e.g. charts-download → `http://slskd:5030`); you don't need to
-create a network. All variables have sensible defaults – in the `.env` you only
-set your own/required values.
-
-**What runs when:** slskd is a permanent service; charts-sync (12 h) generates
-playlists + `missing-*.txt`; charts-download (60 min) downloads the missing
-songs; charts-import (30 min) imports them; charts-recommend (24 h),
-charts-upgrade and charts-songrequest are optional. charts-dashboard (status UI)
-and charts-watchdog (Pushover alerts) run optionally alongside; the small
-`charts-docker-proxy` is infrastructure, runs automatically via the `compose.yml`
-and needs **no** configuration (it only grants the status services read-only
-Docker access).
-
-**Controlling individual services:** from the charts-stack folder, e.g.
-`docker compose restart slskd` or `docker compose up -d charts-sync`.
-
-### The MISSING_FILES wiring (recommend → download)
-
-For **charts-download** to also fetch the download list from
-**charts-recommend**, its **one** combined `missing-recommend.txt` must be in the
-`MISSING_FILES` variable of the central `.env`. It is pre-filled in
-`.env.example`:
-
-```
-MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-flashback.txt;/charts/missing-hitparade.txt;/charts/missing-recommend.txt
-```
-
-Without this, charts-recommend still writes the lists but charts-download ignores
-them. (Missing files are harmless – just a log warning.)
-
-### Your own chart sources (Deezer / Last.fm)
-
-In `charts-sync` the `CHARTS` variable (JSON) defines the playlists and their
-sources. Each source may carry an optional, backward-compatible `service` field
-(`deezer`/`lastfm`). The bundled IDs are **examples** – replace them with your
-own. The full field and ID reference plus ready-made examples (country, 80s/90s,
-…) is in **[`CHARTS-SOURCES.en.md`](CHARTS-SOURCES.en.md)**. New source IDs are
-easy to find via the **source finder** in the
-[charts-dashboard](charts-dashboard) (Deezer playlist search, genre table,
-Last.fm tag check). See `charts-sync/README.md`.
-
-**On/off per service:** `charts-hitparade` and `charts-flashback` each have a
-switch `HITPARADE_ENABLED` / `FLASHBACK_ENABLED` (`true`/`false`, default
-`true`). `false` pauses the service (container stays, no error) – shown in the
-dashboard as a grey **`idle`** status instead of red.
-
-### Monitoring: dashboard & watchdog
-
-Two services keep an eye on the stack:
-
-- **charts-dashboard** – a web UI (default port `5057`) that shows at a glance:
-  are all containers running, is slskd logged in to the Soulseek server, is
-  Lidarr reachable, and what each service processed last (exact run stats).
-  Password-protected with its **own** login (user `admin` + `DASHBOARD_PASSWORD`).
-  See `charts-dashboard/README.md`.
-- **charts-watchdog** – no UI, a silent guard: it watches all containers and
-  sends **one** Pushover message when one fails (and an all-clear on recovery).
-  See `charts-watchdog/README.md`.
-
-Neither accesses the Docker socket directly; both go **read-only** through a
-small `charts-docker-proxy` (read requests only, no container start/stop).
-Dashboard and watchdog therefore run as an unprivileged user, not as root. The
-run stats come from small JSON files each service writes into
-`Charts/.charts-status/`.
-
-### Secrets & portability
-
-- **No secrets in the repo.** All keys/passwords come from `.env` (gitignored);
-  only `.env.example` is versioned.
-- All host paths go through `MUSIC_ROOT`, users through `PUID`/`PGID` – moving to
-  another system only needs `.env` changes, no compose edits.
-
-### Language (logs, Pushover, dashboard)
-
-Every user-facing text – log messages, Pushover notifications and the dashboard
-UI – is switchable through **one** variable:
-
-```
-CHARTS_LANG=        # empty = English (default) | de = German | fr = French
-```
-
-- The variable lives in the central `.env` and applies to **all** services
-  (each container receives it plus the shared `./lang` folder mounted
-  read-only). After a change restart the services (`docker compose up -d`); a
-  pure `.env` change only needs a restart.
-- Translations live **centrally** in `lang/en.json`, `lang/de.json` and
-  `lang/fr.json` – one file per language, shared across all services (like the
-  `.env`). English is the default and fallback: a text missing in the chosen
-  language falls back to English, and if that is missing too, to the key name.
-  An unknown `CHARTS_LANG` (typo) silently falls back to English – no service
-  crashes over it.
-- **Code comments are intentionally not translated** (they target developers,
-  not users).
-
-#### Contributing a language
-
-1. Copy `lang/en.json` to `lang/<code>.json` (e.g. `lang/it.json` for Italian –
-   `<code>` is any short code you then set in `CHARTS_LANG`).
-2. Translate **the values** (the text on the right), **not the keys** (left).
-3. Leave placeholders unchanged: `{name}` fields (Python services) and `%s`
-   (the `watchdog.*` keys only) must match `en.json` in count and – for
-   `{name}` – in name. Do not add extra curly braces.
-4. Set `CHARTS_LANG=<code>`, restart the services. Any key missing from your
-   file shows the English text, so you can start incomplete.
-
-A test (`charts-sync/tests/test_i18n.py`) ensures all shipped language files
-carry the same keys and placeholders.
-
-### License
-
-MIT – see [LICENSE](LICENSE).
