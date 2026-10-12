@@ -10,6 +10,44 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.1.0] - 2026-10-12
+
+Follow-up release: a sortable source finder, honest Last.fm counts, a watchdog
+false-alarm fix, and a full pass to make the codebase English-only (user-facing
+strings, exceptions, comments and docstrings) with English as the default.
+
+### Added
+- **Sortable finder result tables.** The Deezer playlist and artist result
+  tables now sort by default descending on their numeric column (Tracks / Fans),
+  so the most relevant hits appear first. Clicking a column header sorts by that
+  column and toggles ascending/descending (numeric columns sort numerically,
+  text columns alphabetically). One shared renderer drives all finder tables.
+- Steering/convention: commit messages and all code comments/docstrings are
+  English; user-facing text stays in `lang/{en,de,fr}.json` only.
+
+### Changed
+- **Honest Last.fm tag count.** The Last.fm tag check now shows the real total
+  number of tracks for a tag (`~N tracks`) instead of the misleading probe count
+  that always looked like "(5)". It also previews up to 10 example tracks
+  (was 3).
+- **English is now the single default everywhere.** All remaining hardcoded
+  user-facing strings (service exception messages, the Docker-SDK warning, the
+  charts-songrequest web UI, the one-off maintenance scripts) were routed
+  through i18n or translated, with English as the default value. The language
+  files are grouped by service for readability.
+
+### Fixed
+- **Watchdog no longer false-alarms on rebuilds.** A container briefly in a
+  transient state (`created`/`starting`) during `docker compose up -d --build`
+  no longer triggers a "Problem" Pushover alert. Transient states use a separate
+  higher threshold, so a genuinely stuck container is still reported, while real
+  problems (exited/dead/unhealthy) keep alarming as before. The state word in
+  the alert is now translated instead of showing the raw English `created`.
+- Restored proper German umlauts (ä/ö/ü) and French accents in the language
+  files and in user-facing strings where ASCII digraphs had slipped in.
+- Widened the finder "Tracks" column so the sort-direction arrow is no longer
+  clipped.
+
 ## [1.0.0] - 2026-10-12
 
 First public release. A self-hosted set of services that keeps Navidrome
@@ -65,4 +103,5 @@ and a watchdog.
 - Three watchdog debounce/recover/cooldown variables are now actually passed
   through to the container.
 
+[1.1.0]: https://keepachangelog.com/
 [1.0.0]: https://keepachangelog.com/
