@@ -1,11 +1,11 @@
 """
-Unit-Tests fuer den i18n-Loader (app/i18n.py) und die ausgelieferten
-Sprachtabellen (zentral in charts-stack/lang/*.json, geteilt ueber alle Dienste).
+Unit tests for the i18n loader (app/i18n.py) and the shipped language tables
+(central in charts-stack/lang/*.json, shared across all services).
 
-Analog zum charts-sync-Pilot: die zentrale Parity-Garantie (set(en)==set(de)==
-set(fr) plus Platzhalter-Parity je Key) UND ein de-Golden-Check fuer ein paar
-repraesentative flashback.*-Keys. Alle Tests laufen OHNE Netzwerk/Docker und
-setzen i18n.setup(lang=..., lang_dir=...) explizit (kein CHARTS_LANG-Env-Leak).
+Analogous to the charts-sync pilot: the central parity guarantee (set(en)==
+set(de)==set(fr) plus placeholder parity per key) AND a de golden check for a
+few representative flashback.* keys. All tests run WITHOUT network/Docker and
+set i18n.setup(lang=..., lang_dir=...) explicitly (no CHARTS_LANG env leak).
 """
 
 import json
@@ -17,7 +17,7 @@ import pytest
 from app import i18n
 
 
-# Zentrale, ausgelieferte Sprachdateien: app -> charts-flashback -> charts-stack/lang.
+# Central, shipped language files: app -> charts-flashback -> charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
 
@@ -33,7 +33,7 @@ def _placeholders(template):
             if name is not None}
 
 
-# --- Loader-Grundverhalten (lokale tmp-Sprachdateien) -----------------------
+# --- Loader basic behavior (local tmp language files) -----------------------
 
 @pytest.fixture
 def lang_dir(tmp_path):
@@ -65,7 +65,7 @@ def test_german_resolves(lang_dir):
 
 def test_per_key_fallback_to_english(lang_dir):
     i18n.setup(lang="de", lang_dir=lang_dir)
-    # 'only_en' fehlt in de.json -> English via Merge.
+    # 'only_en' is missing in de.json -> English via the merge.
     assert i18n.t("only_en") == "english only"
 
 
@@ -115,16 +115,16 @@ def test_flashback_keys_present_in_all_languages():
 def test_de_golden_flashback_strings():
     """CHARTS_LANG=de must reproduce the former hardcoded German byte-exact."""
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
-    # Run-Start-Marker.
+    # Run start marker.
     assert i18n.t("flashback.run.start") == "=== charts-flashback-Lauf gestartet ==="
-    # Dienst-Titel (eigenes Radio-Emoji + Dienstname).
+    # Service title (own radio emoji + service name).
     assert (i18n.t("flashback.notify.title", service="charts-flashback")
             == "\U0001F4FB charts-flashback")
-    # <b>-haltige Pushover-Kopfzeile mit Umlauten (FLASHBACK-Rotation).
+    # <b>-bearing Pushover header with umlauts (FLASHBACK rotation).
     assert (i18n.t("flashback.notify.new_to_load", missing=3, new=10)
             == "<b>3</b> neue Songs zum Nachladen aus der FLASHBACK-Rotation "
                "(von <b>10</b> neu gesehenen).")
-    # idle-Status-Meldungen (von den Guards + enabled_guard-Test erwartet).
+    # idle status messages (expected by the guards + enabled_guard test).
     assert i18n.t("flashback.status.disabled") == "deaktiviert"
     assert (i18n.t("flashback.status.no_hash")
             == "kein FLASHBACK_HASH gesetzt - nichts zu tun")

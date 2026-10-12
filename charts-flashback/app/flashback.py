@@ -1,27 +1,27 @@
 """
-FLASHBACK FM GraphQL-Client (LastPlayed).
+FLASHBACK FM GraphQL client (LastPlayed).
 
-Datenquelle (oeffentlich, kein Token/Cookie, CORS offen):
+Data source (public, no token/cookie, CORS open):
   GET https://www.flashbackfm.ch/api/pub/gql/flashbackfm/LastPlayed/<HASH>
       ?variables={"streamName":"<stream>","limitTo":<N>}
-Antwort: data.audioPlayer.stream.played[] mit {interpret, title, playtime, ...}.
+Response: data.audioPlayer.stream.played[] with {interpret, title, playtime, ...}.
 
-WICHTIG: Die "played"-Historie wird nur fuer den LIVE-HAUPTSTREAM gefuehrt
-(streamName "flashbackfm.ffm"). Die thematischen Dekaden-/Kuenstler-Channels
-(flashbackfm-80er, queen, ...) existieren als streams, liefern aber
-played=null. Darum ist der Default-Stream der Hauptstream - er spielt die ganze
-Rotation ueber alle Dekaden gemischt.
+IMPORTANT: the "played" history is only kept for the LIVE MAIN STREAM
+(streamName "flashbackfm.ffm"). The thematic decade/artist channels
+(flashbackfm-80er, queen, ...) exist as streams but return played=null. That is
+why the default stream is the main stream - it plays the whole rotation mixed
+across all decades.
 
-Das Erscheinungsjahr steht direkt im Titel als Suffix "(JJJJ)", z.B.
-"THE WILD BOYS (1984)". Das ist die VERLAESSLICHE Jahr-Quelle (FLASHBACK selbst);
-MusicBrainz dient nur noch als Fallback (year.py), falls kein (JJJJ) im Titel
-steht. parse_title() spaltet das Jahr ab und liefert den bereinigten Titel.
+The release year sits directly in the title as a suffix "(JJJJ)", e.g.
+"THE WILD BOYS (1984)". That is the RELIABLE year source (FLASHBACK itself);
+MusicBrainz only serves as a fallback (year.py) when there is no (JJJJ) in the
+title. parse_title() splits off the year and returns the cleaned title.
 
-Fehlerbehandlung (watchdog-relevant): ein GraphQL-"errors"-Block, eine fehlende
-data.audioPlayer.stream.played-Struktur (played=null bei falschem Stream/Hash)
-ODER ein Transport-Fehler nach allen Wiederholungen werden als FetchError
-gemeldet (= toter Hash / API geaendert -> status=error -> Dashboard rot +
-Pushover). Eine LEERE played-Liste ([]) ist ein gueltiger Erfolg.
+Error handling (watchdog-relevant): a GraphQL "errors" block, a missing
+data.audioPlayer.stream.played structure (played=null on the wrong stream/hash)
+OR a transport error after all retries are reported as a FetchError (= dead
+hash / API changed -> status=error -> dashboard red + Pushover). An EMPTY played
+list ([]) is a valid success.
 """
 
 import json
@@ -39,21 +39,21 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://www.flashbackfm.ch/api/pub/gql/flashbackfm/LastPlayed"
 
-# Jahr-Suffix am Titelende: "THE WILD BOYS (1984)" -> Titel + Jahr.
+# Year suffix at the title end: "THE WILD BOYS (1984)" -> title + year.
 _TITLE_YEAR_RE = re.compile(r"^(.*\S)\s*\((\d{4})\)\s*$")
 
 
 def parse_title(raw_title: str) -> tuple[str, str]:
     """
-    Spaltet ein optionales '(JJJJ)'-Jahr-Suffix vom Titel ab.
-    Rueckgabe: (bereinigter_titel, jahr) - jahr "" wenn kein plausibles
-    4-stelliges Jahr am Ende steht.
+    Split off an optional '(JJJJ)' year suffix from the title.
+    Returns: (cleaned_title, year) - year "" when there is no plausible
+    4-digit year at the end.
     """
     title = (raw_title or "").strip()
     m = _TITLE_YEAR_RE.match(title)
     if m:
         y = m.group(2)
-        # Plausibilitaet (grob): 1900..2099.
+        # Plausibility (rough): 1900..2099.
         if 1900 <= int(y) <= 2099:
             return m.group(1).strip(), y
     return title, ""
@@ -61,8 +61,8 @@ def parse_title(raw_title: str) -> tuple[str, str]:
 
 def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
     """
-    GET mit Wiederholung bei Transport-Fehlern (Timeout/HTTP/Verbindung).
-    Spiegelt charts-recommend/listenbrainz._get_with_retry.
+    GET with retry on transport errors (timeout/HTTP/connection).
+    Mirrors charts-recommend/listenbrainz._get_with_retry.
     """
     attempts = max(1, config.HTTP_RETRIES)
     for attempt in range(1, attempts + 1):
@@ -85,7 +85,7 @@ def _url(hash_: str) -> str:
 
 
 def _check_graphql_errors(data: dict) -> None:
-    """Wirft FetchError, wenn die GraphQL-Antwort einen errors-Block hat."""
+    """Raise FetchError when the GraphQL response has an errors block."""
     errs = data.get("errors")
     if errs:
         msg = "; ".join(
@@ -98,12 +98,12 @@ def _check_graphql_errors(data: dict) -> None:
 def fetch_played(channel: str, hash_: str,
                  played_limit: int) -> list[tuple[str, str, str]]:
     """
-    Holt die "zuletzt gespielt"-Liste eines Streams.
-    Rueckgabe: [(interpret, bereinigter_titel, jahr), ...]. jahr ist das aus dem
-    Titel-Suffix "(JJJJ)" abgespaltene Erscheinungsjahr (oder "").
-    Eine leere played-Liste ([]) ist ein gueltiger Erfolg.
-    FetchError bei errors-Block, played=null (falscher Stream/Hash), kaputter
-    Struktur oder Transportfehler.
+    Fetch the "last played" list of a stream.
+    Returns: [(interpret, cleaned_title, year), ...]. year is the release year
+    split off from the title suffix "(JJJJ)" (or "").
+    An empty played list ([]) is a valid success.
+    FetchError on an errors block, played=null (wrong stream/hash), broken
+    structure or transport error.
     """
     variables = json.dumps(
         {"streamName": channel, "limitTo": played_limit},
@@ -131,9 +131,9 @@ def fetch_played(channel: str, hash_: str,
     if not isinstance(stream, dict):
         raise FetchError(t("flashback.err.no_stream", channel=channel))
     played = stream.get("played")
-    # played=null bedeutet: dieser Stream fuehrt keine Historie (nur der
-    # Hauptstream flashbackfm.ffm tut das). Das ist ein Konfig-/Stream-Fehler,
-    # KEIN leerer Erfolg -> als FetchError melden.
+    # played=null means: this stream keeps no history (only the main stream
+    # flashbackfm.ffm does). That is a config/stream error, NOT an empty success
+    # -> report it as a FetchError.
     if played is None:
         raise FetchError(t("flashback.err.played_null", channel=channel))
 
@@ -152,8 +152,8 @@ def fetch_played(channel: str, hash_: str,
 
 def fetch_streams(hash_: str) -> list[dict]:
     """
-    Optional: Liste der verfuegbaren Channels (data.audioPlayer.streams[]).
-    Nur fuer Diagnose/Dashboard. FetchError wie fetch_played.
+    Optional: list of the available channels (data.audioPlayer.streams[]).
+    Only for diagnostics/dashboard. FetchError like fetch_played.
     """
     variables = json.dumps(
         {"streamName": config.FLASHBACK_CHANNELS[0] if config.FLASHBACK_CHANNELS

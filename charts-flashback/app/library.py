@@ -1,10 +1,10 @@
 """
-Library-Index und Matching.
+Library index and matching.
 
-KOPIE/Anpassung aus charts-sync (bewusst dupliziert, keine Laufzeit-
-Abhaengigkeit zwischen den Diensten). Durchsucht MUSIC_DIR nach Audiodateien
-und prueft pro Empfehlungs-Track, ob er schon in der Library liegt. Matching
-identisch zu charts-sync (tolerant, Kuenstler-Mindestscore, Compilation-Handling).
+COPY/adaptation from charts-sync (deliberately duplicated, no runtime
+dependency between the services). Scans MUSIC_DIR for audio files and checks per
+recommendation track whether it already sits in the library. Matching identical
+to charts-sync (tolerant, artist minimum score, compilation handling).
 """
 
 import logging
@@ -31,7 +31,7 @@ _NOISE_PATTERNS = [
 
 
 def normalize(text: str) -> str:
-    """Normalisiert einen String fuer den Vergleich (identisch zu charts-sync)."""
+    """Normalize a string for the comparison (identical to charts-sync)."""
     if not text:
         return ""
     text = text.lower()
@@ -45,7 +45,7 @@ def normalize(text: str) -> str:
 
 
 def similarity(a: str, b: str) -> int:
-    """Aehnlichkeit zweier normalisierter Strings als Wert 0-100."""
+    """Similarity of two normalized strings as a value 0-100."""
     if not a or not b:
         return 0
     return round(SequenceMatcher(None, a, b).ratio() * 100)
@@ -117,8 +117,8 @@ class Library:
 
     def find_match(self, artist: str, title: str, threshold: int):
         """
-        Bester Treffer fuer artist/title oder (None, best_score).
-        Compilations werden bei IGNORE_COMPILATIONS uebersprungen.
+        Best hit for artist/title or (None, best_score).
+        Compilations are skipped with IGNORE_COMPILATIONS.
         """
         n_artist = normalize(artist)
         n_title = normalize(title)
@@ -154,7 +154,7 @@ class Library:
 
 
 def build_index(music_dir: str) -> Library:
-    """Scannt music_dir rekursiv und baut den Library-Index auf."""
+    """Scan music_dir recursively and build the library index."""
     logger.info(t("library.scan", dir=music_dir))
     tracks: list[LibraryTrack] = []
     scanned = 0

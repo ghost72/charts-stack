@@ -1,18 +1,17 @@
 """
-Unit-Tests fuer den playlist-spezifischen exclude_artists-Filter
+Unit tests for the playlist-specific exclude_artists filter
 (deezer._is_excluded_artist / deezer.fetch_chart).
 
-Hintergrund (Bug aus dem NAS-Betrieb): In der Playlist "Schweizer Mundart" mit
-exclude_artists=["Trauffer","Nemo"] blieben trotzdem Trauffer-/Nemo-Tracks in
-missing-mundart.txt stehen. An echten Deezer-Daten verifiziert waren das
-Collab-Tracks, bei denen der Haupt-Kuenstler NICHT der ausgeschlossene Act ist
-(z.B. artist="Goelae", contributors=[..., "Trauffer"]) - der alte Filter prueft
-nur artist.name und liess sie durch.
+Background (bug from NAS operation): in the "Schweizer Mundart" playlist with
+exclude_artists=["Trauffer","Nemo"], Trauffer/Nemo tracks still remained in
+missing-mundart.txt. Verified against real Deezer data these were collab tracks
+where the main artist is NOT the excluded act (e.g. artist="Goelae",
+contributors=[..., "Trauffer"]) - the old filter only checked artist.name and
+let them through.
 
-Zusaetzlich abgesichert: der Dedup-Umgehungspfad. Taucht derselbe Song (gleicher
-_merge_key) zuerst unter einem NICHT ausgeschlossenen Namen auf, darf das die
-spaetere, korrekt ausgeschlossene Variante nicht ueber 'key in seen' am Filter
-vorbeischleusen.
+Additionally guarded: the dedup bypass path. If the same song (same _merge_key)
+appears first under a NOT excluded name, that must not sneak the later,
+correctly excluded variant past the filter via 'key in seen'.
 """
 
 import pytest
@@ -24,7 +23,7 @@ from app.deezer import ChartTrack
 EXCLUDE = {"trauffer", "nemo"}
 
 
-# --- _is_excluded_artist: direkte Einheitstests -----------------------------
+# --- _is_excluded_artist: direct unit tests ---------------------------------
 
 def test_main_artist_exact_match():
     assert deezer._is_excluded_artist("Trauffer", EXCLUDE) is True
@@ -36,7 +35,7 @@ def test_main_artist_case_insensitive():
 
 
 def test_main_artist_in_feat_combo():
-    # "Trauffer feat. Beatrice Egli" -> Haupt-Act ist Trauffer.
+    # "Trauffer feat. Beatrice Egli" -> main act is Trauffer.
     assert deezer._is_excluded_artist(
         "Trauffer feat. Beatrice Egli", EXCLUDE) is True
 
@@ -47,7 +46,7 @@ def test_not_excluded_artist_passes():
 
 
 def test_excluded_as_contributor_only():
-    # Der eigentliche Bug: Haupt-Artist ist Goelae, Trauffer nur als Contributor.
+    # The actual bug: main artist is Goelae, Trauffer only as contributor.
     assert deezer._is_excluded_artist(
         "Gölä", EXCLUDE,
         contributors=["Gölä", "Trauffer"]) is True
@@ -64,14 +63,14 @@ def test_empty_exclude_set_never_excludes():
         "Trauffer", set(), contributors=["Trauffer"]) is False
 
 
-# --- fetch_chart: Integration mit gestubbten Feeds --------------------------
+# --- fetch_chart: integration with stubbed feeds ----------------------------
 
 class _StubFeed:
     kind = "deezer"
 
 
 class _StubSource:
-    """Minimaler ChartSource-Ersatz fuer fetch_chart (eine Playlist, N Feeds)."""
+    """Minimal ChartSource stand-in for fetch_chart (one playlist, N feeds)."""
 
     def __init__(self, feeds, exclude_artists):
         self._feeds = feeds
@@ -89,7 +88,7 @@ class _StubSource:
 
     @property
     def effective_genre_filter(self):
-        # Kein pro-Playlist-Override -> globaler GENRE_FILTER (wie ChartSource).
+        # No per-playlist override -> global GENRE_FILTER (like ChartSource).
         return deezer.config.GENRE_FILTER
 
 
@@ -98,7 +97,7 @@ def _result_artists(tracks):
 
 
 def test_fetch_chart_excludes_contributor_collab(monkeypatch):
-    """Collab-Track (Trauffer nur Contributor) darf NICHT im Ergebnis landen."""
+    """Collab track (Trauffer only contributor) must NOT land in the result."""
     feed = _StubFeed()
     tracks = [
         ChartTrack(1, "Bligg", "0815"),
@@ -106,7 +105,7 @@ def test_fetch_chart_excludes_contributor_collab(monkeypatch):
         ChartTrack(3, "Trauffer", "Heubode"),
     ]
     monkeypatch.setattr(deezer, "_fetch_one_feed", lambda f, c: tracks)
-    # Genre-Filter aus (sonst echte Last.fm-Calls).
+    # Genre filter off (otherwise real Last.fm calls).
     monkeypatch.setattr(deezer.config, "GENRE_FILTER", False)
 
     src = _StubSource([feed], EXCLUDE)
@@ -114,24 +113,24 @@ def test_fetch_chart_excludes_contributor_collab(monkeypatch):
 
     artists = {a.lower() for a, _ in _result_artists(result)}
     assert "trauffer" not in artists
-    # Nur Bligg bleibt uebrig.
+    # Only Bligg remains.
     assert _result_artists(result) == [("Bligg", "0815")]
 
 
 def test_fetch_chart_dedup_does_not_bypass_exclude(monkeypatch):
     """
-    Reihenfolge-Bug: derselbe Song (gleicher _merge_key) taucht zuerst unter
-    einem NICHT ausgeschlossenen Artist-Namen auf, dann unter dem korrekt
-    ausgeschlossenen. Der ausgeschlossene Kuenstler darf NICHT durchrutschen.
+    Order bug: the same song (same _merge_key) appears first under a NOT
+    excluded artist name, then under the correctly excluded one. The excluded
+    artist must NOT slip through.
     """
     feed_a = _StubFeed()
     feed_b = _StubFeed()
-    # Feed A: Song "Heubode" faelschlich einem anderen Act zugeschrieben
-    # (gleicher Titel). Feed B: korrekt Trauffer.
+    # Feed A: song "Heubode" wrongly attributed to another act (same title).
+    # Feed B: correctly Trauffer.
     tracks_a = [ChartTrack(1, "Trauffer", "Heubode", contributors=[])]
-    # Simuliere, dass derselbe _merge_key schon "gesehen" wurde, indem Feed A
-    # einen Trauffer-Treffer liefert -> muss sofort ausgeschlossen werden und
-    # darf 'seen' gar nicht erst fuellen.
+    # Simulate that the same _merge_key was already "seen" by having feed A
+    # deliver a Trauffer hit -> must be excluded immediately and must not even
+    # fill 'seen'.
     tracks_b = [ChartTrack(5, "Trauffer", "Heubode", contributors=[])]
 
     feeds_map = {id(feed_a): tracks_a, id(feed_b): tracks_b}
@@ -146,7 +145,7 @@ def test_fetch_chart_dedup_does_not_bypass_exclude(monkeypatch):
 
 
 def test_fetch_chart_keeps_allowed_artists(monkeypatch):
-    """Nicht ausgeschlossene Kuenstler bleiben erhalten (keine Fehlausschluesse)."""
+    """Non-excluded artists are kept (no false exclusions)."""
     feed = _StubFeed()
     tracks = [
         ChartTrack(1, "Gölä", "Schwan"),

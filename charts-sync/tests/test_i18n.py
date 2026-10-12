@@ -1,14 +1,14 @@
 """
-Unit-Tests fuer den i18n-Loader (app/i18n.py) und die ausgelieferten
-Sprachtabellen (zentral in charts-stack/lang/*.json, geteilt ueber alle Dienste).
+Unit tests for the i18n loader (app/i18n.py) and the shipped language tables
+(central in charts-stack/lang/*.json, shared across all services).
 
-Dies ist der Pilot-Testsatz: die zentrale Parity-Garantie (set(en)==set(de)==
-set(fr) plus Platzhalter-Parity je Key) und der de-Golden-Check sind das
-Muster, das die Schwester-Dienste spaeter 1:1 uebernehmen.
+This is the pilot test set: the central parity guarantee (set(en)==set(de)==
+set(fr) plus placeholder parity per key) and the de golden check are the
+pattern the sister services later adopt 1:1.
 
-Alle Tests laufen OHNE Netzwerk/Docker. Statt die Umgebung zu veraendern wird
-i18n.setup(lang=..., lang_dir=...) mit tmp_path-Sprachdateien bzw. dem echten
-zentralen lang-Verzeichnis aufgerufen (kein CHARTS_LANG-Env-Leak).
+All tests run WITHOUT network/Docker. Instead of changing the environment,
+i18n.setup(lang=..., lang_dir=...) is called with tmp_path language files or
+the real central lang directory (no CHARTS_LANG env leak).
 """
 
 import json
@@ -21,16 +21,17 @@ import pytest
 from app import i18n
 
 
-# Pfad zu den AUSGELIEFERTEN Sprachdateien. Sie liegen jetzt ZENTRAL (geteilt
-# ueber alle Dienste, wie die .env) in charts-stack/lang/, nicht mehr pro Dienst
-# unter app/lang/. Relativ zum i18n-Modul: app -> charts-sync -> charts-stack/lang.
+# Path to the SHIPPED language files. They now live CENTRALLY (shared across
+# all services, like the .env) in charts-stack/lang/, no longer per service
+# under app/lang/. Relative to the i18n module: app -> charts-sync ->
+# charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
 
 
 @pytest.fixture
 def lang_dir(tmp_path):
-    """Schreibt ein kleines, kontrolliertes Sprach-Set in ein tmp-Verzeichnis."""
+    """Write a small, controlled language set into a tmp directory."""
     d = tmp_path / "lang"
     d.mkdir()
     (d / "en.json").write_text(json.dumps({
@@ -195,16 +196,16 @@ def test_shipped_placeholder_parity_per_key():
 
 
 def test_watchdog_keys_shell_safe():
-    """Additiver Guard fuer die watchdog.*-Keys (shell-i18n, charts-watchdog).
+    """Additive guard for the watchdog.* keys (shell i18n, charts-watchdog).
 
-    Die watchdog.*-Keys nutzen positionale %s statt {name}, daher sieht der
-    string.Formatter-Guard oben sie nicht. Dieser Zusatztest sichert zwei
-    Vertraege der sh-printf-/sed-Mechanik ab (siehe design.md, Entscheidung 5):
-      (a) value.count("%s") ist ueber en/de/fr identisch (printf-Argument-
-          Paritaet analog zur {name}-Paritaet der Python-Keys).
-      (b) kein " und kein \\ im Wert (Vorbedingung des greedy-sed-Extraktors in
-          t()). Nicht-ASCII (Umlaute/Akzente) ist ausdruecklich erlaubt.
-    Prueft NUR watchdog.*-Keys; die {name}-Pruefungen bleiben unberuehrt.
+    The watchdog.* keys use positional %s instead of {name}, so the
+    string.Formatter guard above does not see them. This extra test enforces two
+    contracts of the sh-printf/sed mechanics (see design.md, decision 5):
+      (a) value.count("%s") is identical across en/de/fr (printf argument
+          parity analogous to the {name} parity of the Python keys).
+      (b) no " and no \\ in the value (precondition of the greedy sed extractor
+          in t()). Non-ASCII (umlauts/accents) is explicitly allowed.
+    Checks ONLY watchdog.* keys; the {name} checks stay untouched.
     """
     tables = {c: _load_shipped(c) for c in _SHIPPED}
     wd_keys = [k for k in tables["en"] if k.startswith("watchdog.")]
@@ -214,7 +215,7 @@ def test_watchdog_keys_shell_safe():
         assert counts["en"] == counts["de"] == counts["fr"], (key, counts)
         for c in _SHIPPED:
             v = tables[c][key]
-            # Nur Quotes/Backslash verboten; Nicht-ASCII (Umlaute/Akzente) OK.
+            # Only quotes/backslash forbidden; non-ASCII (umlauts/accents) OK.
             assert '"' not in v and "\\" not in v, (c, key, v)
 
 
@@ -331,3 +332,4 @@ def test_library_scan_emits_german(tmp_path, monkeypatch, caplog):
 def _restore_setup():
     yield
     i18n.setup()
+

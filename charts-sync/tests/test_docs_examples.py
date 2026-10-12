@@ -1,20 +1,20 @@
 """
-Doku-Tests fuer CHARTS-SOURCES.md (DE) + CHARTS-SOURCES.en.md (EN).
+Doc tests for CHARTS-SOURCES.md (DE) + CHARTS-SOURCES.en.md (EN).
 
-Diese Tests sind die Brandmauer gegen eine Doku, die nicht mehr zum echten
-Parser passt. Sie extrahieren die JSON-Beispiele der Rubrik "sofort lauffaehig"
-aus BEIDEN Doku-Dateien und pruefen:
+These tests are the firewall against docs that no longer match the real parser.
+They extract the JSON examples of the "ready to run" section from BOTH doc
+files and check:
 
-  (a) jedes Snippet ist gueltiges JSON (json.loads);
-  (b) config._parse_charts akzeptiert es OHNE Validierungs-WARN/Error (caplog);
-  (c) ein Alt-Format-Beispiel OHNE 'service' ergibt die bisherige Feed-
-      Zuordnung (type:chart->deezer/chart, type:playlist->deezer/playlist,
+  (a) each snippet is valid JSON (json.loads);
+  (b) config._parse_charts accepts it WITHOUT validation WARN/error (caplog);
+  (c) a legacy-format example WITHOUT 'service' yields the former feed mapping
+      (type:chart->deezer/chart, type:playlist->deezer/playlist,
       type:lastfm->lastfm);
-  (d) die in DE und EN zitierten lauffaehigen Snippets sind BYTE-identisch.
+  (d) the runnable snippets quoted in DE and EN are BYTE-identical.
 
-Single Source of Truth sind die 'runnable'-Eintraege aus
-tests/fixtures/charts_examples.json (NIT-5): die Doku zitiert exakt diese
-Snippets, der Test vergleicht die aus der Doku extrahierten Bloecke dagegen.
+The single source of truth are the 'runnable' entries from
+tests/fixtures/charts_examples.json (NIT-5): the docs quote exactly these
+snippets, and the test compares the blocks extracted from the docs against them.
 """
 
 import json
@@ -31,13 +31,12 @@ _DOC_DE = _REPO_ROOT / "CHARTS-SOURCES.md"
 _DOC_EN = _REPO_ROOT / "CHARTS-SOURCES.en.md"
 _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "charts_examples.json"
 
-# Ein lauffaehiges Beispiel in der Doku wird mit einem HTML-Kommentar-Marker
-# direkt vor dem kompakten (einzeiligen) JSON-Codeblock ausgezeichnet, damit der
-# Test die 'sofort lauffaehig'-Snippets eindeutig findet (und Platzhalter-/
-# Lese-Bloecke ignoriert):
+# A runnable example in the docs is marked with an HTML comment marker directly
+# before the compact (single-line) JSON code block so the test finds the "ready
+# to run" snippets unambiguously (and ignores placeholder/read-only blocks):
 #   <!-- runnable:minimal -->
 #   ```json
-#   [ ... eine Zeile ... ]
+#   [ ... one line ... ]
 #   ```
 _RUNNABLE_BLOCK_RE = re.compile(
     r"<!--\s*runnable:(?P<key>[a-z0-9_]+)\s*-->\s*\n```json\n(?P<body>.*?)\n```",
@@ -52,7 +51,7 @@ def fixture() -> dict:
 
 
 def _extract_runnable(doc_path: Path) -> dict[str, str]:
-    """Liest alle mit <!-- runnable:KEY --> markierten JSON-Bloecke einer Datei."""
+    """Read all JSON blocks of a file marked with <!-- runnable:KEY -->."""
     assert doc_path.exists(), f"Doku fehlt: {doc_path}"
     text = doc_path.read_text(encoding="utf-8")
     blocks: dict[str, str] = {}
@@ -68,7 +67,7 @@ def _parse(monkeypatch, raw_json: str) -> list:
     return config._parse_charts()
 
 
-# --- (a)+(b) Jedes 'sofort lauffaehig'-Snippet ist gueltig & parserkonform ---
+# --- (a)+(b) Each 'ready to run' snippet is valid & parser-conforming --------
 
 def test_de_runnable_blocks_present():
     blocks = _extract_runnable(_DOC_DE)
@@ -79,23 +78,23 @@ def test_de_runnable_blocks_present():
 def test_runnable_snippets_valid_and_parserconform(doc_path, fixture, monkeypatch, caplog):
     blocks = _extract_runnable(doc_path)
     runnable = fixture["runnable"]
-    # Jeder Fixture-'runnable'-Eintrag muss in der Doku zitiert sein.
+    # Every fixture 'runnable' entry must be quoted in the docs.
     assert set(blocks) == set(runnable), (
         f"{doc_path.name}: runnable-Marker {sorted(blocks)} != "
         f"Fixture {sorted(runnable)}")
 
     for key, body in blocks.items():
-        # (a) gueltiges JSON
+        # (a) valid JSON
         try:
             parsed = json.loads(body)
         except json.JSONDecodeError as e:
             pytest.fail(f"{doc_path.name} runnable:{key} ist kein gueltiges JSON: {e}")
 
-        # Deckt sich mit der Fixture (Single Source of Truth).
+        # Matches the fixture (single source of truth).
         assert parsed == runnable[key], (
             f"{doc_path.name} runnable:{key} weicht von der Fixture ab.")
 
-        # (b) parserkonform OHNE WARN/Error
+        # (b) parser-conforming WITHOUT WARN/error
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             sources = _parse(monkeypatch, body)
@@ -103,17 +102,17 @@ def test_runnable_snippets_valid_and_parserconform(doc_path, fixture, monkeypatc
         assert not warn_err, (
             f"{doc_path.name} runnable:{key} loest Validierungs-Warnungen aus: "
             f"{[r.message for r in warn_err]}")
-        # Ein lauffaehiges Beispiel ergibt mindestens eine Playlist.
+        # A runnable example yields at least one playlist.
         assert sources, f"{doc_path.name} runnable:{key} ergab keine Playlist."
 
 
-# --- (c) Alt-Format ohne 'service' == bisherige Zuordnung -------------------
+# --- (c) Legacy format without 'service' == former mapping ------------------
 
 def test_legacy_without_service_backward_compatible(fixture, monkeypatch, caplog):
     data = fixture["legacy_no_service"]["mixed"]
     with caplog.at_level(logging.WARNING):
         sources = _parse(monkeypatch, json.dumps(data))
-    # Keine Validierungs-Warnungen fuer die (gueltige) Alt-Config.
+    # No validation warnings for the (valid) legacy config.
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
     assert len(sources) == 1
@@ -136,7 +135,7 @@ def test_legacy_without_service_backward_compatible(fixture, monkeypatch, caplog
     assert feeds[2].params == {"country": "Switzerland"}
 
 
-# --- (d) DE und EN zitieren byte-identische lauffaehige Snippets ------------
+# --- (d) DE and EN quote byte-identical runnable snippets -------------------
 
 def test_de_en_runnable_snippets_identical():
     de = _extract_runnable(_DOC_DE)

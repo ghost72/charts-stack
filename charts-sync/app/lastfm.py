@@ -1,20 +1,19 @@
 """
-Last.fm-Chart-Client.
+Last.fm chart client.
 
-Last.fm stellt die AudioScrobbler-Web-API (2.0) bereit. Fuer lesende Chart-,
-Geo-, Tag- und User-Abfragen genuegt ein kostenloser API-Key (kein OAuth, keine
-Signatur). Wir holen ausschliesslich Metadaten (Kuenstler + Titel), keine
-Audiodaten.
+Last.fm provides the AudioScrobbler web API (2.0). For reading chart, geo, tag
+and user queries a free API key is enough (no OAuth, no signature). We fetch
+metadata only (artist + title), no audio data.
 
-Genutzte Methoden (alle format=json):
-  - chart.getTopTracks              globale Top-Tracks (hoerer-/scrobble-basiert)
-  - geo.getTopTracks   country=..   laenderbezogene Top-Tracks (z.B. Switzerland)
-  - tag.getTopTracks   tag=..       meistgetaggte Tracks eines Tags (z.B. pop, 80s)
-  - user.getTopTracks  user=..      meistgehoerte Tracks eines Users (period=..)
-  - track.getTopTags   artist,track Genre-Tags eines Songs (fuer den Genre-Filter)
+Methods used (all format=json):
+  - chart.getTopTracks              global top tracks (listener/scrobble-based)
+  - geo.getTopTracks   country=..   country top tracks (e.g. Switzerland)
+  - tag.getTopTracks   tag=..       most-tagged tracks of a tag (e.g. pop, 80s)
+  - user.getTopTracks  user=..      most-played tracks of a user (period=..)
+  - track.getTopTags   artist,track genre tags of a song (for the genre filter)
 
-Die Track-Objekte sind bewusst dieselben wie beim Deezer-Client (ChartTrack),
-damit main.py/das Matching quellenunabhaengig funktioniert.
+The track objects are deliberately the same as in the Deezer client
+(ChartTrack) so main.py/the matching works independently of the source.
 """
 
 import logging
@@ -28,13 +27,13 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
-# Last.fm liefert pro Antwort maximal ~1000 Eintraege; wir paginieren in
-# festen Schritten ueber den 'page'-Parameter.
+# Last.fm returns at most ~1000 entries per response; we paginate in fixed
+# steps via the 'page' parameter.
 _PAGE_SIZE = 200
 _MAX_TRACKS = 100000
 
-# Methoden, bei denen der jeweils benoetigte Zusatzparameter mitgegeben wird.
-# key = Last.fm-Methode, value = (paramname_fuer_extra, required)
+# Methods for which the respective required extra parameter is passed along.
+# key = Last.fm method, value = (param name for extra, required)
 _METHOD_PARAM = {
     "chart.gettoptracks": (None, False),
     "geo.gettoptracks": ("country", True),
@@ -44,30 +43,30 @@ _METHOD_PARAM = {
 
 
 def _tracks_from_payload(payload: dict) -> list[dict]:
-    """Extrahiert die Track-Liste aus den unterschiedlichen Antwort-Wrappern."""
+    """Extract the track list from the different response wrappers."""
     if not isinstance(payload, dict):
         return []
-    # Wrapper heisst je nach Methode 'tracks' oder 'toptracks'.
+    # The wrapper is named 'tracks' or 'toptracks' depending on the method.
     container = payload.get("tracks") or payload.get("toptracks") or {}
     items = container.get("track", []) if isinstance(container, dict) else []
-    # Bei genau einem Treffer liefert Last.fm ein Objekt statt einer Liste.
+    # With exactly one hit Last.fm returns an object instead of a list.
     if isinstance(items, dict):
         items = [items]
     return items
 
 
 def _parse_tracks(items: list[dict], start_pos: int) -> list[ChartTrack]:
-    """Wandelt Last.fm-JSON-Eintraege in ChartTrack-Objekte um."""
+    """Convert Last.fm JSON entries into ChartTrack objects."""
     tracks: list[ChartTrack] = []
     for offset, item in enumerate(items):
         name = (item.get("name") or "").strip()
         artist = item.get("artist") or {}
-        # 'artist' ist bei getTopTracks ein Objekt {name, mbid, url}.
+        # 'artist' is an object {name, mbid, url} for getTopTracks.
         artist_name = (artist.get("name") if isinstance(artist, dict) else artist) or ""
         artist_name = artist_name.strip()
         if not artist_name or not name:
             continue
-        # Chart-/geo-Tracks liefern @attr.rank; sonst laufende Nummer.
+        # Chart/geo tracks provide @attr.rank; otherwise a running number.
         rank = 0
         attr = item.get("@attr")
         if isinstance(attr, dict):
@@ -83,9 +82,9 @@ def _parse_tracks(items: list[dict], start_pos: int) -> list[ChartTrack]:
 def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
                        client: httpx.Client) -> list[ChartTrack]:
     """
-    Holt EINE Last.fm-Quelle (chart/geo/tag/user getTopTracks) mit Pagination.
-    'method' ist die Last.fm-Methode (kleingeschrieben), 'extra' enthaelt die
-    methodenspezifischen Zusatzparameter (country/tag/user/period).
+    Fetch ONE Last.fm source (chart/geo/tag/user getTopTracks) with pagination.
+    'method' is the Last.fm method (lowercased), 'extra' holds the
+    method-specific extra parameters (country/tag/user/period).
     """
     method = method.lower()
     if method not in _METHOD_PARAM:
@@ -110,7 +109,7 @@ def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
         resp.raise_for_status()
         payload = resp.json()
 
-        # Last.fm meldet Fehler als {"error": <code>, "message": ".."} (HTTP 200).
+        # Last.fm reports errors as {"error": <code>, "message": ".."} (HTTP 200).
         if isinstance(payload, dict) and payload.get("error"):
             raise RuntimeError(t("sync.lastfm.api_error", method=method,
                                  error=payload.get('error'),
@@ -123,7 +122,7 @@ def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
         tracks.extend(_parse_tracks(items, start_pos=len(tracks) + 1))
 
         if len(items) < want:
-            break  # letzte Seite erreicht
+            break  # last page reached
         page += 1
 
     logger.info(t("lastfm.feed.result",
@@ -135,8 +134,8 @@ def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
 
 def fetch_feed(feed, api_key: str, client: httpx.Client) -> list[ChartTrack]:
     """
-    Adapter fuer einen Feed vom Typ 'lastfm'. Erwartet ein Feed-Objekt mit den
-    Attributen: method, params (dict mit country/tag/user/period), limit.
+    Adapter for a feed of type 'lastfm'. Expects a Feed object with the
+    attributes: method, params (dict with country/tag/user/period), limit.
     """
     if not api_key:
         raise RuntimeError(t("sync.lastfm.no_api_key"))
@@ -147,11 +146,11 @@ def fetch_feed(feed, api_key: str, client: httpx.Client) -> list[ChartTrack]:
 def get_top_tags(artist: str, title: str, api_key: str,
                  client: httpx.Client) -> list[tuple[str, int]]:
     """
-    Liefert die Genre-/Top-Tags eines Songs als [(tag_lowercase, count), ...],
-    absteigend nach count. Fuer den Genre-Ausschlussfilter.
+    Return a song's genre/top tags as [(tag_lowercase, count), ...], descending
+    by count. For the genre exclusion filter.
 
-    Gibt bei Fehlern / ohne Tags eine leere Liste zurueck (fail-open: der Song
-    wird dann NICHT ausgeschlossen).
+    Returns an empty list on errors / without tags (fail-open: the song is then
+    NOT excluded).
     """
     params = {
         "method": "track.gettoptags",
