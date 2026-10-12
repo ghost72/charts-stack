@@ -1,63 +1,61 @@
 """
-Einmaliges Nachruesten von Covern fuer die bestehende Library.
+One-off retrofitting of covers for the existing library.
 
-Scannt MUSIC_DIR rekursiv nach MP3s OHNE eingebettetes Cover, liest Kuenstler +
-Titel aus den Tags und holt das passende Cover ueber die konfigurierten Quellen
-(COVER_SOURCES, Default iTunes -> Deezer) und bettet es als ID3-Tag ein (keine
-separate Bilddatei). Die Trefferauswahl bevorzugt die echte Single/das Original-
-Album und sortiert Fremd-Versionen (Remix/Sped Up/Live/Demo/Compilation) aus.
+Scans MUSIC_DIR recursively for MP3s WITHOUT an embedded cover, reads artist +
+title from the tags, fetches the matching cover via the configured sources
+(COVER_SOURCES, default iTunes -> Deezer) and embeds it as an ID3 tag (no
+separate image file). Hit selection prefers the real single/the original album
+and sorts out foreign versions (remix/sped up/live/demo/compilation).
 
-Nutzung (im Container):
-  # nur zaehlen/auflisten, nichts aendern:
+Usage (in the container):
+  # only count/list, change nothing:
   python -m app.backfill_covers --dry-run
-  # tatsaechlich nachruesten:
+  # actually retrofit:
   python -m app.backfill_covers
 
-Modi:
-  (ohne Flag)   nur MP3s OHNE Cover nachruesten.
-  --fix-broken  MP3s mit FEHLERHAFTEM Cover reparieren: rechteckige Cover (z.B.
-                CD-Scans mit Vorder+Rueckseite) werden durch das quadratische
-                Cover ersetzt. Betrifft NUR die Chart-Songs (die in den
-                .m3u-Playlists gelisteten Dateien, PLAYLIST_DIR), NICHT die ganze
-                Library - so bleibt deine uebrige (Lidarr-)Sammlung unangetastet.
-                Quadratische Cover bleiben ohnehin unangetastet.
-  --force-refresh Ersetzt bei ALLEN Chart-Songs das Cover durch das neu gesuchte
-                Cover (Quelle laut COVER_SOURCES, i.d.R. iTunes-Single-Artwork),
-                auch bei bereits quadratischen. Noetig fuer Kassetten-/CD-Scans
-                (quadratisch, aber falsches Bild) UND um alte, schlechtere Cover
-                (z.B. Demo-EP statt Single) durch das bessere zu ersetzen.
-                Beispiel: "Dominic Fike - Babydoll" hatte das Demo-EP-Cover;
-                jetzt wird das dedizierte "Babydoll / White Keys - Single"-Cover
-                eingebettet.
-  --all-charts  Bezieht den Umfang aus dem MANIFEST (alle je von charts-download
-                geladenen Songs) statt aus den aktuellen Playlists. Erfasst auch
-                Songs, die aus den Charts gefallen sind, aber noch in der Library
-                liegen. Deine uebrige (Lidarr-)Library bleibt unangetastet. Meist
-                kombiniert mit --force-refresh, um wirklich ALLE je geladenen
-                Chart-Cover neu (z.B. von iTunes) zu holen.
-  --dry-run     nichts aendern, nur auflisten/zaehlen.
+Modes:
+  (no flag)     retrofit only MP3s WITHOUT a cover.
+  --fix-broken  repair MP3s with a FAULTY cover: rectangular covers (e.g. CD
+                scans with front+back) are replaced with the square cover.
+                Affects ONLY the chart songs (the files listed in the .m3u
+                playlists, PLAYLIST_DIR), NOT the whole library - so your rest
+                of the (Lidarr) collection stays untouched. Square covers stay
+                untouched anyway.
+  --force-refresh Replaces the cover of ALL chart songs with the newly searched
+                cover (source per COVER_SOURCES, usually iTunes single artwork),
+                even on already-square ones. Needed for cassette/CD scans
+                (square but wrong image) AND to replace old, worse covers (e.g.
+                a demo EP instead of the single) with the better one.
+                Example: "Dominic Fike - Babydoll" had the demo-EP cover; now
+                the dedicated "Babydoll / White Keys - Single" cover is embedded.
+  --all-charts  Takes the scope from the MANIFEST (all songs ever loaded by
+                charts-download) instead of the current playlists. Also covers
+                songs that fell out of the charts but still sit in the library.
+                Your rest of the (Lidarr) library stays untouched. Usually
+                combined with --force-refresh to really fetch ALL ever-loaded
+                chart covers anew (e.g. from iTunes).
+  --dry-run     change nothing, only list/count.
 
-Nutzung (im Container):
-  python -m app.backfill_covers --dry-run                # fehlende zaehlen
-  python -m app.backfill_covers                          # fehlende nachruesten
-  python -m app.backfill_covers --fix-broken --dry-run   # + fehlerhafte auflisten
-  python -m app.backfill_covers --fix-broken             # + fehlerhafte reparieren
-  python -m app.backfill_covers --force-refresh --dry-run # ALLE Chart-Cover (Vorschau)
-  python -m app.backfill_covers --force-refresh          # ALLE Chart-Cover neu holen
+Usage (in the container):
+  python -m app.backfill_covers --dry-run                # count the missing ones
+  python -m app.backfill_covers                          # retrofit the missing ones
+  python -m app.backfill_covers --fix-broken --dry-run   # + list the faulty ones
+  python -m app.backfill_covers --fix-broken             # + repair the faulty ones
+  python -m app.backfill_covers --force-refresh --dry-run # ALL chart covers (preview)
+  python -m app.backfill_covers --force-refresh          # re-fetch ALL chart covers
 
-Umgebungsvariablen:
-  MUSIC_DIR              Library-Root (Default wie im Import).
-  PLAYLIST_DIR           Ordner mit den charts-sync-Playlists (.m3u). Quelle
-                         fuer --fix-broken (nur Chart-Songs). Default = MUSIC_DIR.
-  COVER_SOURCES          Quellen-Reihenfolge (Default itunes,deezer).
-  BACKFILL_SLEEP_MS      Pause zwischen API-Calls in ms (Default 400),
-                         schont die APIs (Rate-Limit).
-  BACKFILL_LIMIT         Max. Anzahl zu bearbeitender Dateien (0 = alle).
+Environment variables:
+  MUSIC_DIR              library root (default as in the import).
+  PLAYLIST_DIR           folder with the charts-sync playlists (.m3u). Source
+                         for --fix-broken (chart songs only). Default = MUSIC_DIR.
+  COVER_SOURCES          source order (default itunes,deezer).
+  BACKFILL_SLEEP_MS      pause between API calls in ms (default 400), eases the
+                         APIs (rate limit).
+  BACKFILL_LIMIT         max number of files to process (0 = all).
 
-Sicher: Ohne --fix-broken werden vorhandene Cover nie angetastet. Mit
---fix-broken werden NUR rechteckige Cover ersetzt (und nur, wenn eine Quelle ein
-Cover liefert - sonst bleibt das alte erhalten). Fehler bei einer Datei stoppen
-den Lauf nicht.
+Safe: without --fix-broken existing covers are never touched. With --fix-broken
+ONLY rectangular covers are replaced (and only if a source returns a cover -
+otherwise the old one is kept). Errors on one file do not stop the run.
 """
 
 import logging
@@ -78,7 +76,7 @@ _LIMIT = int(os.environ.get("BACKFILL_LIMIT", "0"))
 
 
 def _read_artist_title(path: str) -> tuple[str, str]:
-    """Liest Artist/Titel aus den Tags (fuer die Deezer-Suche)."""
+    """Reads artist/title from the tags (for the Deezer search)."""
     try:
         audio = MutagenFile(path, easy=True)
         if audio is None:
@@ -99,16 +97,16 @@ def _iter_mp3(root: str):
 
 def _iter_manifest_mp3(music_dir: str):
     """
-    Liefert die MP3-Pfade ALLER je von charts-download geladenen Songs, indem
-    das Manifest (MANIFEST_FILE) gelesen wird. Anders als _iter_playlist_mp3
-    erfasst das auch Chart-Songs, die aktuell in KEINER Playlist mehr stehen
-    (z.B. aus den Charts gefallen), aber weiterhin in der Library liegen.
+    Yields the MP3 paths of ALL songs ever loaded by charts-download, by
+    reading the manifest (MANIFEST_FILE). Unlike _iter_playlist_mp3 this also
+    covers chart songs that are currently in NO playlist anymore (e.g. fell out
+    of the charts) but still sit in the library.
 
-    Deine uebrige (Lidarr-)Library bleibt unangetastet, weil nur Dateien aus dem
-    Manifest betrachtet werden. Gesucht wird der Song ueber Artist/Album/Titel
-    aus dem Manifest im MUSIC_DIR (der Datei-Basename im Manifest ist der
-    Download-Name, nicht zwingend der finale Library-Pfad - deshalb suchen wir
-    ueber die Tags/den Titel im Artist-Ordner).
+    Your rest of the (Lidarr) library stays untouched, because only files from
+    the manifest are considered. The song is located via artist/album/title
+    from the manifest in MUSIC_DIR (the file basename in the manifest is the
+    download name, not necessarily the final library path - so we search via
+    the tags/the title in the artist folder).
     """
     import json
 
@@ -125,21 +123,21 @@ def _iter_manifest_mp3(music_dir: str):
         return
 
     logger.info(t("import.covers.manifest_scan", count=len(entries), music_dir=music_dir))
-    # Index Titel(normalisiert) -> Pfade im MUSIC_DIR, einmal aufbauen.
+    # Build the index title(normalized) -> paths in MUSIC_DIR once.
     from .importer import _title_key, _extract_title_from_filename
     for artist_entry, meta in entries.items():
         artist = (meta or {}).get("artist", "")
         title = (meta or {}).get("title", "")
         if not artist or not title:
             continue
-        # Kuenstler-Ordner (bereinigt) bestimmen.
+        # Determine the (cleaned) artist folder.
         from .tags import _clean_component
         safe_artist = _clean_component(artist, "Unknown Artist")
         artist_dir = os.path.join(music_dir, safe_artist)
         if not os.path.isdir(artist_dir):
             continue
         want = _title_key(title)
-        # Im Artist-Ordner nach einer Datei mit passendem Titel suchen.
+        # Search the artist folder for a file with a matching title.
         for dirpath, _d, files in os.walk(artist_dir):
             for name in files:
                 if not name.lower().endswith(".mp3"):
@@ -153,12 +151,12 @@ def _iter_manifest_mp3(music_dir: str):
 
 def _iter_playlist_mp3(playlist_dir: str, music_dir: str):
     """
-    Liefert die MP3-Pfade, die in den charts-sync-Playlists (.m3u in
-    playlist_dir) gelistet sind - also NUR die Chart-Songs. So bleibt die
-    uebrige (Lidarr-)Library beim --fix-broken unangetastet.
+    Yields the MP3 paths listed in the charts-sync playlists (.m3u in
+    playlist_dir) - i.e. ONLY the chart songs. This keeps the rest of the
+    (Lidarr) library untouched on --fix-broken.
 
-    Behandelt sowohl absolute Pfade als auch relative (zum playlist_dir).
-    Dedupliziert, damit ein Song aus mehreren Playlists nur einmal geprueft wird.
+    Handles both absolute paths and relative ones (to playlist_dir).
+    Deduplicates so a song in several playlists is checked only once.
     """
     seen: set[str] = set()
     if not os.path.isdir(playlist_dir):
@@ -178,7 +176,7 @@ def _iter_playlist_mp3(playlist_dir: str, music_dir: str):
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
-                    # Pfad aufloesen: absolut, sonst relativ zum Playlist-Ordner.
+                    # Resolve the path: absolute, otherwise relative to the playlist folder.
                     path = line if os.path.isabs(line) else os.path.join(playlist_dir, line)
                     path = os.path.normpath(path)
                     if not path.lower().endswith(".mp3"):
@@ -197,15 +195,15 @@ def _iter_playlist_mp3(playlist_dir: str, music_dir: str):
 def main() -> None:
     dry_run = "--dry-run" in sys.argv
     fix_broken = "--fix-broken" in sys.argv
-    # Generischer Flag-Name (Quelle ist ueber COVER_SOURCES konfigurierbar).
+    # Generic flag name (the source is configurable via COVER_SOURCES).
     force_refresh = "--force-refresh" in sys.argv
-    # --all-charts: ueber ALLE je geladenen Chart-Songs (Manifest) statt nur die
-    # aktuell in Playlists gelisteten. Erfasst auch aus den Charts gefallene Songs.
+    # --all-charts: over ALL ever-loaded chart songs (manifest) instead of only
+    # the ones currently listed in playlists. Also covers songs fallen out of the charts.
     all_charts = "--all-charts" in sys.argv
     music_dir = config.MUSIC_DIR
 
-    # Scope: Manifest (--all-charts) hat Vorrang, sonst Playlist bei
-    # --fix-broken/--force-refresh, sonst ganze Library.
+    # Scope: manifest (--all-charts) takes precedence, otherwise playlist on
+    # --fix-broken/--force-refresh, otherwise the whole library.
     playlist_scope = fix_broken or force_refresh or all_charts
 
     mode = t("import.covers.mode_dry") if dry_run else t("import.covers.mode_embed")
@@ -215,8 +213,8 @@ def main() -> None:
         scope = t("import.covers.scope_broken")
     else:
         scope = t("import.covers.scope_missing")
-    # --fix-broken/--force-refresh beschraenken sich BEWUSST auf die Chart-Songs
-    # (Playlist-Eintraege), damit deine uebrige (Lidarr-)Library unangetastet bleibt.
+    # --fix-broken/--force-refresh DELIBERATELY restrict themselves to the chart
+    # songs (playlist entries) so the rest of your (Lidarr) library stays untouched.
     if all_charts:
         quelle = t("import.covers.source_manifest", music_dir=music_dir)
     elif playlist_scope:
@@ -230,8 +228,8 @@ def main() -> None:
         logger.error(t("import.covers.no_music_dir", path=music_dir))
         return
 
-    # Iterator waehlen: --all-charts -> Manifest, sonst Playlist-Scope ->
-    # Chart-Playlists, sonst ganze Library.
+    # Choose the iterator: --all-charts -> manifest, otherwise playlist scope ->
+    # chart playlists, otherwise the whole library.
     if all_charts:
         source_iter = _iter_manifest_mp3(music_dir)
     elif playlist_scope:
@@ -252,17 +250,16 @@ def main() -> None:
         status = cover.cover_status(path)  # none / square / nonsquare / unknown
 
         if force_refresh:
-            # Jeden Chart-Song anfassen und das Cover neu holen (Quelle laut
-            # COVER_SOURCES) - auch quadratische. Noetig fuer Kassetten-/CD-Scans
-            # (quadratisch, aber falsches Bild) und um alte, schlechtere Cover
-            # (z.B. Demo-EP) durch das bessere Single-Cover zu ersetzen.
+            # Touch every chart song and re-fetch the cover (source per
+            # COVER_SOURCES) - including square ones. Needed for cassette/CD
+            # scans (square but wrong image) and to replace old, worse covers
+            # (e.g. demo EP) with the better single cover.
             if status == "none":
                 without_cover += 1
             else:
                 broken_cover += 1
         else:
-            # Quadratische und (ohne --fix-broken) auch unklare/vorhandene Cover
-            # ueberspringen.
+            # Skip square and (without --fix-broken) also unclear/present covers.
             if status == "square":
                 continue
             if status in ("unknown",) and not fix_broken:
@@ -271,10 +268,10 @@ def main() -> None:
                 without_cover += 1
             elif status == "nonsquare":
                 if not fix_broken:
-                    continue  # ohne --fix-broken rechteckige nicht anfassen
+                    continue  # without --fix-broken do not touch rectangular ones
                 broken_cover += 1
             else:
-                # unknown + fix_broken: konservativ nicht ersetzen (koennte ok sein)
+                # unknown + fix_broken: conservatively do not replace (could be ok)
                 continue
 
         artist, title = _read_artist_title(path)
@@ -299,8 +296,8 @@ def main() -> None:
             logger.info(t("import.covers.limit_reached", limit=_LIMIT))
             break
 
-        # overwrite=True bei rechteckigem Cover oder --force-refresh (ersetzen),
-        # sonst normal einbetten (nur wenn keins vorhanden).
+        # overwrite=True on a rectangular cover or --force-refresh (replace),
+        # otherwise embed normally (only if none is present).
         overwrite = force_refresh or status == "nonsquare"
         if cover.embed_cover(path, artist, title, overwrite=overwrite):
             if overwrite:

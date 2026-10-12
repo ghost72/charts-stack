@@ -1,15 +1,15 @@
 """
-Manifest fuer die Uebergabe der sauberen Chart-Metadaten an charts-import.
+Manifest for handing the clean chart metadata over to charts-import.
 
-Problem: slskd-Downloads haben oft schlechte oder fehlende Tags. charts-import
-wuerde sie dann als "Unknown Artist/Unknown Album" einsortieren, und charts-sync
-kann sie nicht gegen die Charts matchen.
+Problem: slskd downloads often have bad or missing tags. charts-import would
+then file them as "Unknown Artist/Unknown Album", and charts-sync cannot match
+them against the charts.
 
-Loesung: charts-download kennt beim Download den ECHTEN Chart-Kuenstler und
--Titel. Diese Zuordnung wird hier in eine gemeinsame JSON-Datei geschrieben
-(im /charts-Ordner, den auch charts-import sieht). Schluessel ist der Basename
-der heruntergeladenen Datei - der bleibt erhalten, egal wie slskd den Pfad
-verschachtelt. charts-import schlaegt darin nach und taggt die Datei sauber.
+Solution: at download time charts-download knows the REAL chart artist and
+title. This mapping is written here into a shared JSON file (in the /charts
+folder that charts-import also sees). The key is the basename of the downloaded
+file - it is preserved no matter how slskd nests the path. charts-import looks
+it up there and tags the file cleanly.
 
 Format:
 {
@@ -20,9 +20,9 @@ Format:
   }
 }
 
-"source" ist das Playlist-Label (aus der missing-Datei, z.B. "charts",
-"mundart", "80er-90er"), damit charts-import in seiner Import-Meldung die
-Herkunft anzeigen kann. Optional - aeltere Eintraege ohne "source" sind ok.
+"source" is the playlist label (from the missing file, e.g. "charts",
+"mundart", "80er-90er"), so charts-import can show the origin in its import
+message. Optional - older entries without "source" are fine.
 """
 
 import json
@@ -58,19 +58,19 @@ def _save(path: str, data: dict) -> None:
 
 
 def _basename_key(filename: str) -> str:
-    """Normalisierter Schluessel: reiner Dateiname, kleingeschrieben."""
+    """Normalized key: bare file name, lowercased."""
     base = os.path.basename(filename.replace("\\", "/"))
     return base.lower()
 
 
 def record(filename: str, artist: str, title: str, source: str = "") -> None:
     """
-    Vermerkt fuer die heruntergeladene Datei die sauberen Chart-Metadaten.
-    Album wird auf den Titel gesetzt (Chart-Songs sind Singles), damit
-    charts-import nicht auf "Unknown Album" zurueckfaellt.
+    Record the clean chart metadata for the downloaded file. Album is set to
+    the title (chart songs are singles) so charts-import does not fall back to
+    "Unknown Album".
 
-    source = Playlist-Label (z.B. "charts", "mundart", "flashback"), damit
-    charts-import in der Import-Meldung die Herkunft anzeigen kann.
+    source = playlist label (e.g. "charts", "mundart", "flashback") so
+    charts-import can show the origin in its import message.
     """
     data = _load(config.MANIFEST_FILE)
     entry = {

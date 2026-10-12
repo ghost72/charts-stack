@@ -1,1 +1,1 @@
-"""charts-import – sortiert slskd-Downloads in die Navidrome-Library ein."""
+"""charts-import – files slskd downloads into the Navidrome library."""

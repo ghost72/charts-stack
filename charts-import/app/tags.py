@@ -1,14 +1,14 @@
 """
-Tag-Lesung und Zielpfad-Bildung.
+Tag reading and target-path building.
 
-Metadaten-Quellen in dieser Reihenfolge:
-  1. Manifest von charts-download (SAUBERE Chart-Artist/Titel) - bevorzugt.
-     Wird zusaetzlich in die Datei-Tags geschrieben, damit Navidrome/charts-sync
-     korrekte Werte sehen (statt "Unknown Album").
-  2. Datei-Tags (mutagen).
-  3. Fallback auf den Dateinamen.
+Metadata sources in this order:
+  1. Manifest from charts-download (CLEAN chart artist/title) - preferred.
+     Also written into the file tags so Navidrome/charts-sync see correct
+     values (instead of "Unknown Album").
+  2. File tags (mutagen).
+  3. Fallback to the file name.
 
-Zielpfad-Schema: Music/<Artist>/<Album>/<Track>.<ext>.
+Target path scheme: Music/<Artist>/<Album>/<Track>.<ext>.
 """
 
 import json
@@ -23,33 +23,33 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# --- Herkunfts-/Encoder-Tags, die aus Chart-Downloads entfernt werden ---
-# Diese Frames verraten die QUELLE (Soulseek-Uploader/Release-Group-Signaturen
-# wie "eXenz", "PMEDIA", "www.t.me/...", der fre:ac-Werbekommentar) bzw. das
-# Rip-/Encoder-Tool. Sie werden bei jedem Manifest-Import entfernt, damit keine
-# Herkunftsspuren in der Library landen. Gezielt per ID3-Vollschnittstelle
-# (NICHT easy=True, der COMM/TENC/TXXX nicht zuverlaessig loeschen kann).
+# --- Provenance/encoder tags removed from chart downloads ---
+# These frames reveal the SOURCE (Soulseek uploader/release-group signatures
+# like "eXenz", "PMEDIA", "www.t.me/...", the fre:ac ad comment) or the
+# rip/encoder tool. They are removed on every manifest import so no provenance
+# traces land in the library. Done deliberately via the full ID3 interface
+# (NOT easy=True, which cannot delete COMM/TENC/TXXX reliably).
 #
-# WICHTIG - WAS GELOESCHT WIRD:
-#   COMM = Kommentar (fast immer Uploader-/Release-Group-Signatur) -> leeren
-#   TENC = Encoded by, TSSE = Encoder-Settings (Rip-Tool) -> leeren
-#   WXXX/WCOM/WOAF/WPUB = URL-Frames (Quellen-Links) -> leeren
-#   TOWN = File owner -> leeren
-#   TXXX = benutzerdefinierte Freitext-Frames: NUR geloescht, wenn der
-#          Beschreibungsname NICHT auf der Schutzliste steht (s.u.).
+# IMPORTANT - WHAT IS DELETED:
+#   COMM = comment (almost always an uploader/release-group signature) -> clear
+#   TENC = encoded by, TSSE = encoder settings (rip tool) -> clear
+#   WXXX/WCOM/WOAF/WPUB = URL frames (source links) -> clear
+#   TOWN = file owner -> clear
+#   TXXX = user-defined free-text frames: only deleted if the description name
+#          is NOT on the protection list (see below).
 #
-# WAS GESCHUETZT BLEIBT (NIE angefasst) - inhaltlich wertvolle Tags, die bei
-# dieser Library in TXXX stecken: MusicBrainz-IDs und ReplayGain-Werte. Diese
-# duerfen auf KEINEN Fall verloren gehen (Metadaten/Lautstaerke-Normalisierung).
+# WHAT STAYS PROTECTED (NEVER touched) - content-valuable tags that in this
+# library sit in TXXX: MusicBrainz IDs and ReplayGain values. These must on NO
+# account be lost (metadata/loudness normalization).
 _PROVENANCE_FULL_PREFIXES = ("COMM", "TENC", "TSSE", "WXXX",
                              "WCOM", "WOAF", "WPUB", "TOWN")
-# TXXX-Beschreibungen (Teil nach "TXXX:"), die GESCHUETZT sind (case-insensitiv,
-# als Substring geprueft): alles rund um MusicBrainz und ReplayGain.
+# TXXX descriptions (the part after "TXXX:") that are PROTECTED (case-insensitive,
+# checked as a substring): everything around MusicBrainz and ReplayGain.
 _TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain")
 
 
 def _is_protected_txxx(frame_key: str) -> bool:
-    """True, wenn ein TXXX-Frame geschuetzt ist (MusicBrainz/ReplayGain)."""
+    """True if a TXXX frame is protected (MusicBrainz/ReplayGain)."""
     ks = str(frame_key)
     if not ks.upper().startswith("TXXX"):
         return False
@@ -59,27 +59,26 @@ def _is_protected_txxx(frame_key: str) -> bool:
 
 def strip_provenance_tags(path: str) -> bool:
     """
-    Entfernt Herkunfts-/Encoder-Frames (COMM/TENC/TSSE/WXXX/... + nicht
-    geschuetzte TXXX) aus einer Audiodatei, laesst alle inhaltlichen Tags
-    unberuehrt - insbesondere TXXX:MusicBrainz* und TXXX:*replaygain*. Verlustfrei
-    (nur Metadaten, kein Re-Encoding). Gibt True zurueck, wenn tatsaechlich etwas
-    entfernt wurde (dann wurde die Datei neu gespeichert), sonst False.
-    Fehler sind nicht fatal (Log + False).
+    Removes provenance/encoder frames (COMM/TENC/TSSE/WXXX/... + non-protected
+    TXXX) from an audio file, leaving all content tags untouched - in
+    particular TXXX:MusicBrainz* and TXXX:*replaygain*. Lossless (metadata only,
+    no re-encoding). Returns True if something was actually removed (then the
+    file was re-saved), otherwise False. Errors are not fatal (log + False).
     """
-    # Direkt die ID3-Tag-Sicht nutzen (nur der Tag-Block, NICHT das Audio) -
-    # robuster als MutagenFile(), das die MPEG-Frames parst und bei leicht
-    # defekten Dateien mit "can't sync to MPEG frame" scheitern wuerde.
+    # Use the ID3 tag view directly (only the tag block, NOT the audio) - more
+    # robust than MutagenFile(), which parses the MPEG frames and would fail on
+    # slightly broken files with "can't sync to MPEG frame".
     try:
         from mutagen.id3 import ID3, ID3NoHeaderError
         try:
             tags = ID3(path)
         except ID3NoHeaderError:
-            return False  # kein ID3-Block -> nichts zu entfernen
+            return False  # no ID3 block -> nothing to remove
         to_delete = []
         for k in list(tags.keys()):
             ku = str(k).upper()
             if ku.startswith("TXXX"):
-                # TXXX nur, wenn NICHT geschuetzt (MusicBrainz/ReplayGain bleiben).
+                # TXXX only if NOT protected (MusicBrainz/ReplayGain stay).
                 if not _is_protected_txxx(k):
                     to_delete.append(k)
             elif ku.startswith(_PROVENANCE_FULL_PREFIXES):
@@ -97,13 +96,13 @@ def strip_provenance_tags(path: str) -> bool:
         logger.warning(t("import.tags.strip_failed", path=path, error=e))
         return False
 
-# Manifest-Cache (pro Prozess einmal laden pro Lauf reicht, aber wir lesen es
-# hier lazy und cachen es simpel).
+# Manifest cache (loading once per process per run is enough, but we read it
+# lazily here and cache it simply).
 _manifest_cache: dict | None = None
 
 
 def _load_manifest() -> dict:
-    """Laedt das charts-download-Manifest (Basename -> Metadaten)."""
+    """Loads the charts-download manifest (basename -> metadata)."""
     global _manifest_cache
     if _manifest_cache is not None:
         return _manifest_cache
@@ -120,24 +119,24 @@ def _load_manifest() -> dict:
 
 
 def reload_manifest() -> None:
-    """Erzwingt ein Neuladen des Manifests (zu Beginn jedes Laufs)."""
+    """Forces a reload of the manifest (at the start of every run)."""
     global _manifest_cache
     _manifest_cache = None
 
 
 def _manifest_lookup(path: str) -> dict | None:
     """
-    Sucht die sauberen Metadaten fuer eine Datei anhand des Basenamens.
-    Toleriert slskd-typische numerische Suffixe (z.B.
-    'Stargazing_639241038209671901.mp3'), damit dieselbe Datei von
-    verschiedenen Anbietern denselben Manifest-Eintrag findet.
+    Finds the clean metadata for a file by its basename.
+    Tolerates slskd-typical numeric suffixes (e.g.
+    'Stargazing_639241038209671901.mp3') so the same file from different
+    providers finds the same manifest entry.
     """
     entries = _load_manifest()
     base = os.path.basename(path.replace("\\", "/")).lower()
-    # 1. exakter Treffer
+    # 1. exact hit
     if base in entries:
         return entries[base]
-    # 2. ohne slskd-Suffix vor der Endung: 'name_639....mp3' -> 'name.mp3'
+    # 2. without the slskd suffix before the extension: 'name_639....mp3' -> 'name.mp3'
     stripped = re.sub(r"_\d{6,}(\.[a-z0-9]+)$", r"\1", base)
     if stripped != base and stripped in entries:
         return entries[stripped]
@@ -145,21 +144,21 @@ def _manifest_lookup(path: str) -> dict | None:
 
 
 def manifest_lookup(path: str) -> dict | None:
-    """Oeffentlicher Zugriff auf den Manifest-Eintrag einer Datei (oder None)."""
+    """Public access to a file's manifest entry (or None)."""
     return _manifest_lookup(path)
 
-# Zeichen, die in Datei-/Ordnernamen auf den meisten Dateisystemen Probleme
-# machen. Werden durch Unterstriche ersetzt.
+# Characters that cause problems in file/folder names on most file systems.
+# They are replaced with underscores.
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def _clean_component(value: str, fallback: str) -> str:
-    """Bereinigt einen einzelnen Pfad-Bestandteil (Ordner- oder Dateiname)."""
+    """Cleans a single path component (folder or file name)."""
     value = (value or "").strip()
     if not value:
         value = fallback
-    # Ungueltige Zeichen ersetzen, Mehrfach-Leerzeichen zusammenfassen,
-    # abschliessende Punkte/Leerzeichen entfernen (Windows/SMB-Kompatibilitaet).
+    # Replace invalid characters, collapse multiple spaces, remove trailing
+    # dots/spaces (Windows/SMB compatibility).
     value = _INVALID_CHARS.sub("_", value)
     value = re.sub(r"\s+", " ", value).strip()
     value = value.rstrip(". ")
@@ -167,7 +166,7 @@ def _clean_component(value: str, fallback: str) -> str:
 
 
 def _first_tag(audio, *keys) -> str:
-    """Liefert den ersten vorhandenen Tag-Wert aus einer Liste moeglicher Keys."""
+    """Returns the first present tag value from a list of possible keys."""
     for key in keys:
         try:
             value = audio.get(key)
@@ -175,7 +174,7 @@ def _first_tag(audio, *keys) -> str:
             value = None
         if not value:
             continue
-        # mutagen liefert je nach Format Listen oder Strings.
+        # mutagen returns lists or strings depending on the format.
         if isinstance(value, list):
             value = value[0] if value else ""
         text = str(value).strip()
@@ -186,22 +185,22 @@ def _first_tag(audio, *keys) -> str:
 
 def read_metadata(path: str) -> tuple[str, str, str, bool]:
     """
-    Liefert (artist, album, title, from_manifest).
+    Returns (artist, album, title, from_manifest).
 
-    Reihenfolge:
-      1. Manifest (saubere Chart-Metadaten von charts-download) -> bevorzugt.
-      2. Datei-Tags (mutagen).
-      3. Fallback auf Dateiname / "Unknown ...".
+    Order:
+      1. Manifest (clean chart metadata from charts-download) -> preferred.
+      2. File tags (mutagen).
+      3. Fallback to the file name / "Unknown ...".
 
-    from_manifest=True signalisiert, dass die Werte aus dem Manifest stammen und
-    daher auch in die Datei-Tags geschrieben werden sollten.
+    from_manifest=True signals that the values come from the manifest and
+    should therefore also be written into the file tags.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
 
-    # 1. Manifest bevorzugen. WICHTIG: Die ORIGINAL-Werte (fuer die Tags)
-    # zurueckgeben, nicht die pfad-bereinigten - sonst wuerde z.B. "HUNTR/X"
-    # als Tag "HUNTR_X" gespeichert und charts-sync koennte es nicht matchen.
-    # Die Pfad-Bereinigung passiert erst in build_target_path.
+    # 1. Prefer the manifest. IMPORTANT: return the ORIGINAL values (for the
+    # tags), not the path-cleaned ones - otherwise e.g. "HUNTR/X" would be
+    # stored as the tag "HUNTR_X" and charts-sync could not match it. The path
+    # cleaning happens only in build_target_path.
     m = _manifest_lookup(path)
     if m and m.get("artist") and m.get("title"):
         artist = (m.get("artist") or "").strip() or "Unknown Artist"
@@ -209,7 +208,7 @@ def read_metadata(path: str) -> tuple[str, str, str, bool]:
         album = (m.get("album") or m.get("title") or "").strip() or title
         return artist, album, title, True
 
-    # 2. Datei-Tags
+    # 2. File tags
     artist = album = title = ""
     try:
         audio = MutagenFile(path, easy=True)
@@ -230,15 +229,15 @@ def read_metadata(path: str) -> tuple[str, str, str, bool]:
 def write_tags(path: str, artist: str, title: str, album: str,
                year=None) -> None:
     """
-    Schreibt Artist/Titel/Album in die Datei-Tags (nur fuer Manifest-Treffer).
-    Fehler werden geloggt, aber nicht weitergereicht - der Import soll auch
-    dann gelingen, wenn das Tag-Schreiben fehlschlaegt.
+    Writes artist/title/album into the file tags (only for manifest hits).
+    Errors are logged but not propagated - the import should succeed even if
+    the tag writing fails.
 
-    year = optionales Erscheinungsjahr aus dem Manifest (z.B. "1987"). Ist es
-    gesetzt, wird es als date/originaldate-Tag geschrieben, damit die
-    Dekaden-Smart-Playlists in Navidrome den Song der richtigen Dekade zuordnen.
-    Fehlt year (None/""), bleiben die Datum-Tags unangetastet -> Verhalten wie
-    bisher (kein Ueberschreiben vorhandener Jahre mit Leerwert).
+    year = optional release year from the manifest (e.g. "1987"). If set, it is
+    written as date/originaldate tags so the decade smart playlists in Navidrome
+    assign the song to the right decade. If year is missing (None/""), the date
+    tags stay untouched -> behavior as before (no overwriting of existing years
+    with an empty value).
     """
     try:
         audio = MutagenFile(path, easy=True)
@@ -255,30 +254,29 @@ def write_tags(path: str, artist: str, title: str, album: str,
         audio.save()
     except Exception as e:
         logger.warning(t("import.tags.write_failed", path=path, error=e))
-    # Herkunfts-/Encoder-Frames (fre:ac-Kommentar, TENC/TSSE/TXXX ...) entfernen,
-    # damit keine Quellen-Spuren in der Library landen. Separat nach dem
-    # Easy-Save, weil der Easy-Modus diese Frames nicht loeschen kann.
+    # Remove provenance/encoder frames (fre:ac comment, TENC/TSSE/TXXX ...) so
+    # no source traces land in the library. Separate, after the easy-save,
+    # because the easy mode cannot delete these frames.
     strip_provenance_tags(path)
 
 
 def canonical_artist(music_dir: str, artist: str) -> str | None:
     """
-    Liefert die KANONISCHE Kuenstler-Schreibweise = der echte Basename eines
-    bereits vorhandenen Kuenstler-Ordners unter music_dir (CASE-INSENSITIV
-    gesucht), oder None, wenn der Kuenstler noch nicht existiert.
+    Returns the CANONICAL artist spelling = the real basename of an
+    already-present artist folder under music_dir (searched CASE-INSENSITIVELY),
+    or None if the artist does not exist yet.
 
-    Grund: Manifest-/Tag-Werte koennen eine abweichende Gross-/Kleinschreibung
-    tragen (z.B. ein alter 'rod stewart'-Manifest-Eintrag), waehrend die Library
-    den Kuenstler schon als 'Rod Stewart' fuehrt. Ohne diese Aufloesung entstuende
-    auf case-sensitiven Dateisystemen (ext4) ein zweiter Ordner 'rod stewart'.
-    Dies greift fuer ALLE Dienste, die charts-import nutzt (songrequest, sync,
-    download) - nicht nur fuer manuelle Requests.
+    Reason: manifest/tag values can carry a different casing (e.g. an old 'rod
+    stewart' manifest entry) while the library already keeps the artist as 'Rod
+    Stewart'. Without this resolution a second folder 'rod stewart' would arise
+    on case-sensitive file systems (ext4). This applies to ALL services that use
+    charts-import (songrequest, sync, download) - not only for manual requests.
     """
     safe_artist = _clean_component(artist, "")
     if not safe_artist or not music_dir or not os.path.isdir(music_dir):
         return None
-    # 1. Exakter Ordner vorhanden -> echten Basename vom FS holen (nicht den
-    #    konstruierten Pfad, der auf case-insensitiven FS die Eingabe spiegelt).
+    # 1. Exact folder present -> get the real basename from the FS (not the
+    #    constructed path, which on case-insensitive FS mirrors the input).
     target = safe_artist.lower()
     try:
         for name in os.listdir(music_dir):
@@ -291,11 +289,11 @@ def canonical_artist(music_dir: str, artist: str) -> str | None:
 
 def _looks_uppercase(artist: str, title: str) -> bool:
     """
-    True, wenn Artist ODER Titel 'verdaechtig GROSS' ist (mind. ein Buchstabe,
-    komplett Grossschreibung, laenger als 3 Zeichen). Kurze echte Akronyme wie
-    'U2', 'ABBA', 'INXS' sollen NICHT ausloesen, wenn der Rest sauber ist -
-    daher die Laengenschwelle und die ODER-Logik nur als Verdachts-Gate (die
-    eigentliche Entscheidung faellt die Deezer-Validierung).
+    True if the artist OR title is 'suspiciously UPPERCASE' (at least one
+    letter, fully uppercase, longer than 3 characters). Short real acronyms like
+    'U2', 'ABBA', 'INXS' should NOT trigger if the rest is clean - hence the
+    length threshold and the OR logic only as a suspicion gate (the actual
+    decision is made by the Deezer validation).
     """
     for s in (artist, title):
         s = (s or "").strip()
@@ -306,14 +304,14 @@ def _looks_uppercase(artist: str, title: str) -> bool:
 
 def _canonicalize(artist: str, title: str) -> tuple[str, str]:
     """
-    Loest die kanonische (Mixed-Case-)Schreibweise ueber Deezer auf. Lazy-Import
-    des deezer-Moduls, damit tags.py ohne httpx/Netz importierbar bleibt und ein
-    Fehler nie den Import blockiert (Fallback: unveraenderte Rohwerte).
+    Resolves the canonical (mixed-case) spelling via Deezer. Lazy import of the
+    deezer module so tags.py stays importable without httpx/network and an error
+    never blocks the import (fallback: unchanged raw values).
     """
     try:
         from . import deezer
         return deezer.resolve_canonical(artist, title)
-    except Exception as e:  # Import-/Laufzeitfehler nie fatal
+    except Exception as e:  # import/runtime error never fatal
         logger.debug(t("import.tags.canonicalize_skipped", artist=artist,
                        title=title, error=e))
         return artist, title
@@ -321,41 +319,40 @@ def _canonicalize(artist: str, title: str) -> tuple[str, str]:
 
 def build_target_path(music_dir: str, path: str) -> tuple[str, tuple]:
     """
-    Baut den Zielpfad Music/<Artist>/<Album>/<Track>.<ext>.
+    Builds the target path Music/<Artist>/<Album>/<Track>.<ext>.
 
-    Rueckgabe: (zielpfad, (artist, title, album, from_manifest)) - die
-    Metadaten werden mit zurueckgegeben, damit der Importer bei Manifest-
-    Treffern die Tags in der (kopierten) Datei setzen kann.
+    Returns: (target_path, (artist, title, album, from_manifest)) - the
+    metadata is returned too so the importer can set the tags in the (copied)
+    file on manifest hits.
     """
     artist, album, title, from_manifest = read_metadata(path)
     ext = os.path.splitext(path)[1].lower()
-    # DEEZER-KANONISIERUNG (letzte Instanz): Ist der Manifest-Name noch GROSS/
-    # verdaechtig (durchgerutschter flashback-Rohwert), die offizielle
-    # Mixed-Case-Schreibweise ueber Deezer aufloesen - BEVOR Pfad/Tags gebildet
-    # werden. Nur fuer Manifest-Treffer und nur bei GROSS-Verdacht (spart
-    # API-Last; saubere Namen bleiben unberuehrt). Liefert Deezer keinen
-    # sicheren Treffer, bleibt der Rohwert (unresolved_upper=True -> der Importer
-    # meldet das per Pushover zur manuellen Pruefung, importiert aber trotzdem).
+    # DEEZER CANONICALIZATION (last resort): if the manifest name is still
+    # UPPERCASE/suspicious (a flashback raw value that slipped through), resolve
+    # the official mixed-case spelling via Deezer - BEFORE path/tags are built.
+    # Only for manifest hits and only on UPPERCASE suspicion (saves API load;
+    # clean names stay untouched). If Deezer returns no safe hit, the raw value
+    # stays (unresolved_upper=True -> the importer reports it via Pushover for
+    # manual review but imports anyway).
     unresolved_upper = False
     if from_manifest and _looks_uppercase(artist, title):
         new_artist, new_title = _canonicalize(artist, title)
         if (new_artist, new_title) != (artist, title):
             artist, title = new_artist, new_title
-            # Album war bei Chart-Singles = Titel -> mitziehen, wenn es dem
-            # alten Titel entsprach (sonst Album unveraendert lassen).
+            # Album was = title for chart singles -> carry it along if it
+            # matched the old title (otherwise leave the album unchanged).
             if _looks_uppercase("", album) or album.lower() == title.lower():
                 album = new_title
         else:
             unresolved_upper = True
-    # KANONISCHE Kuenstler-Schreibweise erzwingen: existiert der Kuenstler
-    # bereits (egal in welcher Schreibweise), dessen echten Ordnernamen nehmen -
-    # fuer Pfad UND Tag. Verhindert Dubletten wie 'rod stewart' neben
-    # 'Rod Stewart' und sorgt dafuer, dass die etablierte Schreibweise gewinnt,
-    # egal was Manifest/Tags sagen.
+    # Enforce the CANONICAL artist spelling: if the artist already exists (in
+    # whatever casing), take its real folder name - for the path AND the tag.
+    # Prevents duplicates like 'rod stewart' next to 'Rod Stewart' and makes the
+    # established spelling win, no matter what the manifest/tags say.
     canon = canonical_artist(music_dir, artist)
     if canon:
         artist = canon
-    # Pfad-Bestandteile bereinigen (Dateisystem-sicher), Tags behalten Original.
+    # Clean the path components (file-system-safe), tags keep the original.
     safe_artist = _clean_component(artist, "Unknown Artist")
     safe_album = _clean_component(album, "Unknown Album")
     track_name = _clean_component(title, "track") + ext

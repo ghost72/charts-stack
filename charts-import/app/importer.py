@@ -1,15 +1,15 @@
 """
-Import-Logik: sortiert fertige slskd-Downloads in die Navidrome-Library ein.
+Import logic: files finished slskd downloads into the Navidrome library.
 
-Ablauf:
-  1. DOWNLOADS_DIR rekursiv nach Audiodateien scannen.
-  2. Nur Dateien beruecksichtigen, die "stabil" sind (seit MIN_AGE_SECONDS nicht
-     mehr veraendert) - so werden halbfertige Downloads nicht einsortiert.
-  3. Zielpfad Music/<Artist>/<Album>/<Track>.<ext> aus den Tags bilden.
-  4. Datei kopieren (COPY_MODE=1) oder verschieben (COPY_MODE=0).
-     Beim Kopieren bleibt das Original im Downloads-Ordner, damit slskd es
-     eine Weile weiterteilen kann (Seeden).
-  5. Bereits vorhandene Ziele werden nicht ueberschrieben (idempotent).
+Flow:
+  1. Scan DOWNLOADS_DIR recursively for audio files.
+  2. Only consider files that are "stable" (not changed for MIN_AGE_SECONDS) -
+     so half-finished downloads are not filed in.
+  3. Build the target path Music/<Artist>/<Album>/<Track>.<ext> from the tags.
+  4. Copy the file (COPY_MODE=1) or move it (COPY_MODE=0).
+     When copying, the original stays in the downloads folder so slskd can keep
+     sharing it for a while (seeding).
+  5. Already-present targets are not overwritten (idempotent).
 """
 
 import json
@@ -26,22 +26,22 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# charts-flashback-Jahr-Map (artist|title -> Jahr). charts-flashback schreibt
-# sie (siehe dessen main.write_year_map); wir lesen sie hier, um das korrekte
-# Erscheinungsjahr als Tag zu setzen, OHNE es je im Datei-/Ordnernamen zu haben.
-# Pfad: im geteilten Charts-Ordner. Einmal pro Lauf lazy geladen.
+# charts-flashback year map (artist|title -> year). charts-flashback writes it
+# (see its main.write_year_map); we read it here to set the correct release
+# year as a tag WITHOUT ever having it in the file/folder name. Path: in the
+# shared charts folder. Loaded lazily once per run.
 _YEAR_MAP_FILE = os.path.join(config.DOWNLOADS_DIR, ".charts-flashback-years.json")
 _year_map: dict | None = None
 
-# Import-Log (JSON Lines) fuer die Tageszusammenfassung (charts-digest). Pro
-# wirklich einsortiertem Song eine Zeile {ts, source, artist, title}. Append-
-# only; charts-digest liest es und filtert aufs Zeitfenster. Liegt im geteilten
-# Charts-Ordner, den auch charts-digest sieht.
+# Import log (JSON Lines) for the daily summary (charts-digest). One line per
+# actually-filed song {ts, source, artist, title}. Append-only; charts-digest
+# reads it and filters to the time window. Sits in the shared charts folder
+# that charts-digest also sees.
 _IMPORT_LOG_FILE = os.path.join(config.DOWNLOADS_DIR, ".charts-imported-log.jsonl")
 
 
 def _append_import_log(source: str, artist: str, title: str) -> None:
-    """Haengt EINEN Import-Eintrag ans JSONL-Log an. Fehler sind nicht fatal."""
+    """Appends ONE import entry to the JSONL log. Errors are not fatal."""
     try:
         rec = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -70,8 +70,8 @@ def _load_year_map() -> dict:
 
 
 def _flashback_year(artist: str, title: str) -> str:
-    """Jahr aus der charts-flashback-Jahr-Map (key = lowercase 'artist|title').
-    Leer, wenn der Song nicht aus flashback stammt / kein Jahr bekannt ist."""
+    """Year from the charts-flashback year map (key = lowercase 'artist|title').
+    Empty if the song is not from flashback / no year is known."""
     key = f"{(artist or '').lower()}|{(title or '').lower()}"
     val = _load_year_map().get(key, "")
     return str(val) if val else ""
@@ -79,13 +79,13 @@ def _flashback_year(artist: str, title: str) -> str:
 
 def _iter_audio_files(root: str):
     """
-    Liefert alle Audiodateien unterhalb von root (absolute Pfade).
-    Der Quarantaene-Ordner (REJECTED_DIR) wird ausgeschlossen, damit abgelehnte
-    Dateien nicht immer wieder geprueft werden.
+    Yields all audio files below root (absolute paths).
+    The quarantine folder (REJECTED_DIR) is excluded so rejected files are not
+    checked over and over.
     """
     rejected_abs = os.path.abspath(config.REJECTED_DIR)
     for dirpath, dirnames, filenames in os.walk(root):
-        # _rejected nicht betreten
+        # do not enter _rejected
         if os.path.abspath(dirpath).startswith(rejected_abs):
             dirnames[:] = []
             continue
@@ -97,14 +97,14 @@ def _iter_audio_files(root: str):
 
 def _rejection_reason(src: str, artist: str) -> str | None:
     """
-    Prueft, ob eine Datei abgelehnt werden soll. Gibt den Grund zurueck
-    (fuer Logging) oder None, wenn sie in Ordnung ist.
+    Checks whether a file should be rejected. Returns the reason (for logging)
+    or None if it is fine.
     """
     if not config.REJECT_ENABLED:
         return None
 
     name = os.path.basename(src.replace("\\", "/")).lower()
-    # Klammern/Zeichen zu Leerzeichen, damit "(lyrics)" als "lyrics" matcht.
+    # Parens/chars to spaces so "(lyrics)" matches as "lyrics".
     cleaned = f" {re.sub(r'[^a-z0-9]+', ' ', name)} "
     for kw in config.REJECT_KEYWORDS:
         if f" {kw.lower().strip()} " in cleaned:
@@ -115,22 +115,22 @@ def _rejection_reason(src: str, artist: str) -> str | None:
         if not a or a == "unknown artist":
             return t("import.reject.no_artist")
 
-    # Zu kurze Dateien = abgebrochene/unvollstaendige Downloads (z.B. 24s-
-    # Fragment). Chart-Singles sind praktisch immer laenger. Wird abgelehnt und
-    # (ueber die rejected-Liste) im charts-download-State freigegeben, damit der
-    # Song neu gesucht wird, bis eine vollstaendige Version kommt.
+    # Too-short files = aborted/incomplete downloads (e.g. a 24s fragment).
+    # Chart singles are practically always longer. Rejected and (via the
+    # rejected list) released in the charts-download state so the song is
+    # searched again until a complete version arrives.
     if config.MIN_DURATION_SECONDS > 0:
         dur = _duration_seconds(src)
         if dur is not None and dur < config.MIN_DURATION_SECONDS:
-            # Kein '<' verwenden: Die Pushover-Meldung wird als HTML gesendet,
-            # ein '<' wuerde als Tag-Anfang interpretiert und der Rest der Zeile
-            # verschluckt. Daher "min" statt "<".
+            # Do not use '<': the Pushover message is sent as HTML, a '<' would
+            # be interpreted as the start of a tag and swallow the rest of the
+            # line. Hence "min" instead of "<".
             return t("import.reject.too_short", duration=f"{dur:.0f}",
                      min=config.MIN_DURATION_SECONDS)
 
-    # Upsampling-/Fake-Bitrate-Pruefung (Frequenz-Cutoff). Konservativ: greift
-    # nur bei hoher BEHAUPTETER Bitrate und deutlich zu niedrigem echten Cutoff.
-    # Nicht messbar -> kein Reject (quality.is_upsampled gibt dann False).
+    # Upsampling/fake-bitrate check (frequency cutoff). Conservative: only kicks
+    # in with a high CLAIMED bitrate and a clearly too-low real cutoff. Not
+    # measurable -> no reject (quality.is_upsampled then returns False).
     if config.REJECT_UPSAMPLED:
         claimed = _read_bitrate(src)
         upsampled, measured, expected = quality.is_upsampled(
@@ -139,7 +139,7 @@ def _rejection_reason(src: str, artist: str) -> str | None:
             min_check_bitrate=config.REJECT_UPSAMPLED_MIN_BITRATE,
         )
         if upsampled:
-            # Kein '<'/'>' im Grund (Pushover-HTML). measured/expected in kHz.
+            # No '<'/'>' in the reason (Pushover HTML). measured/expected in kHz.
             return t("import.reject.upsampled", claimed=claimed,
                      measured=f"{measured:.1f}", expected=f"{expected:.0f}")
 
@@ -147,7 +147,7 @@ def _rejection_reason(src: str, artist: str) -> str | None:
 
 
 def _duration_seconds(path: str) -> float | None:
-    """Laenge der Audiodatei in Sekunden, oder None wenn nicht lesbar."""
+    """Length of the audio file in seconds, or None if not readable."""
     try:
         audio = MutagenFile(path)
         if audio is not None and audio.info is not None:
@@ -158,7 +158,7 @@ def _duration_seconds(path: str) -> float | None:
 
 
 def _quarantine(src: str) -> None:
-    """Verschiebt eine abgelehnte Datei nach REJECTED_DIR (flach, nur Dateiname)."""
+    """Moves a rejected file to REJECTED_DIR (flat, file name only)."""
     try:
         os.makedirs(config.REJECTED_DIR, exist_ok=True)
         target = _unique_target(os.path.join(config.REJECTED_DIR, os.path.basename(src)))
@@ -168,7 +168,7 @@ def _quarantine(src: str) -> None:
 
 
 def _is_stable(path: str, min_age_seconds: int) -> bool:
-    """True, wenn die Datei seit min_age_seconds nicht mehr veraendert wurde."""
+    """True if the file has not changed for min_age_seconds."""
     try:
         mtime = os.path.getmtime(path)
     except OSError:
@@ -177,7 +177,7 @@ def _is_stable(path: str, min_age_seconds: int) -> bool:
 
 
 def _read_bitrate(path: str) -> int:
-    """Bitrate (kbps) einer Audiodatei, 0 wenn nicht lesbar. Fuer Upgrade-Vergleich."""
+    """Bitrate (kbps) of an audio file, 0 if not readable. For the upgrade comparison."""
     try:
         audio = MutagenFile(path)
         if audio is not None and audio.info is not None:
@@ -189,10 +189,10 @@ def _read_bitrate(path: str) -> int:
 
 def _trash(path: str) -> bool:
     """
-    Verschiebt eine ersetzte (schlechtere) Datei in einen datierten Papierkorb
-    unter MUSIC_DIR/.charts-trash/<YYYYMMDD>/ statt sie hart zu loeschen.
-    Reversibel - der Papierkorb kann spaeter manuell geleert werden.
-    Gibt True bei Erfolg zurueck.
+    Moves a replaced (worse) file into a dated trash under
+    MUSIC_DIR/.charts-trash/<YYYYMMDD>/ instead of hard-deleting it.
+    Reversible - the trash can be emptied manually later.
+    Returns True on success.
     """
     try:
         day = time.strftime("%Y%m%d")
@@ -209,8 +209,8 @@ def _trash(path: str) -> bool:
 
 def _unique_target(target: str) -> str:
     """
-    Falls das Ziel schon existiert, wird geprueft, ob es dieselbe Datei ist.
-    Ist es eine andere Datei gleichen Namens, wird ein Zaehler-Suffix angehaengt.
+    If the target already exists, checks whether it is the same file.
+    If it is a different file with the same name, a counter suffix is appended.
     """
     if not os.path.exists(target):
         return target
@@ -222,7 +222,7 @@ def _unique_target(target: str) -> str:
 
 
 def _same_file(a: str, b: str) -> bool:
-    """Grober Gleichheits-Check ueber Groesse (guenstig, ausreichend fuer Dedup)."""
+    """Rough equality check via size (cheap, good enough for dedup)."""
     try:
         return os.path.getsize(a) == os.path.getsize(b)
     except OSError:
@@ -231,26 +231,26 @@ def _same_file(a: str, b: str) -> bool:
 
 def _track_key(filename: str) -> str:
     """
-    Normalisierter Track-Name fuer den Duplikat-Vergleich.
-    Entfernt Endung, (n)-Duplikat-Suffixe und slskd-typische numerische
-    Suffixe (_639241038209671901 = Snowflake-ID), damit derselbe Song
-    unabhaengig vom Quell-Dateinamen erkannt wird. Beispiele:
+    Normalized track name for the duplicate comparison.
+    Removes extension, (n) duplicate suffixes and slskd-typical numeric
+    suffixes (_639241038209671901 = snowflake ID) so the same song is detected
+    regardless of the source file name. Examples:
       'Golden (2).mp3'                       -> 'golden'
       'Stargazing_639241038209671901.mp3'    -> 'stargazing'
       'Myles Smith - Stargazing.flac'        -> 'myles smith - stargazing'
     """
     base = os.path.splitext(os.path.basename(filename))[0]
     base = re.sub(r"\s*\(\d+\)\s*$", "", base)   # (2), (3) ...
-    base = re.sub(r"_\d{6,}$", "", base)          # _<lange Zahl> (slskd-Suffix)
+    base = re.sub(r"_\d{6,}$", "", base)          # _<long number> (slskd suffix)
     return base.strip().lower()
 
 
 def _song_already_present(target: str) -> bool:
     """
-    True, wenn im Ziel-Album-Ordner bereits eine Datei mit demselben
-    Track-Namen liegt (unabhaengig von (n)-Suffix und Endung). Verhindert
-    Mehrfach-Importe desselben Songs von verschiedenen Anbietern IN DENSELBEN
-    Ordner. Fuer die albumuebergreifende Pruefung siehe _song_present_for_artist.
+    True if the target album folder already has a file with the same track
+    name (regardless of (n) suffix and extension). Prevents multiple imports of
+    the same song from different providers INTO THE SAME folder. For the
+    cross-album check see _song_present_for_artist.
     """
     target_dir = os.path.dirname(target)
     if not os.path.isdir(target_dir):
@@ -268,9 +268,9 @@ def _song_already_present(target: str) -> bool:
 
 def _title_key(title: str) -> str:
     """
-    Normalisiert einen SONGTITEL fuer den albumuebergreifenden Vergleich:
-    Kleinschreibung, (feat.../remaster/version/edit)-Zusaetze raus, nur
-    Buchstaben/Ziffern. So matcht 'Into You' gegen 'Into You (Remastered)'.
+    Normalizes a SONG TITLE for the cross-album comparison: lowercase,
+    (feat.../remaster/version/edit) additions removed, letters/digits only.
+    So 'Into You' matches 'Into You (Remastered)'.
     """
     t = (title or "").lower()
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
@@ -281,36 +281,37 @@ def _title_key(title: str) -> str:
 
 def _extract_title_from_filename(filename: str) -> str:
     """
-    Holt den Songtitel aus einem Dateinamen. Behandelt beide Schemata:
+    Gets the song title from a file name. Handles both schemes:
       'Into You.mp3'                                  -> 'Into You'
       'Artist - Album - 01 - Into You.mp3'            -> 'Into You'
       '01 - Into You.mp3'                             -> 'Into You'
-    Nimmt bei ' - '-getrennten Namen den LETZTEN Teil (der Titel steht bei
-    Lidarr-Benennung hinten), sonst den bereinigten ganzen Namen.
+    For ' - '-separated names takes the LAST part (with Lidarr naming the title
+    is at the end), otherwise the cleaned whole name.
     """
     base = os.path.splitext(os.path.basename(filename))[0]
     base = re.sub(r"\s*\(\d+\)\s*$", "", base)   # (2), (3)
-    base = re.sub(r"_\d{6,}$", "", base)          # slskd-Suffix
+    base = re.sub(r"_\d{6,}$", "", base)          # slskd suffix
     if " - " in base:
         base = base.rsplit(" - ", 1)[-1]
-    base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # fuehrende Tracknr.
+    base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # leading track no.
     return base.strip()
 
 
 def _song_present_for_artist(music_dir: str, artist: str, title: str) -> str | None:
     """
-    True (als Pfad), wenn IRGENDWO unter Music/<Artist>/ bereits derselbe Song
-    liegt - egal in welchem Album-Ordner. Deckt den Fall ab, dass Lidarr den
-    Song als Album-Track (z.B. 'Into You (2016)/Artist - Into You - 01 - Into
-    You.mp3') fuehrt, waehrend charts-download ihn als Single ('Into You/Into
-    You.mp3') laedt. Ohne diese Pruefung entstuenden zwei Album-Ordner (Dublette).
+    True (as a path) if the same song already sits SOMEWHERE under
+    Music/<Artist>/ - no matter which album folder. Covers the case where Lidarr
+    keeps the song as an album track (e.g. 'Into You (2016)/Artist - Into You -
+    01 - Into You.mp3') while charts-download loads it as a single ('Into
+    You/Into You.mp3'). Without this check two album folders (duplicate) would
+    arise.
 
-    Vergleicht ueber den normalisierten SONGTITEL (_title_key), damit die
-    unterschiedlichen Datei-/Album-Benennungen keine Rolle spielen. Der
-    Kuenstler-Ordner wird ueber den bereinigten Artist-Namen bestimmt.
-    Rueckgabe: Pfad der bereits vorhandenen Datei, sonst None.
+    Compares via the normalized SONG TITLE (_title_key) so the different
+    file/album namings do not matter. The artist folder is determined via the
+    cleaned artist name.
+    Returns: path of the already-present file, otherwise None.
     """
-    from .tags import _clean_component  # lokal, um Zirkularimport zu vermeiden
+    from .tags import _clean_component  # local, to avoid a circular import
     safe_artist = _clean_component(artist, "Unknown Artist")
     artist_dir = os.path.join(music_dir, safe_artist)
     if not os.path.isdir(artist_dir):
@@ -336,25 +337,25 @@ def _song_present_for_artist(music_dir: str, artist: str, title: str) -> str | N
 
 def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list[dict], list[tuple[str, str]]]":
     """
-    Fuehrt einen Import-Lauf durch.
-    Rueckgabe: (importierte Songs als Tupel
-    (zielpfad, source, artist, title, album, notify_device), abgelehnte
-    Eintraege als Dicts mit path/artist/title/reason). "source" ist das
-    Playlist-Label aus dem Manifest (z.B. "charts", "mundart"), leer wenn
-    unbekannt. "notify_device" ist nur bei manuell via charts-songrequest
-    angeforderten Songs gesetzt (Pushover-Geraet des Users), sonst leer.
+    Runs an import pass.
+    Returns: (imported songs as tuples (target_path, source, artist, title,
+    album, notify_device), rejected entries as dicts with
+    path/artist/title/reason). "source" is the playlist label from the manifest
+    (e.g. "charts", "mundart"), empty if unknown. "notify_device" is only set
+    for songs manually requested via charts-songrequest (the user's Pushover
+    device), otherwise empty.
     """
     if not os.path.isdir(config.DOWNLOADS_DIR):
         logger.warning(t("import.scan.no_downloads_dir", path=config.DOWNLOADS_DIR))
         return [], []
 
-    # Manifest zu Beginn jedes Laufs frisch laden (charts-download aktualisiert
-    # es zwischen den Laeufen).
+    # Load the manifest fresh at the start of every run (charts-download updates
+    # it between runs).
     tags.reload_manifest()
 
     imported: list[tuple[str, str]] = []
     rejected: list[dict] = []
-    flagged_upper: list[tuple[str, str]] = []   # GROSS, von Deezer nicht aufloesbar
+    flagged_upper: list[tuple[str, str]] = []   # UPPERCASE, unresolvable by Deezer
     skipped_no_manifest = 0
     for src in _iter_audio_files(config.DOWNLOADS_DIR):
         if not _is_stable(src, config.MIN_AGE_SECONDS):
@@ -364,32 +365,32 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
         target, meta = tags.build_target_path(config.MUSIC_DIR, src)
         artist, title, album, from_manifest, unresolved_upper = meta
 
-        # Upgrade-Wunsch? charts-songrequest setzt "replace": true im Manifest,
-        # wenn eine bessere Version einer bereits vorhandenen Datei geladen wurde.
+        # Upgrade request? charts-songrequest sets "replace": true in the
+        # manifest when a better version of an already-present file was loaded.
         _m = tags.manifest_lookup(src)
         want_replace = bool(_m and _m.get("replace"))
-        is_upgrade = False   # wird True, wenn eine vorhandene Datei ersetzt wird
+        is_upgrade = False   # becomes True when an existing file is replaced
 
-        # Nur gezielt von charts-download angeforderte Songs importieren
-        # (REQUIRE_MANIFEST). Der Downloads-Ordner enthaelt oft ganze Sampler-/
-        # Album-Ordner, die beim Song-Download von Soulseek mitkamen. Ohne diese
-        # Sperre wuerde charts-import daraus wahllos Tracks einsortieren (z.B.
-        # Compilation-Versionen) - und zwar bei JEDEM Lauf erneut, solange die
-        # Quelldateien im (geteilten) Downloads-Ordner liegen. Mit der Sperre
-        # zaehlt nur, was im Manifest steht (= von charts-download geladen).
+        # Only import songs specifically requested by charts-download
+        # (REQUIRE_MANIFEST). The downloads folder often contains whole sampler/
+        # album folders that came along with the song download from Soulseek.
+        # Without this lock charts-import would file in arbitrary tracks from
+        # them (e.g. compilation versions) - and on EVERY run again, as long as
+        # the source files sit in the (shared) downloads folder. With the lock
+        # only what is in the manifest counts (= loaded by charts-download).
         if config.REQUIRE_MANIFEST and not from_manifest:
             skipped_no_manifest += 1
             logger.debug(t("import.scan.no_manifest_entry", path=src))
             continue
 
-        # Tuersteher: verdaechtige/unbrauchbare Dateien nicht einsortieren,
-        # sondern in Quarantaene verschieben.
+        # Gatekeeper: do not file in suspicious/unusable files, move them to
+        # quarantine instead.
         reason = _rejection_reason(src, artist)
         if reason:
             logger.info(t("import.scan.rejected", reason=reason, path=src))
             _quarantine(src)
-            # Chart-Metadaten (aus dem Manifest) mitgeben, damit der Song im
-            # charts-download-State freigegeben und neu (besser) geladen wird.
+            # Pass along the chart metadata (from the manifest) so the song is
+            # released in the charts-download state and loaded again (better).
             m = tags.manifest_lookup(src)
             rejected.append({
                 "path": src,
@@ -399,42 +400,41 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             })
             continue
 
-        # Schon in der Library?
-        # Wichtig gegen (2)/(3)/(4)-Duplikate: Derselbe Song wird oft von
-        # mehreren Anbietern mit UNTERSCHIEDLICHEN Dateinamen geladen, wuerde
-        # aber im selben Ziel-Album-Ordner landen. Wir pruefen, ob dort schon
-        # eine Datei mit demselben Track-Namen liegt (ignoriert (n)-Suffixe und
-        # Dateiendung), und ueberspringen dann - egal wie die Quelldatei heisst.
-        # Albumuebergreifende Pruefung: Liegt derselbe Song schon irgendwo beim
-        # Kuenstler (Single ODER Lidarr-Album-Track)? Diese Datei ist die
-        # "vorhandene" - Kandidat fuer ein Upgrade oder Grund zum Ueberspringen.
+        # Already in the library?
+        # Important against (2)/(3)/(4) duplicates: the same song is often
+        # loaded from several providers with DIFFERENT file names but would end
+        # up in the same target album folder. We check whether a file with the
+        # same track name is already there (ignores (n) suffixes and extension)
+        # and skip then - no matter what the source file is called.
+        # Cross-album check: does the same song already sit somewhere for the
+        # artist (single OR Lidarr album track)? That file is the "existing"
+        # one - a candidate for an upgrade or a reason to skip.
         existing = _song_present_for_artist(config.MUSIC_DIR, artist, title)
-        # Falls im ZIEL-Ordner selbst schon dieselbe da ist, diesen Pfad nehmen.
+        # If the TARGET folder itself already has the same one, take that path.
         if not existing and _song_already_present(target):
-            existing = target  # markiert "vorhanden" (Pfad nur symbolisch)
+            existing = target  # marks "present" (path only symbolic)
 
         if existing and os.path.isfile(existing):
             old_br = _read_bitrate(existing)
             new_br = _read_bitrate(src)
-            # Qualitaetsvergleich ueber den ECHTEN Frequenz-Cutoff (nicht nur
-            # die evtl. gefaelschte Bitrate): quality_key laesst den gemessenen
-            # Cutoff dominieren, die Bitrate ist nur Tie-Breaker. So wird ein
-            # upgesampelter "320er" NICHT als besser eingestuft als eine ehrliche
-            # Datei - und ein echtes Upgrade (hoeherer Cutoff) wird erkannt,
-            # selbst wenn beide dieselbe Bitrate behaupten.
+            # Quality comparison via the REAL frequency cutoff (not just the
+            # possibly faked bitrate): quality_key lets the measured cutoff
+            # dominate, the bitrate is only a tie-breaker. This way an upsampled
+            # "320" is NOT rated better than an honest file - and a real upgrade
+            # (higher cutoff) is detected even if both claim the same bitrate.
             old_q = quality.quality_key(existing, old_br)
             new_q = quality.quality_key(src, new_br)
             if want_replace and new_q > old_q:
-                # QUALITAETS-UPGRADE: alte Version in Papierkorb, neue an DEREN
-                # Stelle (gleicher Ordner/Name), damit keine Dublette entsteht.
+                # QUALITY UPGRADE: old version to trash, new one in ITS place
+                # (same folder/name) so no duplicate arises.
                 logger.info(t("import.upgrade.replacing", artist=artist, title=title,
                               old_br=old_br, old_q=f"{old_q:.0f}", new_br=new_br,
                               new_q=f"{new_q:.0f}",
                               path=os.path.relpath(existing, config.MUSIC_DIR)))
-                target = existing            # an denselben Ort schreiben
-                _trash(existing)             # alte Version wegsichern
-                is_upgrade = True            # _unique_target ueberspringen
-                # weiter unten wird die neue Datei nach `target` kopiert
+                target = existing            # write to the same location
+                _trash(existing)             # move the old version aside
+                is_upgrade = True            # skip _unique_target
+                # the new file is copied to `target` further below
             else:
                 if want_replace:
                     logger.info(t("import.upgrade.not_better", artist=artist,
@@ -449,7 +449,7 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             logger.debug(t("import.upgrade.already_in_library", path=src))
             continue
 
-        # Beim Upgrade an DENSELBEN Ort schreiben (nicht "(2)" anhaengen).
+        # On an upgrade, write to the SAME location (do not append "(2)").
         if not is_upgrade:
             target = _unique_target(target)
         os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -461,45 +461,45 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             else:
                 shutil.move(src, target)
                 logger.info(t("import.file.moved", src=src, target=target))
-            # Bei Manifest-Treffer: saubere Chart-Tags in die Zieldatei
-            # schreiben, damit Navidrome/charts-sync korrekte Werte sehen.
+            # On a manifest hit: write clean chart tags into the target file so
+            # Navidrome/charts-sync see correct values.
             if from_manifest:
-                # Jahr NICHT aus dem Dateinamen/Titel (das verseuchte frueher
-                # Pfad+Name) - sondern aus der charts-flashback-Jahr-Map, die
-                # artist|title -> Jahr abbildet. So bleibt der Dateiname sauber
-                # (Lidarr-Stil) und nur das Tag traegt das Jahr.
+                # Year NOT from the file name/title (that polluted path+name
+                # before) - but from the charts-flashback year map, which maps
+                # artist|title -> year. This keeps the file name clean
+                # (Lidarr style) and only the tag carries the year.
                 year = _flashback_year(artist, title)
                 tags.write_tags(target, artist, title, album, year=year)
                 logger.info(t("import.file.tags_set", artist=artist, title=title,
                               album=album))
-                # Passendes Cover ueber COVER_SOURCES (iTunes->Deezer) suchen und
-                # einbetten. Bei Chart-Songs (Manifest) das Single-Cover bevorzugen
-                # und ein evtl. vorhandenes Compilation-/Sampler-Cover ersetzen
-                # (steuerbar ueber OVERWRITE_COVER).
+                # Find a matching cover via COVER_SOURCES (iTunes->Deezer) and
+                # embed it. For chart songs (manifest) prefer the single cover
+                # and replace a possibly present compilation/sampler cover
+                # (controllable via OVERWRITE_COVER).
                 if cover.embed_cover(target, artist, title,
                                      overwrite=config.OVERWRITE_COVER):
                     logger.info(t("import.file.cover_embedded", artist=artist, title=title))
-                # Lautstaerke-Normalisierung: ReplayGain-Track-Tag berechnen und
-                # einbetten (verlustfrei; ein RG-faehiger Player regelt die
-                # Wiedergabe). Nur wenn REPLAYGAIN aktiv und ffmpeg vorhanden.
+                # Loudness normalization: compute and embed the ReplayGain track
+                # tag (lossless; an RG-capable player controls playback). Only
+                # if REPLAYGAIN is active and ffmpeg is present.
                 if config.REPLAYGAIN and replaygain.apply_track_gain(target):
                     logger.info(t("import.file.replaygain_set", artist=artist, title=title))
-            # Playlist-Herkunft + optionales Pushover-Zielgeraet aus dem Manifest.
-            # notify_device ist nur bei manuell via charts-songrequest
-            # angeforderten Songs gesetzt -> dann meldet main.py die
-            # Verfuegbarkeit an genau dieses Geraet.
+            # Playlist origin + optional Pushover target device from the
+            # manifest. notify_device is only set for songs manually requested
+            # via charts-songrequest -> then main.py reports availability to
+            # exactly that device.
             m = tags.manifest_lookup(src)
             source = (m or {}).get("source", "") if m else ""
             notify_device = (m or {}).get("notify_device", "") if m else ""
             imported.append((target, source, artist, title, album, notify_device))
-            # Vertrauenswuerdiges Import-Log fuer charts-digest: pro WIRKLICH
-            # einsortiertem Song eine Zeile (Zeit + source + artist/title). So
-            # muss die Tageszusammenfassung nicht ueber mtime/Titel raten -
-            # charts-import weiss hier exakt, was mit welcher Quelle reinkam.
+            # Trustworthy import log for charts-digest: one line per song that
+            # was ACTUALLY filed in (time + source + artist/title). This way the
+            # daily summary does not have to guess via mtime/title - charts-import
+            # knows exactly here what came in and from which source.
             _append_import_log(source, artist, title)
-            # GROSS-Name, den Deezer nicht sicher aufloesen konnte (Alias-
-            # Kuenstler / von FLASHBACK falsch benannter Titel): trotzdem
-            # importiert (keine Luecke), aber zur manuellen Pruefung vormerken.
+            # UPPERCASE name that Deezer could not resolve reliably (alias
+            # artist / title misnamed by FLASHBACK): imported anyway (no gap),
+            # but flagged for manual review.
             if unresolved_upper:
                 flagged_upper.append((artist, title))
                 logger.info(t("import.file.flagged_upper", artist=artist, title=title))

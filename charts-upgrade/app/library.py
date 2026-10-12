@@ -1,15 +1,16 @@
 """
-Library-Scanner: durchsucht die Navidrome-Library nach Dateien mit schlechter
-Qualitaet (niedrige echte Bitrate ODER upgesampelt/gefaelschte Bitrate) und
-liefert die noetigen Metadaten (Artist/Titel) fuer die Ersatz-Suche.
+Library scanner: searches the Navidrome library for files with bad quality
+(low real bitrate OR upsampled/faked bitrate) and provides the necessary
+metadata (artist/title) for the replacement search.
 
-WICHTIG - KONSERVATIV:
-  - Compilation-/Sampler-Ordner werden komplett UEBERSPRUNGEN (kuratierte Alben
-    wie Bravo Hits/Kuschelrock nie track-weise ersetzen). Erkennung ueber die
-    Pfad-Heuristik (matching.is_compilation) PLUS "viele verschiedene Kuenstler
-    im selben Album-Ordner" (Album-Artist-Streuung).
-  - Song-Metadaten primaer aus den Datei-Tags (mutagen), Pfad nur als Fallback.
-  - Der Papierkorb (.charts-trash) und versteckte Ordner werden ausgelassen.
+IMPORTANT - CONSERVATIVE:
+  - Compilation/sampler folders are completely SKIPPED (never replace curated
+    albums like Bravo Hits/Kuschelrock track by track). Detection via the path
+    heuristic (matching.is_compilation) PLUS "many different artists in the
+    same album folder" (album-artist spread).
+  - Song metadata primarily from the file tags (mutagen), path only as a
+    fallback.
+  - The trash (.charts-trash) and hidden folders are skipped.
 """
 
 import logging
@@ -27,14 +28,14 @@ AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".wav", ".alac",
 }
 
-# Ordner, die nie gescannt werden (Papierkorb, Quarantaene, Synology-Index).
-# @eaDir sind Synology-DSM-Index-/Thumbnail-Ordner (enthalten teils Datei-
-# Kopien) - die duerfen NIE analysiert oder "verbessert" werden.
+# Folders that are never scanned (trash, quarantine, Synology index).
+# @eaDir are Synology DSM index/thumbnail folders (sometimes contain file
+# copies) - they must NEVER be analyzed or "improved".
 _SKIP_DIR_NAMES = {".charts-trash", "_rejected", "@eaDir"}
 
 
 def read_bitrate(path: str) -> int:
-    """Bitrate (kbps) einer Audiodatei, 0 wenn nicht lesbar."""
+    """Bitrate (kbps) of an audio file, 0 if not readable."""
     try:
         audio = MutagenFile(path)
         if audio is not None and audio.info is not None:
@@ -46,9 +47,9 @@ def read_bitrate(path: str) -> int:
 
 def _read_artist_title(path: str) -> tuple[str, str]:
     """
-    Liest (artist, title) primaer aus den Datei-Tags (mutagen). Fallback:
-    Kuenstler = Name des Kuenstler-Ordners (music_dir/<Artist>/<Album>/file),
-    Titel = Dateiname ohne Endung/fuehrende Tracknummer.
+    Reads (artist, title) primarily from the file tags (mutagen). Fallback:
+    artist = name of the artist folder (music_dir/<Artist>/<Album>/file),
+    title = file name without extension/leading track number.
     """
     artist = title = ""
     try:
@@ -66,7 +67,7 @@ def _read_artist_title(path: str) -> tuple[str, str]:
         logger.debug(t("upgrade.library.tags_unreadable", path=path, error=e))
 
     if not artist:
-        # Fallback: Kuenstler-Ordner (zwei Ebenen ueber der Datei).
+        # Fallback: artist folder (two levels above the file).
         rel = os.path.relpath(path, config.MUSIC_DIR)
         parts = rel.split(os.sep)
         if len(parts) >= 2 and parts[0] not in (".", ".."):
@@ -74,7 +75,7 @@ def _read_artist_title(path: str) -> tuple[str, str]:
     if not title:
         import re
         base = os.path.splitext(os.path.basename(path))[0]
-        base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # fuehrende Tracknr.
+        base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # leading track no.
         if " - " in base:
             base = base.rsplit(" - ", 1)[-1]
         title = base.strip()
@@ -83,15 +84,15 @@ def _read_artist_title(path: str) -> tuple[str, str]:
 
 def _album_is_compilation(album_dir: str, audio_files: list[str]) -> bool:
     """
-    True, wenn der Album-Ordner eine Compilation ist:
-      - Pfad-Heuristik (matching.is_compilation) trifft, ODER
-      - im Ordner streuen die Kuenstler stark (viele verschiedene artist-Tags
-        = Sampler). Ein regulaeres Album hat ueberwiegend denselben Kuenstler.
+    True if the album folder is a compilation:
+      - the path heuristic (matching.is_compilation) matches, OR
+      - the artists in the folder spread widely (many different artist tags =
+        sampler). A regular album is predominantly the same artist.
     """
     if is_compilation(album_dir):
         return True
 
-    # Kuenstler-Streuung ueber die Tags messen.
+    # Measure artist spread via the tags.
     artists: set[str] = set()
     checked = 0
     for f in audio_files:
@@ -105,10 +106,10 @@ def _album_is_compilation(album_dir: str, audio_files: list[str]) -> bool:
             checked += 1
         except Exception:
             continue
-        if checked >= 12:  # Stichprobe reicht
+        if checked >= 12:  # a sample is enough
             break
-    # Ein "Various Artists"-Tag oder >3 verschiedene Kuenstler im Album =
-    # Compilation. Regulaere Alben haben 1 (ggf. 2 mit Gast) Album-Artists.
+    # A "Various Artists" tag or >3 different artists in the album =
+    # compilation. Regular albums have 1 (possibly 2 with a guest) album artist.
     if any(a in ("various artists", "various", "va", "verschiedene") for a in artists):
         return True
     return len(artists) > 3
@@ -116,12 +117,12 @@ def _album_is_compilation(album_dir: str, audio_files: list[str]) -> bool:
 
 def count_candidates() -> int:
     """
-    Zaehlt, wie viele MP3-Dateien charts-upgrade ueberhaupt pruefen WUERDE -
-    also die Gesamtmenge, gegen die sich der Scan-Fortschritt bemisst. Nutzt
-    EXAKT dieselben Skip-Regeln wie scan() (versteckte/Sonder-Ordner raus,
-    Compilation-Ordner raus, nur .mp3), damit 'geprueft X / Y' stimmig ist.
+    Counts how many MP3 files charts-upgrade WOULD check at all - i.e. the total
+    against which scan progress is measured. Uses EXACTLY the same skip rules as
+    scan() (hidden/special folders out, compilation folders out, only .mp3) so
+    'checked X / Y' is consistent.
 
-    Billiger als scan(): nur os.walk + Endungs-Check, KEINE ffmpeg-Analyse.
+    Cheaper than scan(): only os.walk + extension check, NO ffmpeg analysis.
     """
     if not os.path.isdir(config.MUSIC_DIR):
         return 0
@@ -142,20 +143,20 @@ def count_candidates() -> int:
 
 def _is_bad(path: str) -> tuple[bool, str, int, int, float | None]:
     """
-    Beurteilt eine einzelne Datei.
-    Rueckgabe: (ist_schlecht, grund, bitrate, quality_key_int, cutoff_khz_or_None)
-      grund: "" wenn ok, sonst "niedrige Bitrate (Xkbps)" oder
-             "upgesampelt (echter Cutoff YkHz)".
+    Judges a single file.
+    Returns: (is_bad, reason, bitrate, quality_key_int, cutoff_khz_or_None)
+      reason: "" if ok, otherwise the i18n reason for low bitrate or upsampling
+              (German runtime text, e.g. "niedrige Bitrate (Xkbps)").
     """
     from . import quality
 
     bitrate = read_bitrate(path)
 
-    # 1. Niedrige echte Bitrate.
+    # 1. Low real bitrate.
     if 0 < bitrate < config.BAD_BITRATE:
         return True, t("upgrade.reason.low_bitrate", bitrate=bitrate), bitrate, bitrate, None
 
-    # 2. Upsampling (behauptet hohe Bitrate, echter Cutoff zu niedrig).
+    # 2. Upsampling (claims a high bitrate, real cutoff too low).
     if config.CHECK_UPSAMPLED:
         upsampled, measured, expected = quality.is_upsampled(
             path, bitrate,
@@ -173,18 +174,18 @@ def _is_bad(path: str) -> tuple[bool, str, int, int, float | None]:
 
 def scan(state_seen: dict, max_scan: int):
     """
-    Durchsucht MUSIC_DIR und liefert schlechte Songs.
+    Scans MUSIC_DIR and returns bad songs.
 
-    state_seen: dict {abspath: "mtime:size"} - bereits analysierte Dateien
-      (Cache), damit die teure ffmpeg-Analyse pro Datei nur einmal laeuft.
-    max_scan: max. Anzahl NEUER/geaenderter Dateien, die in diesem Lauf
-      analysiert werden (CPU-Schutz).
+    state_seen: dict {abspath: "mtime:size"} - already-analyzed files (cache),
+      so the expensive ffmpeg analysis runs only once per file.
+    max_scan: max number of NEW/changed files analyzed in this run (CPU
+      protection).
 
-    Rueckgabe: (bad_songs, scanned_count, skipped_compilations)
-      bad_songs: Liste von dicts {path, artist, title, reason, bitrate,
+    Returns: (bad_songs, scanned_count, skipped_compilations)
+      bad_songs: list of dicts {path, artist, title, reason, bitrate,
                  quality_key, cutoff}.
-    Der Cache (state_seen) wird in-place um die neu analysierten Dateien
-    ergaenzt (auch die guten, damit sie nicht erneut geprueft werden).
+    The cache (state_seen) is extended in-place with the newly analyzed files
+    (including the good ones, so they are not checked again).
     """
     if not os.path.isdir(config.MUSIC_DIR):
         logger.warning(t("upgrade.library.music_dir_missing", dir=config.MUSIC_DIR))
@@ -195,7 +196,7 @@ def scan(state_seen: dict, max_scan: int):
     skipped_comp = 0
 
     for dirpath, dirnames, filenames in os.walk(config.MUSIC_DIR):
-        # Versteckte / Sonderordner ueberspringen.
+        # Skip hidden / special folders.
         dirnames[:] = [d for d in dirnames
                        if d not in _SKIP_DIR_NAMES and not d.startswith(".")]
 
@@ -204,19 +205,19 @@ def scan(state_seen: dict, max_scan: int):
         if not audio_files:
             continue
 
-        # Compilation-Ordner komplett ueberspringen.
+        # Completely skip compilation folders.
         if config.SKIP_COMPILATIONS and _album_is_compilation(dirpath, audio_files):
             skipped_comp += len(audio_files)
             logger.debug(t("upgrade.library.compilation_skipped", dir=dirpath))
             continue
 
         for path in audio_files:
-            # Nur MP3 sinnvoll pruefen (Cutoff/Bitrate-Logik ist MP3-orientiert;
-            # FLAC/verlustfrei ist per Definition kein Upgrade-Kandidat).
+            # Only check MP3 (the cutoff/bitrate logic is MP3-oriented;
+            # FLAC/lossless is by definition not an upgrade candidate).
             if os.path.splitext(path)[1].lower() != ".mp3":
                 continue
 
-            # Cache: schon analysiert (unveraendert)? Dann ueberspringen.
+            # Cache: already analyzed (unchanged)? Then skip.
             try:
                 stt = os.stat(path)
                 sig = f"{int(stt.st_mtime)}:{stt.st_size}"
@@ -226,12 +227,12 @@ def scan(state_seen: dict, max_scan: int):
                 continue
 
             if scanned >= max_scan:
-                # Kontingent fuer diesen Lauf erschoepft - Rest im naechsten Lauf.
+                # Quota for this run exhausted - rest in the next run.
                 return bad_songs, scanned, skipped_comp
 
             scanned += 1
             is_bad, reason, bitrate, qkey, cutoff = _is_bad(path)
-            # Cache aktualisieren (auch gute Dateien merken).
+            # Update the cache (also remember good files).
             state_seen[path] = sig
 
             if is_bad:

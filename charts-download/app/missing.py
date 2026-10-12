@@ -1,16 +1,16 @@
 """
-Parser fuer die von charts-sync geschriebene(n) missing-Datei(en).
+Parser for the missing file(s) written by charts-sync.
 
-Format (siehe charts-sync/app/playlist.py -> write_missing):
+Format (see charts-sync/app/playlist.py -> write_missing):
 
-    # Fehlende Chart-Songs (Stand ...)          <- Kommentar-Zeilen mit '#'
+    # Fehlende Chart-Songs (Stand ...)          <- comment lines with '#'
     # ...
-                                                <- Leerzeile
+                                                <- blank line
      12. Ariana Grande - twilight zone          <- "  <pos>. <artist> - <title>"
       1. Remi Wolf - Bottle
 
-Wir extrahieren daraus (position, artist, title). Kommentar- und Leerzeilen
-werden ignoriert.
+From this we extract (position, artist, title). Comment and blank lines are
+ignored.
 """
 
 import logging
@@ -27,8 +27,8 @@ _LINE_RE = re.compile(r"^\s*(\d{1,3})\.\s+(.*\S)\s*$")
 
 def source_label(path: str) -> str:
     """
-    Leitet aus einem missing-Dateipfad ein lesbares Playlist-Label ab, damit
-    Meldungen zeigen koennen, aus welcher Playlist ein Song stammt.
+    Derives a readable playlist label from a missing file path, so messages can
+    show which playlist a song comes from.
 
     /charts/missing.txt           -> "charts"
     /charts/missing-mundart.txt   -> "mundart"
@@ -45,8 +45,8 @@ def source_label(path: str) -> str:
 
 def parse_missing_file(path: str) -> list[tuple[int, str, str]]:
     """
-    Liest eine missing-Datei und liefert (position, artist, title).
-    Zeilen ohne " - " (kein Artist/Title trennbar) werden uebersprungen.
+    Reads a missing file and returns (position, artist, title).
+    Lines without " - " (no separable artist/title) are skipped.
     """
     if not os.path.isfile(path):
         logger.warning(t("download.missing.file_not_found", path=path))
@@ -75,14 +75,13 @@ def parse_missing_file(path: str) -> list[tuple[int, str, str]]:
 
 def load_all(paths: list[str]) -> list[tuple[int, str, str, str]]:
     """
-    Liest mehrere missing-Dateien und fasst sie zusammen (dedupliziert nach
-    normalisiertem "artist|title", damit ein Song aus zwei Charts nur einmal
-    geladen wird). Reihenfolge: nach Chart-Position aufsteigend.
+    Reads multiple missing files and merges them (deduplicated by normalized
+    "artist|title" so a song in two charts is loaded only once). Order:
+    ascending by chart position.
 
-    Liefert (position, artist, title, source). "source" ist das aus dem
-    Dateinamen abgeleitete Playlist-Label (siehe source_label). Kommt ein Song
-    in mehreren Listen vor, gewinnt das erste Vorkommen (in Reihenfolge der
-    paths); dessen Label wird verwendet.
+    Returns (position, artist, title, source). "source" is the playlist label
+    derived from the file name (see source_label). If a song appears in several
+    lists, the first occurrence wins (in order of paths); its label is used.
     """
     from . import config
     from .matching import is_excluded_artist, normalize
@@ -93,9 +92,8 @@ def load_all(paths: list[str]) -> list[tuple[int, str, str, str]]:
     for path in paths:
         label = source_label(path)
         for pos, artist, title in parse_missing_file(path):
-            # Global ausgeschlossene Kuenstler NIE laden (siehe
-            # config.EXCLUDE_ARTISTS). Song wird gar nicht erst in die
-            # Download-Pipeline aufgenommen.
+            # NEVER load globally excluded artists (see config.EXCLUDE_ARTISTS).
+            # The song is not even added to the download pipeline.
             if is_excluded_artist(artist, config.EXCLUDE_ARTISTS):
                 excluded_count += 1
                 logger.info(t("download.missing.artist_excluded", artist=artist, title=title))

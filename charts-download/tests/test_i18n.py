@@ -1,17 +1,17 @@
 """
-i18n-Tests fuer charts-download (Phase 2).
+i18n tests for charts-download (Phase 2).
 
-Der i18n-Loader (app/i18n.py) ist byte-identisch zu charts-sync; die zentrale
-Key-Set-/Platzhalter-Parity ueber die geteilten lang/*.json-Dateien ist bereits
-in charts-sync/tests/test_i18n.py abgedeckt (und deckt damit auch die neuen
-download.*-Keys mit ab). Dieser Satz ergaenzt den Phase-1-Pilot um einen
-de-Golden-Check: mit CHARTS_LANG=de muss die Ausgabe der neuen download.*-Keys
-byte-identisch zur frueheren Hardcode-Ausgabe sein (Regressions-Anker).
+The i18n loader (app/i18n.py) is byte-identical to charts-sync; the central
+key-set/placeholder parity across the shared lang/*.json files is already
+covered in charts-sync/tests/test_i18n.py (and thereby also covers the new
+download.* keys). This set adds a de golden check to the Phase 1 pilot: with
+CHARTS_LANG=de the output of the new download.* keys must be byte-identical to
+the former hardcoded output (regression anchor).
 
-Zusaetzlich eine lokale Parity-Garantie als zweite Verteidigungslinie, damit
-die drei zentralen Dateien auch beim Erweitern dieses Dienstes synchron bleiben.
+Additionally a local parity guarantee as a second line of defense, so the three
+central files stay in sync even when this service is extended.
 
-Alle Tests laufen OHNE Netzwerk/Docker.
+All tests run WITHOUT network/Docker.
 """
 
 import json
@@ -21,7 +21,7 @@ import string
 from app import i18n
 
 
-# Zentrale, ueber alle Dienste geteilte Sprachdateien:
+# Central language files shared across all services:
 # app -> charts-download -> charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
@@ -37,25 +37,25 @@ def _placeholders(template):
             if name is not None}
 
 
-# --- de-Golden: CHARTS_LANG=de reproduziert die frueheren Hardcodes byte-exakt --
+# --- de golden: CHARTS_LANG=de reproduces the former hardcodes byte-exactly --
 
 def test_de_golden_download_strings():
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
-    # Lauf-Start (frueher: "=== charts-download-Lauf gestartet (DRY_RUN=%s) ===").
+    # Run start (formerly: "=== charts-download-Lauf gestartet (DRY_RUN=%s) ===").
     assert (i18n.t("download.run.start", dry_run="1")
             == "=== charts-download-Lauf gestartet (DRY_RUN=1) ===")
-    # Suche-Zeile (frueher: "Suche #%d [%s]: %s - %s").
+    # Search line (formerly: "Suche #%d [%s]: %s - %s").
     assert (i18n.t("download.song.searching", pos=1, source="charts",
                    artist="Artist", title="Title")
             == "Suche #1 [charts]: Artist - Title")
-    # Live-Pushover-Titel mit Emoji (frueher: "\u2b07\ufe0f charts-download").
+    # Live Pushover title with emoji (formerly: "\u2b07\ufe0f charts-download").
     assert i18n.t("download.notify.title_live") == "\u2b07\ufe0f charts-download"
-    # missing-Gesamtzeile (frueher: "missing gesamt: %d eindeutige Songs aus %d Datei(en)").
+    # missing total line (formerly: "missing gesamt: %d eindeutige Songs aus %d Datei(en)").
     assert (i18n.t("download.missing.total", unique=5, files=2)
             == "missing gesamt: 5 eindeutige Songs aus 2 Datei(en)")
 
 
-# --- Lokale Parity-Garantie (zweite Verteidigungslinie) ---------------------
+# --- Local parity guarantee (second line of defense) ------------------------
 
 def test_shipped_key_sets_are_identical():
     key_sets = {c: set(_load_shipped(c)) for c in _SHIPPED}

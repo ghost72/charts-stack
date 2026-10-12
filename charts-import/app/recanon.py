@@ -1,22 +1,22 @@
 """
-Gemeinsame Recanonicalize-Logik fuer GROSS geschriebene flashback-Songs.
+Shared recanonicalize logic for UPPERCASE flashback songs.
 
-Ein GROSS-Name entsteht, wenn Deezer beim Import die kanonische (offizielle)
-Schreibweise nicht liefern konnte (Alias-Kuenstler, von FLASHBACK falsch
-benannte Titel) ODER die Deezer-Suche gerade nicht erreichbar war. Der Song wird
-dann GROSS importiert und zur Pruefung gemerkt.
+An UPPERCASE name arises when Deezer could not provide the canonical (official)
+spelling at import (alias artists, titles misnamed by FLASHBACK) OR the Deezer
+search was unreachable at the time. The song is then imported in UPPERCASE and
+flagged for review.
 
-Dieses Modul bildet den Resolver-Weg einmal ab, damit sowohl das manuelle
-Einmal-Skript (scripts/recanonicalize_flashback.py) als auch der automatische
-Metadaten-Backfill (app/backfill.py) DENSELBEN konservativen Code nutzen:
+This module captures the resolver path once so both the manual one-off script
+(scripts/recanonicalize_flashback.py) and the automatic metadata backfill
+(app/backfill.py) use THE SAME conservative code:
 
-  resolve_canonical() liefert nur bei einem SICHEREN Deezer-Treffer eine neue
-  Schreibweise - sonst bleibt der Song unveraendert (nie raten). Bei einem
-  Treffer werden Library-Ordner/Datei umbenannt, die Tags title/album gesetzt
-  (vorhandenes Jahr bleibt) und der Manifest-Eintrag aktualisiert.
+  resolve_canonical() returns a new spelling only on a RELIABLE Deezer hit -
+  otherwise the song stays unchanged (never guess). On a hit the library
+  folder/file is renamed, the title/album tags are set (an existing year
+  stays) and the manifest entry is updated.
 
-Idempotent: bereits korrigierte (Mixed-Case) Eintraege gelten nicht als
-GROSS-Verdacht; existiert der Zielordner schon, wird nicht ueberschrieben.
+Idempotent: already-corrected (mixed-case) entries do not count as UPPERCASE
+suspects; if the target folder already exists, it is not overwritten.
 """
 
 import logging
@@ -33,16 +33,16 @@ CHOWN_UID, CHOWN_GID = 1027, 100
 
 
 def is_upper(s: str) -> bool:
-    """GROSS-Heuristik: laenger als 3 Zeichen, enthaelt Buchstaben, komplett
-    gross. Kurze Akronyme (ABBA, R.E.M., INXS) fallen bewusst NICHT drunter,
-    wenn sie <= 3 Zeichen sind - laengere echte Akronyme werden von Deezer
-    ohnehin nur dann umbenannt, wenn es eine sichere andere Schreibweise gibt."""
+    """UPPERCASE heuristic: longer than 3 characters, contains letters, fully
+    uppercase. Short acronyms (ABBA, R.E.M., INXS) deliberately do NOT fall
+    under it if they are <= 3 characters - longer real acronyms are renamed by
+    Deezer only when there is a safe alternative spelling anyway."""
     s = (s or "").strip()
     return bool(s) and len(s) > 3 and any(c.isalpha() for c in s) and s == s.upper()
 
 
 def needs_fix(meta: dict) -> bool:
-    """True, wenn ein Manifest-Eintrag ein GROSS-flashback-Verdachtsfall ist."""
+    """True if a manifest entry is an UPPERCASE flashback suspect."""
     if (meta.get("source") or "") != "flashback":
         return False
     return is_upper(meta.get("title") or "") or is_upper(meta.get("artist") or "")
@@ -105,10 +105,10 @@ def _find_audio(album_dir: str, title: str) -> "str | None":
 
 
 def clear_cache_for(items: "list[dict]") -> int:
-    """Invalidiert die Deezer-Cache-Eintraege der uebergebenen Manifest-Metas,
-    damit mit dem aktuellen Matching NEU aufgeloest wird (sonst liefert der
-    Cache evtl. einen alten GROSS-Miss von vor dem Cache-Fix). Rueckgabe: Anzahl
-    entfernter Eintraege."""
+    """Invalidates the Deezer cache entries of the given manifest metas so they
+    are re-resolved with the current matching (otherwise the cache may return an
+    old UPPERCASE miss from before the cache fix). Returns: number of removed
+    entries."""
     try:
         cache = deezer._load_cache()
     except Exception as e:
@@ -131,16 +131,15 @@ def clear_cache_for(items: "list[dict]") -> int:
 def recanonicalize_entry(entries: dict, key: str, meta: dict, music: str,
                          dry_run: bool = False, log=None) -> str:
     """
-    Versucht EINEN GROSS-flashback-Manifest-Eintrag auf die offizielle Deezer-
-    Schreibweise zu korrigieren.
+    Tries to correct ONE UPPERCASE flashback manifest entry to the official
+    Deezer spelling.
 
-    Rueckgabe: "fixed" (sicher korrigiert), "manual" (kein sicherer Deezer-
-    Treffer -> unveraendert gelassen, muss ggf. manuell geprueft werden) oder
-    "noop" (Audiodatei nicht gefunden o.ae.). Aktualisiert bei "fixed" den
-    uebergebenen entries-Dict in place (artist/title); der Aufrufer persistiert
-    das Manifest.
+    Returns: "fixed" (safely corrected), "manual" (no reliable Deezer hit ->
+    left unchanged, may need manual review) or "noop" (audio file not found or
+    similar). On "fixed" updates the given entries dict in place (artist/title);
+    the caller persists the manifest.
 
-    log: optionale Funktion log(fmt, *args) (Default: logger.info).
+    log: optional function log(fmt, *args) (default: logger.info).
     """
     if log is None:
         def log(fmt, *args):
@@ -150,7 +149,7 @@ def recanonicalize_entry(entries: dict, key: str, meta: dict, music: str,
     old_t = (meta.get("title") or "").strip()
     new_a, new_t = deezer.resolve_canonical(old_a, old_t)
     if (new_a, new_t) == (old_a, old_t):
-        return "manual"  # kein sicherer Treffer -> NIE raten
+        return "manual"  # no reliable hit -> NEVER guess
 
     log(t("import.recanon.resolved", old_artist=old_a, old_title=old_t,
           new_artist=new_a, new_title=new_t))

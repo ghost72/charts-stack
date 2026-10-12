@@ -1,6 +1,6 @@
 """
-Konfiguration fuer den charts-download-Service.
-Alle Werte werden aus Umgebungsvariablen gelesen (siehe .env.example).
+Configuration for the charts-download service.
+All values are read from environment variables (see .env.example).
 """
 
 import logging
@@ -20,40 +20,40 @@ def _get_bool(name: str, default: bool) -> bool:
     return os.environ.get(name, "1" if default else "0") == "1"
 
 
-# --- slskd-API ---
-# Basis-URL der slskd-Instanz (im Docker-Netz meist der Containername).
+# --- slskd API ---
+# Base URL of the slskd instance (usually the container name in the Docker net).
 SLSKD_HOST = os.environ.get("SLSKD_HOST", "http://slskd:5030")
-# API-Key aus der slskd.yml (web.authentication.api_keys). Rolle: readwrite.
+# API key from slskd.yml (web.authentication.api_keys). Role: readwrite.
 SLSKD_API_KEY = os.environ.get("SLSKD_API_KEY", "").strip()
-# url_base, falls slskd unter einem Unterpfad laeuft (Standard "/").
+# url_base, in case slskd runs under a sub-path (default "/").
 SLSKD_URL_BASE = os.environ.get("SLSKD_URL_BASE", "/").strip()
 
-# --- Quelle: missing.txt ---
-# Die von charts-sync geschriebene(n) Fehlliste(n). Es koennen mehrere Dateien
-# (semikolon-getrennt) angegeben werden, z.B. Global- und Schweiz-Charts.
+# --- Source: missing.txt ---
+# The missing list(s) written by charts-sync. Multiple files (semicolon-
+# separated) can be given, e.g. global and Switzerland charts.
 MISSING_FILES = [
     p.strip() for p in os.environ.get(
         "MISSING_FILES", "/charts/missing.txt"
     ).split(";") if p.strip()
 ]
 
-# --- Auswahl-Kriterien ---
-# Minimale MP3-Bitrate in kbps. Ergebnisse darunter werden verworfen.
-# (Auf Wunsch: nur MP3 >= 256; FLAC/andere Formate werden ignoriert.)
+# --- Selection criteria ---
+# Minimum MP3 bitrate in kbps. Results below are discarded.
+# (By choice: only MP3 >= 256; FLAC/other formats are ignored.)
 MIN_BITRATE = _get_int("MIN_BITRATE", 256)
 
-# Aehnlichkeitsschwelle 0-100 fuer das Matching von Suchergebnissen gegen
-# "Artist - Titel". Hoeher = strenger. 80 ist ein guter Startwert.
+# Similarity threshold 0-100 for matching search results against
+# "Artist - Title". Higher = stricter. 80 is a good starting point.
 MATCH_THRESHOLD = _get_int("MATCH_THRESHOLD", 80)
 
-# Ausschluss-Keywords: Dateien, deren Name eines dieser Woerter enthaelt, werden
-# komplett verworfen (nur Originalversionen laden - keine Lyrics-Videos,
-# Remixe, Live-, Acapella-, Sped-up-Versionen usw.).
+# Exclude keywords: files whose name contains one of these words are discarded
+# entirely (only load original versions - no lyrics videos, remixes, live,
+# acapella, sped-up versions etc.).
 #
-# Werte in der .env / Umgebung:
-#   - nicht gesetzt ODER leer   -> eingebaute Standardliste (empfohlen)
-#   - "off" / "none"            -> Filter komplett AUS
-#   - "wort1,wort2,..."         -> eigene Liste (ersetzt die Standardliste)
+# Values in .env / the environment:
+#   - unset OR empty            -> built-in default list (recommended)
+#   - "off" / "none"            -> filter completely OFF
+#   - "word1,word2,..."         -> custom list (replaces the default list)
 from .matching import DEFAULT_EXCLUDE_KEYWORDS
 
 _exclude_env = os.environ.get("EXCLUDE_KEYWORDS", "").strip()
@@ -64,62 +64,61 @@ elif _exclude_env:
 else:
     EXCLUDE_KEYWORDS = DEFAULT_EXCLUDE_KEYWORDS
 
-# Global auszuschliessende Kuenstler: Songs dieser Kuenstler werden NIE geladen
-# (egal aus welcher Chart-Quelle/missing-Datei). Ergaenzung zum playlist-
-# spezifischen "exclude_artists" in charts-sync: waehrend jenes nur die
-# Playlist-Referenz verhindert, sorgt DIESE Liste dafuer, dass der Song gar
-# nicht erst heruntergeladen und in die Library gelegt wird. Fuer Kuenstler,
-# die du generell nicht in der Sammlung willst (z.B. Mundart-Schlager wie
-# Trauffer, den die APIs faelschlich als "Pop" fuehren).
-# Werte: kommagetrennt ("Trauffer,Nemo") ODER leer (kein Ausschluss).
-# Vergleich case-insensitiv, trifft auch feat.-Kombinationen.
+# Globally excluded artists: songs by these artists are NEVER loaded (no matter
+# which chart source/missing file). Complements the playlist-specific
+# "exclude_artists" in charts-sync: while that one only prevents the playlist
+# reference, THIS list makes sure the song is never downloaded and placed in
+# the library at all. For artists you generally do not want in the collection
+# (e.g. Mundart Schlager like Trauffer, which the APIs wrongly classify as
+# "Pop").
+# Values: comma-separated ("Trauffer,Nemo") OR empty (no exclusion).
+# Comparison is case-insensitive and also matches feat. combinations.
 EXCLUDE_ARTISTS = [
     a.strip() for a in os.environ.get("EXCLUDE_ARTISTS", "").split(",")
     if a.strip()
 ]
 
-# Compilation-/Sampler-Treffer komplett ablehnen (1) statt nur nachrangig zu
-# behandeln (0). Bei 1 wird ein Song NICHT geladen, wenn nur Compilation-Rips
-# verfuegbar sind (z.B. "Bravo Hits", "Top 100", "Various Artists ...") - er
-# bleibt dann "missing", bis eine echte Single-/Album-Version auftaucht. So
-# bleibt die Library sauber (nur echte Singles/Alben, keine Sampler-Tracks).
-# Bei 0 (altes Verhalten) wird die Compilation genommen, wenn es nichts
-# Besseres gibt. Die Compilation-Erkennung ist eine Pfad-Heuristik
-# (is_compilation), kein sicheres Signal.
+# Reject compilation/sampler hits entirely (1) instead of only treating them as
+# lower priority (0). With 1 a song is NOT loaded if only compilation rips are
+# available (e.g. "Bravo Hits", "Top 100", "Various Artists ...") - it then
+# stays "missing" until a real single/album version shows up. This keeps the
+# library clean (only real singles/albums, no sampler tracks). With 0 (old
+# behavior) the compilation is taken if there is nothing better. Compilation
+# detection is a path heuristic (is_compilation), not a reliable signal.
 REJECT_COMPILATIONS = _get_bool("REJECT_COMPILATIONS", False)
 
-# --- Mengensteuerung / Sicherheit ---
-# Wie viele Songs pro Lauf maximal heruntergeladen (bzw. im Dry-Run geplant)
-# werden. Bewusst konservativ, damit nicht auf einen Schlag alles losgeht.
+# --- Volume control / safety ---
+# How many songs are downloaded (or, in dry-run, planned) at most per run.
+# Deliberately conservative so things do not all kick off at once.
 MAX_PER_RUN = _get_int("MAX_PER_RUN", 10)
 
-# DRY_RUN=1: NICHTS wird heruntergeladen. Es wird nur geloggt/benachrichtigt,
-#   was geladen WUERDE (zum Pruefen der Matching-Qualitaet). STANDARD.
-# DRY_RUN=0: Downloads werden tatsaechlich per slskd-API angestossen.
+# DRY_RUN=1: NOTHING is downloaded. It only logs/notifies what WOULD be loaded
+#   (to check the matching quality). DEFAULT.
+# DRY_RUN=0: downloads are actually triggered via the slskd API.
 DRY_RUN = _get_bool("DRY_RUN", True)
 
-# --- Suche ---
-# Timeout einer einzelnen slskd-Suche in ms.
+# --- Search ---
+# Timeout of a single slskd search in ms.
 SEARCH_TIMEOUT_MS = _get_int("SEARCH_TIMEOUT_MS", 15000)
-# Wie lange (Sekunden) maximal auf den Abschluss einer Suche gewartet wird.
+# How long (seconds) at most to wait for a search to complete.
 SEARCH_WAIT_SECONDS = _get_int("SEARCH_WAIT_SECONDS", 25)
-# Nur Nutzer mit freiem Upload-Slot beruecksichtigen (schnellere Downloads).
+# Only consider users with a free upload slot (faster downloads).
 REQUIRE_FREE_SLOT = _get_bool("REQUIRE_FREE_SLOT", True)
 
-# Cooldown (Stunden) fuer erfolglose Suchen. Ein Song, der gesucht, aber nicht
-# in ausreichender Qualitaet gefunden wurde, wird fuer so viele Stunden
-# uebersprungen. Verhindert, dass dauerhaft nicht-findbare Songs (z.B. viele
-# Mundart-Titel) in JEDEM Lauf das MAX_PER_RUN-Kontingent blockieren und die
-# findbaren Songs nie drankommen. Nach Ablauf wird erneut versucht.
-# 0 = kein Cooldown (jeden Lauf erneut suchen, altes Verhalten).
+# Cooldown (hours) for unsuccessful searches. A song that was searched for but
+# not found in sufficient quality is skipped for this many hours. Prevents
+# permanently unfindable songs (e.g. many Mundart titles) from blocking the
+# MAX_PER_RUN quota on EVERY run and never letting the findable songs through.
+# After it expires the search is retried.
+# 0 = no cooldown (search again every run, old behavior).
 SEARCH_COOLDOWN_HOURS = _get_int("SEARCH_COOLDOWN_HOURS", 24)
 
-# Verfall (Tage) der Anbieter-Blockliste pro Song. charts-import merkt sich,
-# welcher Soulseek-Anbieter fuer einen Song eine schlechte/upgesampelte Datei
-# geliefert hat (State: blocked_providers). Dieser Anbieter wird fuer GENAU
-# DIESEN Song so lange uebersprungen. Nach Ablauf bekommt er wieder eine Chance
-# (evtl. hat er seine Datei inzwischen durch eine bessere ersetzt).
-# 0 = nie verfallen (dauerhaft geblockt, bis manuell entfernt).
+# Expiry (days) of the per-song provider block list. charts-import remembers
+# which Soulseek provider delivered a bad/upsampled file for a song (state:
+# blocked_providers). That provider is skipped for EXACTLY THIS song for that
+# long. After expiry it gets another chance (it may have replaced its file with
+# a better one in the meantime).
+# 0 = never expire (blocked permanently until removed manually).
 BLOCK_TTL_DAYS = _get_int("BLOCK_TTL_DAYS", 30)
 
 # --- Scheduler ---
@@ -127,27 +126,27 @@ INTERVAL_MINUTES = _get_int("INTERVAL_MINUTES", 60)
 RUN_ON_START = _get_bool("RUN_ON_START", True)
 
 # --- State ---
-# Datei, in der bereits angefragte Songs vermerkt werden (keine Doppel-Downloads).
+# File that records already-requested songs (no duplicate downloads).
 STATE_FILE = os.environ.get("STATE_FILE", "/charts/.charts-download-state.json")
 
 # --- Manifest ---
-# Datei, in der pro Download die sauberen Chart-Metadaten (Artist/Titel)
-# hinterlegt werden. charts-import liest sie und taggt die Datei korrekt,
-# statt die schlechten slskd-Tags zu uebernehmen. MUSS im selben (geteilten)
-# Ordner liegen, den auch charts-import als /charts sieht.
+# File that stores the clean chart metadata (artist/title) per download.
+# charts-import reads it and tags the file correctly instead of adopting the
+# bad slskd tags. MUST sit in the same (shared) folder that charts-import sees
+# as /charts.
 MANIFEST_FILE = os.environ.get("MANIFEST_FILE", "/charts/.charts-manifest.json")
 
 # --- Pushover (optional) ---
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
-# Pushover fuer diesen Dienst global stummschalten (ohne Token/User zu loeschen).
+# Mute Pushover globally for this service (without deleting token/user).
 PUSHOVER_ENABLED = os.environ.get("PUSHOVER_ENABLED", "1") == "1"
 PUSHOVER_DEVICE = os.environ.get("PUSHOVER_DEVICE", "").strip()
-# Cache-Dauer (Sekunden) fuer die vom Pushover-Account abgerufene Geräteliste.
-# Gegen die wird die PUSHOVER_DEVICE-Liste vor dem Senden gefiltert, damit ein
-# ungültiger/deaktivierter Gerätename nicht Pushovers "an alle"-Fallback
-# ausloest (Doppel-Push). Standard 3600s = 1h.
+# Cache duration (seconds) for the device list fetched from the Pushover
+# account. The PUSHOVER_DEVICE list is filtered against it before sending, so
+# an invalid/disabled device name does not trigger Pushover's "send to all"
+# fallback (double push). Default 3600s = 1h.
 PUSHOVER_DEVICES_TTL = _get_int("PUSHOVER_DEVICES_TTL", 3600)
-# Pushover-Benachrichtigungston. Leer = Account-Default (kein sound-Feld im
-# Request). Default fuer charts-download: "falling".
+# Pushover notification sound. Empty = account default (no sound field in the
+# request). Default for charts-download: "falling".
 PUSHOVER_SOUND = os.environ.get("PUSHOVER_SOUND", "falling").strip()

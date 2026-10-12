@@ -1,20 +1,19 @@
 """
-Optionale Lidarr-Integration.
+Optional Lidarr integration.
 
-Zweck: Chart-Single-Kuenstler in Lidarr auf "unmonitored" halten, damit Lidarr
-sie zwar kennt (und taggen kann), aber NICHT ihren kompletten Katalog
-herunterlaedt. So kann das Standard-Monitoring in Lidarr fuer deine echten
-Alben/Compilations aktiviert bleiben, waehrend die Charts-Singles davon
-ausgenommen werden.
+Purpose: keep chart single artists in Lidarr "unmonitored" so Lidarr knows
+(and can tag) them but does NOT download their complete catalog. This way the
+default monitoring in Lidarr can stay enabled for your real albums/compilations
+while the chart singles are exempted.
 
-Ablauf pro neu importiertem Kuenstler (nach dem charts-import-Lauf):
-  1. Kuenstler in Lidarr suchen (GET /api/v1/artist, Name-Match).
-     - gefunden  -> auf monitored=false setzen (+ Alben unmonitoren)
-     - nicht da  -> optional per API neu anlegen, direkt unmonitored
-  2. So grabbt Lidarr fuer diese Kuenstler nichts automatisch.
+Flow per newly imported artist (after the charts-import run):
+  1. Search for the artist in Lidarr (GET /api/v1/artist, name match).
+     - found     -> set monitored=false (+ unmonitor albums)
+     - not there -> optionally create via API, directly unmonitored
+  2. This way Lidarr grabs nothing automatically for these artists.
 
-Nur aktiv, wenn LIDARR_URL + LIDARR_API_KEY gesetzt sind (sonst stiller No-op).
-Alle Fehler werden nur geloggt und beeintraechtigen den Import NICHT.
+Only active if LIDARR_URL + LIDARR_API_KEY are set (otherwise a quiet no-op).
+All errors are only logged and do NOT affect the import.
 """
 
 import logging
@@ -29,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _norm(text: str) -> str:
-    """Robuster Namensvergleich: Akzente weg, klein, nur alphanumerisch."""
+    """Robust name comparison: accents removed, lowercase, alphanumeric only."""
     if not text:
         return ""
     text = unicodedata.normalize("NFKD", text.lower())
@@ -46,7 +45,7 @@ def _client() -> httpx.Client:
 
 
 def _find_artist(client: httpx.Client, artist_name: str) -> dict | None:
-    """Sucht einen bereits in Lidarr vorhandenen Kuenstler per Namensvergleich."""
+    """Searches an artist already present in Lidarr by name comparison."""
     resp = client.get("/api/v1/artist")
     resp.raise_for_status()
     target = _norm(artist_name)
@@ -58,9 +57,9 @@ def _find_artist(client: httpx.Client, artist_name: str) -> dict | None:
 
 def _lookup_artist(client: httpx.Client, artist_name: str) -> dict | None:
     """
-    Loest einen Kuenstler ueber die MusicBrainz-Suche auf (fuer Neuanlage).
-    Nimmt den ersten Treffer mit exaktem (normalisiertem) Namensmatch, sonst
-    den ersten Treffer.
+    Resolves an artist via the MusicBrainz search (for new creation).
+    Takes the first hit with an exact (normalized) name match, otherwise the
+    first hit.
     """
     resp = client.get("/api/v1/artist/lookup", params={"term": artist_name})
     resp.raise_for_status()
@@ -75,23 +74,23 @@ def _lookup_artist(client: httpx.Client, artist_name: str) -> dict | None:
 
 
 def _unmonitor_albums(client: httpx.Client, artist_id: int) -> int:
-    """Setzt alle Alben eines Kuenstlers auf unmonitored. Gibt Anzahl zurueck."""
+    """Sets all of an artist's albums to unmonitored. Returns the count."""
     resp = client.get("/api/v1/album", params={"artistId": artist_id})
     resp.raise_for_status()
     album_ids = [al["id"] for al in resp.json() if al.get("monitored")]
     if not album_ids:
         return 0
-    # Lidarr-Bulk-Endpoint: mehrere Alben in einem Call unmonitoren.
+    # Lidarr bulk endpoint: unmonitor several albums in one call.
     client.put("/api/v1/album/monitor",
                json={"albumIds": album_ids, "monitored": False}).raise_for_status()
     return len(album_ids)
 
 
 def _set_unmonitored(client: httpx.Client, artist: dict) -> None:
-    """Setzt einen vorhandenen Kuenstler auf unmonitored (Artist + Alben)."""
+    """Sets an existing artist to unmonitored (artist + albums)."""
     if artist.get("monitored"):
         artist["monitored"] = False
-        # monitorNewItems=none: auch kuenftige Releases nicht automatisch wollen.
+        # monitorNewItems=none: do not automatically want future releases either.
         artist["monitorNewItems"] = "none"
         client.put(f"/api/v1/artist/{artist['id']}", json=artist).raise_for_status()
     n = _unmonitor_albums(client, artist["id"])
@@ -100,8 +99,8 @@ def _set_unmonitored(client: httpx.Client, artist: dict) -> None:
 
 def _add_unmonitored(client: httpx.Client, artist_name: str) -> bool:
     """
-    Legt einen neuen Kuenstler in Lidarr an, DIREKT unmonitored, damit Lidarr
-    nichts grabbt. Gibt True bei Erfolg zurueck.
+    Creates a new artist in Lidarr, DIRECTLY unmonitored so Lidarr grabs
+    nothing. Returns True on success.
     """
     if not config.LIDARR_ADD_MISSING:
         logger.debug(t("import.lidarr.add_disabled", artist=artist_name))
@@ -127,10 +126,10 @@ def _add_unmonitored(client: httpx.Client, artist_name: str) -> bool:
 
 def unmonitor_artists(artist_names: list[str]) -> None:
     """
-    Haupt-Einstieg: sorgt dafuer, dass die uebergebenen Kuenstler in Lidarr
-    unmonitored sind (vorhandene setzen, fehlende optional anlegen).
+    Main entry point: ensures the given artists are unmonitored in Lidarr (set
+    existing ones, optionally create missing ones).
 
-    No-op, wenn Lidarr nicht konfiguriert ist. Fehler werden nur geloggt.
+    No-op if Lidarr is not configured. Errors are only logged.
     """
     if not config.LIDARR_UNMONITOR:
         return

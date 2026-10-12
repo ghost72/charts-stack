@@ -1,29 +1,29 @@
 """
-charts-upgrade – Hauptservice.
+charts-upgrade – main service.
 
-Raeumt den ALTBESTAND der Navidrome-Library qualitativ auf: findet Songs mit
-schlechter Qualitaet (niedrige echte Bitrate ODER upgesampelte/gefaelschte
-Bitrate) und sucht bei slskd eine echte bessere Version. Ersetzt wird NUR, wenn
-die neue Datei laut echtem Frequenz-Cutoff wirklich besser ist.
+Cleans up the quality of the Navidrome library's BACK CATALOG: finds songs with
+bad quality (low real bitrate OR upsampled/faked bitrate) and searches slskd
+for a genuinely better version. It only replaces IF the new file is really
+better according to the real frequency cutoff.
 
-Ablauf pro Lauf:
-  1. Library scannen (library.scan) - Compilations werden uebersprungen, die
-     ffmpeg-Cutoff-Analyse ist im State gecacht (pro Datei nur einmal).
-  2. Fuer jeden schlechten Song bei slskd suchen (Anbieter, die frueher eine
-     nicht-bessere Datei lieferten, werden ausgefiltert).
-  3. DRY_RUN=1 (Standard): nur melden, was gefunden/geladen WUERDE.
-     DRY_RUN=0: besten Kandidaten laden, auf Abschluss warten, die geladene
-     Datei per echtem Cutoff mit der vorhandenen vergleichen.
-       - neue Datei besser -> Manifest-Eintrag mit replace=true; charts-import
-         ersetzt die vorhandene Datei (alte in den Papierkorb).
-       - neue Datei NICHT besser -> Anbieter fuer diesen Song blocken, Datei
-         nicht uebernehmen (charts-import laesst sie mangels replace-Upgrade in
-         Ruhe; sie bleibt im Downloads-Ordner und wird spaeter vom
-         charts-import-Cleanup entfernt).
+Flow per run:
+  1. Scan the library (library.scan) - compilations are skipped, the ffmpeg
+     cutoff analysis is cached in the state (once per file).
+  2. Search slskd for each bad song (providers that earlier delivered a
+     non-better file are filtered out).
+  3. DRY_RUN=1 (default): only report what WOULD be found/loaded.
+     DRY_RUN=0: load the best candidate, wait for completion, compare the loaded
+     file against the existing one by real cutoff.
+       - new file better -> manifest entry with replace=true; charts-import
+         replaces the existing file (old one to the trash).
+       - new file NOT better -> block the provider for this song, do not adopt
+         the file (charts-import leaves it alone for lack of a replace upgrade;
+         it stays in the downloads folder and is removed later by the
+         charts-import cleanup).
 
-Stellung in der Kette:
-  charts-upgrade (findet schlechte Altbestand-Songs, laedt Ersatz + Manifest)
-  -> slskd -> /Charts -> charts-import (ersetzt bei echtem Cutoff-Upgrade)
+Position in the chain:
+  charts-upgrade (finds bad back-catalog songs, loads replacement + manifest)
+  -> slskd -> /Charts -> charts-import (replaces on a real cutoff upgrade)
 """
 
 import logging
@@ -39,15 +39,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("charts-upgrade")
 
-# Wie lange (Sekunden) maximal auf den Abschluss eines Downloads gewartet wird,
-# bevor die geladene Datei gemessen werden kann. Konservativ; laeuft der
-# Download laenger, wird er in einem spaeteren Lauf ausgewertet.
+# How long (seconds) at most to wait for a download to complete before the
+# loaded file can be measured. Conservative; if the download takes longer it is
+# evaluated in a later run.
 _DOWNLOAD_WAIT_SECONDS = 180
 _BLOCK_TTL_DAYS = 30
 
 
 def run_once() -> dict:
-    """Fuehrt einen Upgrade-Lauf aus. Rueckgabe: Zaehler fuer das Dashboard."""
+    """Runs an upgrade pass. Returns: counters for the dashboard."""
     logger.info(t("upgrade.run.start", dry_run="1" if config.DRY_RUN else "0"))
 
     if not quality.available():
@@ -55,14 +55,14 @@ def run_once() -> dict:
 
     st = state.load()
 
-    # 1. Library scannen (mit gecachtem Analyse-Ergebnis).
+    # 1. Scan the library (with cached analysis result).
     bad_songs, scanned, skipped_comp = library.scan(st["seen"], config.MAX_SCAN_PER_RUN)
-    state.save(st)  # Analyse-Cache sichern (auch wenn danach nichts geladen wird)
+    state.save(st)  # persist the analysis cache (even if nothing is loaded afterwards)
 
-    # Scan-Fortschritt fuers Dashboard: wie viele MP3s insgesamt pruefbar sind
-    # (scan_total) und wie viele davon schon analysiert wurden (scan_seen).
-    # scan_seen aus dem 'seen'-Cache; auf scan_total deckeln, falls der Cache
-    # verwaiste Eintraege (geloeschte/umbenannte Dateien) enthaelt -> nie >100%.
+    # Scan progress for the dashboard: how many MP3s are checkable in total
+    # (scan_total) and how many of them have already been analyzed (scan_seen).
+    # scan_seen from the 'seen' cache; cap at scan_total in case the cache
+    # contains orphan entries (deleted/renamed files) -> never >100%.
     scan_total = library.count_candidates()
     scan_seen = min(len(st.get("seen", {})), scan_total) if scan_total else 0
 
@@ -75,15 +75,15 @@ def run_once() -> dict:
         return {"scanned": scanned, "bad": 0, "upgraded": 0,
                 "scan_seen": scan_seen, "scan_total": scan_total}
 
-    # 2./3. Ersatz suchen (+ ggf. laden/pruefen/ersetzen).
+    # 2./3. Search for a replacement (+ optionally load/check/replace).
     try:
         client = slsk.connect()
     except slsk.SlskdError as e:
         logger.error(t("upgrade.run.slskd_unreachable", error=e))
         raise
 
-    planned: list[dict] = []    # DRY_RUN / Meldung
-    upgraded: list[dict] = []   # tatsaechlich als Upgrade angestossen
+    planned: list[dict] = []    # DRY_RUN / message
+    upgraded: list[dict] = []   # actually triggered as an upgrade
     processed = 0
 
     for song in bad_songs:
@@ -121,7 +121,7 @@ def run_once() -> dict:
             planned.append({**song, "new_bitrate": new_bitrate})
             continue
 
-        # --- LIVE: laden, auf Abschluss warten, messen, vergleichen ---
+        # --- LIVE: load, wait for completion, measure, compare ---
         chosen = _download_first_working(client, candidates)
         if not chosen:
             logger.warning(t("upgrade.song.no_provider_delivered"))
@@ -132,11 +132,11 @@ def run_once() -> dict:
         local_path = _wait_for_file(client, username, fname)
         if not local_path:
             logger.info(t("upgrade.song.download_not_ready"))
-            # Als angefragt vermerken, damit nicht sofort erneut geladen wird.
+            # Mark as requested so it is not loaded again right away.
             state.mark_requested(st, artist, title, username, fname)
             continue
 
-        # Echten Cutoff-Vergleich: ist die neue Datei WIRKLICH besser?
+        # Real cutoff comparison: is the new file REALLY better?
         old_q = quality.quality_key(song["path"], song["bitrate"])
         new_q = quality.quality_key(local_path, new_bitrate)
         if new_q > old_q:
@@ -161,7 +161,7 @@ def run_once() -> dict:
 
 
 def _download_first_working(client, candidates):
-    """Stoesst die Kandidaten der Reihe nach an, bis ein enqueue klappt."""
+    """Triggers the candidates in order until an enqueue succeeds."""
     for cand_user, cand_file, _score in candidates:
         if slsk.enqueue(client, cand_user, cand_file):
             return cand_user, cand_file
@@ -171,14 +171,14 @@ def _download_first_working(client, candidates):
 
 def _wait_for_file(client, username: str, remote_filename: str) -> str | None:
     """
-    Wartet, bis der Download abgeschlossen ist, und liefert den LOKALEN Pfad der
-    fertigen Datei im Downloads-Ordner (config.MUSIC_DIR ist die Library; die
-    Downloads liegen im geteilten /charts-Ordner, den slskd als downloads nutzt
-    - wir suchen die Datei ueber ihren Basename dort). None bei Timeout/Fehler.
+    Waits until the download is complete and returns the LOCAL path of the
+    finished file in the downloads folder (config.MUSIC_DIR is the library; the
+    downloads sit in the shared /charts folder that slskd uses as downloads -
+    we locate the file there via its basename). None on timeout/error.
 
-    Der Downloads-Ordner ist ueber DOWNLOADS_DIR bekannt (identisch zum
-    charts-import DOWNLOADS_DIR = /charts). Wir leiten ihn aus MANIFEST_FILE ab,
-    das im selben Ordner liegt.
+    The downloads folder is known via DOWNLOADS_DIR (identical to the
+    charts-import DOWNLOADS_DIR = /charts). We derive it from MANIFEST_FILE,
+    which sits in the same folder.
     """
     downloads_dir = os.path.dirname(config.MANIFEST_FILE)
     base = os.path.basename(remote_filename.replace("\\", "/"))
@@ -193,7 +193,7 @@ def _wait_for_file(client, username: str, remote_filename: str) -> str | None:
 
 
 def _find_file(root: str, basename: str) -> str | None:
-    """Sucht rekursiv nach einer Datei mit passendem Basename (case-insensitiv)."""
+    """Searches recursively for a file with a matching basename (case-insensitive)."""
     target = basename.lower()
     if not os.path.isdir(root):
         return None
@@ -205,7 +205,7 @@ def _find_file(root: str, basename: str) -> str | None:
 
 
 def _is_stable(path: str, min_age: int = 10) -> bool:
-    """True, wenn die Datei seit min_age Sekunden nicht mehr veraendert wurde."""
+    """True if the file has not changed for min_age seconds."""
     try:
         return (time.time() - os.path.getmtime(path)) >= min_age
     except OSError:
@@ -214,7 +214,7 @@ def _is_stable(path: str, min_age: int = 10) -> bool:
 
 def _notify_summary(planned: list[dict], upgraded: list[dict],
                     scanned: int, skipped_comp: int) -> None:
-    """Loggt und meldet (Pushover) eine Zusammenfassung."""
+    """Logs and reports (Pushover) a summary."""
     if config.DRY_RUN:
         if not planned:
             logger.info(t("upgrade.notify.dry_run_done_nothing"))
@@ -243,19 +243,19 @@ def _notify_summary(planned: list[dict], upgraded: list[dict],
 
 
 def _next_run_iso() -> str:
-    """Zeitpunkt des naechsten Laufs als ISO-8601 (fuer das Dashboard)."""
+    """Timestamp of the next run as ISO-8601 (for the dashboard)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z",
                          time.localtime(time.time() + max(1, config.INTERVAL_MINUTES) * 60))
 
 
 def _guarded_run() -> None:
-    """Fuehrt run_once() aus und schreibt den Status (Erfolg/Fehler)."""
+    """Runs run_once() and writes the status (success/error)."""
     status.start()
     try:
         counters = run_once() or {}
-        # scan_seen/scan_total sind Fortschritts-Metadaten (eigene Dashboard-
-        # Zeile), nicht Teil der Lauf-Zusammenfassung -> aus der 'message'
-        # raushalten. Sie bleiben in 'counters' fuers Dashboard erhalten.
+        # scan_seen/scan_total are progress metadata (own dashboard line), not
+        # part of the run summary -> keep them out of the 'message'. They stay
+        # in 'counters' for the dashboard.
         _msg_skip = {"scan_seen", "scan_total"}
         parts = [f"{v} {k}" for k, v in counters.items()
                  if k not in _msg_skip and isinstance(v, (int, float)) and v]

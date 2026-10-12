@@ -1,29 +1,28 @@
 """
-Periodischer Metadaten-Backfill fuer charts-import.
+Periodic metadata backfill for charts-import.
 
-Hintergrund: Der Import ist "fail-open" - ist beim Einsortieren eine externe
-Quelle (iTunes/Deezer-Cover) ODER ffmpeg (ReplayGain) voruebergehend nicht
-erreichbar, wird der Song TROTZDEM importiert, dann aber OHNE Cover bzw. OHNE
-ReplayGain. Weil charts-import idempotent gegen bereits vorhandene Songs ist,
-wuerde dieser Song nie wieder angefasst - die Luecke bliebe dauerhaft.
+Background: the import is "fail-open" - if at import time an external source
+(iTunes/Deezer cover) OR ffmpeg (ReplayGain) is temporarily unreachable, the
+song is imported ANYWAY, but then WITHOUT a cover or WITHOUT ReplayGain. Because
+charts-import is idempotent against already-present songs, that song would never
+be touched again - the gap would stay permanent.
 
-Dieses Modul holt genau solche Luecken periodisch nach. Es laeuft im selben
-Scheduler-Loop wie der Import, aber selten (BACKFILL_INTERVAL_HOURS, Default
-24h), und arbeitet NUR ueber die Chart-Songs aus dem Manifest - die uebrige
-(Lidarr-)Library bleibt unangetastet.
+This module catches up exactly such gaps periodically. It runs in the same
+scheduler loop as the import, but rarely (BACKFILL_INTERVAL_HOURS, default 24h),
+and works ONLY over the chart songs from the manifest - the rest of the (Lidarr)
+library stays untouched.
 
-Es werden die bereits vorhandenen Bausteine wiederverwendet:
-  - _iter_manifest_mp3 / _read_artist_title aus backfill_covers.py
+The existing building blocks are reused:
+  - _iter_manifest_mp3 / _read_artist_title from backfill_covers.py
   - cover.cover_status / cover.embed_cover
   - replaygain.available / _has_replaygain / apply_track_gain
 
-Zusaetzlich gleicht der Backfill GROSS geschriebene flashback-Namen gegen die
-offizielle Deezer-Schreibweise ab und korrigiert sie (nur bei SICHEREM Treffer;
-unsichere bleiben unangetastet - nie raten). Das nutzt dieselbe Logik wie das
-manuelle Skript scripts/recanonicalize_flashback.py (ausgelagert nach
-app/recanon.py) und invalidiert vorher den Deezer-Cache der Kandidaten, damit
-alte "eingefrorene" Misses neu aufgeloest werden. Abschaltbar ueber
-BACKFILL_RECANON=0.
+Additionally the backfill reconciles UPPERCASE flashback names against the
+official Deezer spelling and corrects them (only on a RELIABLE hit; uncertain
+ones stay untouched - never guess). This uses the same logic as the manual
+script scripts/recanonicalize_flashback.py (extracted into app/recanon.py) and
+first invalidates the candidates' Deezer cache so old "frozen" misses are
+re-resolved. Can be disabled via BACKFILL_RECANON=0.
 """
 
 import json
@@ -37,14 +36,14 @@ from .i18n import t
 
 logger = logging.getLogger("charts-import.backfill")
 
-# Zeitpunkt des letzten Backfill-Laufs (Monotonic-Clock, prozesslokal). None =
-# noch nie gelaufen -> der erste Scheduler-Tick nach dem Start loest ihn aus.
+# Timestamp of the last backfill run (monotonic clock, process-local). None =
+# never run -> the first scheduler tick after start triggers it.
 _last_run_monotonic: "float | None" = None
 
 
 def due() -> bool:
-    """True, wenn seit dem letzten Backfill BACKFILL_INTERVAL_HOURS vergangen
-    sind (bzw. noch nie gelaufen). Bei Intervall 0 ist der Backfill aus."""
+    """True if BACKFILL_INTERVAL_HOURS have passed since the last backfill (or
+    it has never run). At interval 0 the backfill is off."""
     if config.BACKFILL_INTERVAL_HOURS <= 0:
         return False
     if _last_run_monotonic is None:
@@ -55,13 +54,14 @@ def due() -> bool:
 
 def run_once() -> dict:
     """
-    Ein Backfill-Durchlauf ueber die Manifest-Songs. Holt pro Song nach:
-      - fehlendes eingebettetes Cover (ueber COVER_SOURCES, nur wenn status
-        'none' - vorhandene Cover werden NIE angetastet)
-      - fehlendes ReplayGain (nur wenn ffmpeg verfuegbar und noch kein RG-Tag)
+    One backfill pass over the manifest songs. Catches up per song:
+      - a missing embedded cover (via COVER_SOURCES, only when status is 'none'
+        - existing covers are NEVER touched)
+      - missing ReplayGain (only if ffmpeg is available and there is no RG tag
+        yet)
 
-    Rueckgabe: Zaehler-Dict (fuer Logging/Status). Fehler je Datei sind nie
-    fatal - der Lauf macht mit der naechsten Datei weiter.
+    Returns: counter dict (for logging/status). Per-file errors are never fatal
+    - the run continues with the next file.
     """
     global _last_run_monotonic
     _last_run_monotonic = time.monotonic()
@@ -82,7 +82,7 @@ def run_once() -> dict:
         scanned += 1
         did_api_call = False
         try:
-            # --- Cover nachholen (nur wenn gar keins vorhanden) ---
+            # --- Catch up a cover (only if none at all is present) ---
             if cover.cover_status(path) == "none":
                 artist, title = _read_artist_title(path)
                 if artist and title:
@@ -92,16 +92,16 @@ def run_once() -> dict:
                         logger.info(t("import.backfill.cover_added",
                                       count=cover_fixed, artist=artist, title=title))
 
-            # --- ReplayGain nachholen (nur wenn noch keins vorhanden) ---
+            # --- Catch up ReplayGain (only if none is present yet) ---
             if rg_available and not replaygain._has_replaygain(path):
                 if replaygain.apply_track_gain(path, overwrite=False):
                     rg_fixed += 1
                     logger.info(t("import.backfill.rg_added", count=rg_fixed, path=path))
-        except Exception as e:  # eine kaputte Datei darf den Lauf nicht stoppen
+        except Exception as e:  # a broken file must not stop the run
             errors += 1
             logger.debug(t("import.backfill.file_error", path=path, error=e))
 
-        # Rate-Limit nur schonen, wenn wir wirklich eine Cover-API gefragt haben.
+        # Only ease the rate limit if we actually queried a cover API.
         if did_api_call and config.BACKFILL_SLEEP_MS > 0:
             time.sleep(config.BACKFILL_SLEEP_MS / 1000.0)
 
@@ -109,7 +109,7 @@ def run_once() -> dict:
             logger.info(t("import.backfill.limit_reached", limit=config.BACKFILL_LIMIT))
             break
 
-    # --- GROSS-flashback-Namen gegen die offizielle Deezer-Schreibweise ---
+    # --- UPPERCASE flashback names against the official Deezer spelling ---
     recanon_fixed, recanon_manual = _recanon_pass(music_dir)
 
     logger.info(t("import.backfill.done", scanned=scanned, cover_fixed=cover_fixed,
@@ -127,16 +127,16 @@ def run_once() -> dict:
 
 def _recanon_pass(music_dir: str) -> "tuple[int, int]":
     """
-    Gleicht GROSS geschriebene flashback-Namen aus dem Manifest gegen die
-    offizielle Deezer-Schreibweise ab und korrigiert sie (nur sichere Treffer).
+    Reconciles UPPERCASE flashback names from the manifest against the official
+    Deezer spelling and corrects them (only reliable hits).
 
-    Vorgehen: Manifest laden -> GROSS-Kandidaten finden -> deren Deezer-Cache
-    invalidieren (sonst liefern alte eingefrorene Misses weiter GROSS) -> pro
-    Kandidat recanon.recanonicalize_entry() -> bei Aenderungen Manifest
-    schreiben + Navidrome-Resync anstossen.
+    Approach: load the manifest -> find UPPERCASE candidates -> invalidate their
+    Deezer cache (otherwise old frozen misses keep returning UPPERCASE) -> per
+    candidate recanon.recanonicalize_entry() -> on changes write the manifest +
+    trigger a Navidrome resync.
 
-    Rueckgabe: (korrigiert, offen/manuell). (0, 0) wenn abgeschaltet oder nichts
-    zu tun. Fehler sind nicht fatal.
+    Returns: (corrected, open/manual). (0, 0) if disabled or nothing to do.
+    Errors are not fatal.
     """
     if not config.BACKFILL_RECANON:
         return 0, 0
@@ -154,8 +154,8 @@ def _recanon_pass(music_dir: str) -> "tuple[int, int]":
         return 0, 0
 
     logger.info(t("import.recanon.candidates", count=len(todo)))
-    # Alte, evtl. "eingefrorene" Cache-Misses der Kandidaten invalidieren, damit
-    # mit dem aktuellen Matching (und ohne Cache-Vergiftung) neu aufgeloest wird.
+    # Invalidate the candidates' old, possibly "frozen" cache misses so they are
+    # re-resolved with the current matching (and without cache poisoning).
     cleared = recanon.clear_cache_for([v for _k, v in todo])
     if cleared:
         logger.info(t("import.recanon.cache_invalidated", count=cleared))
@@ -175,7 +175,7 @@ def _recanon_pass(music_dir: str) -> "tuple[int, int]":
             changed = True
         elif res == "manual":
             manual += 1
-        # Deezer-Rate-Limit schonen (resolve_canonical macht einen API-Call).
+        # Ease the Deezer rate limit (resolve_canonical makes an API call).
         if config.BACKFILL_SLEEP_MS > 0:
             time.sleep(config.BACKFILL_SLEEP_MS / 1000.0)
 
@@ -188,20 +188,20 @@ def _recanon_pass(music_dir: str) -> "tuple[int, int]":
             logger.info(t("import.recanon.manifest_updated", count=fixed))
         except OSError as e:
             logger.error(t("import.recanon.manifest_write_failed", error=e))
-        # Navidrome soll die umbenannten Pfade neu einlesen.
+        # Navidrome should re-read the renamed paths.
         _request_resync()
 
     return fixed, manual
 
 
 def _recanon_log(fmt, *args) -> None:
-    """Log-Adapter fuer recanon.recanonicalize_entry (nutzt denselben Logger)."""
+    """Log adapter for recanon.recanonicalize_entry (uses the same logger)."""
     logger.info(fmt, *args)
 
 
 def _request_resync() -> None:
-    """Legt die Resync-Signal-Datei an, damit charts-sync/Navidrome die
-    umbenannten Pfade zeitnah neu einlesen. Fehler sind nicht fatal."""
+    """Creates the resync signal file so charts-sync/Navidrome re-read the
+    renamed paths promptly. Errors are not fatal."""
     try:
         with open(config.RESYNC_SIGNAL, "w", encoding="utf-8") as fh:
             fh.write("resync")

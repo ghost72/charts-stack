@@ -1,14 +1,14 @@
 """
-Manifest-Uebergabe an charts-import (KOPIE aus charts-songrequest, mit
-replace-Flag).
+Manifest handoff to charts-import (COPY from charts-songrequest, with the
+replace flag).
 
-charts-upgrade laedt eine bessere Version eines BEREITS vorhandenen Songs. Es
-schreibt fuer die heruntergeladene Datei einen Manifest-Eintrag mit
-replace=True. charts-import ersetzt dann die vorhandene Datei - aber NUR, wenn
-die neue Datei laut echtem Frequenz-Cutoff (quality.py) wirklich besser ist.
-Andernfalls bleibt die alte Datei; die neue wird nicht einsortiert.
+charts-upgrade loads a better version of an ALREADY present song. It writes a
+manifest entry for the downloaded file with replace=True. charts-import then
+replaces the existing file - but ONLY if the new file is really better
+according to the real frequency cutoff (quality.py). Otherwise the old file
+stays; the new one is not filed in.
 
-Format identisch zu charts-download/-songrequest (gemeinsamer /charts-Ordner):
+Format identical to charts-download/-songrequest (shared /charts folder):
 {
   "entries": {
     "song.mp3": {"artist": "...", "title": "...", "album": "...",
@@ -51,7 +51,7 @@ def _save(path: str, data: dict) -> None:
 
 
 def _basename_key(filename: str) -> str:
-    """Normalisierter Schluessel: reiner Dateiname, kleingeschrieben."""
+    """Normalized key: bare file name, lowercased."""
     base = os.path.basename(filename.replace("\\", "/"))
     return base.lower()
 
@@ -59,11 +59,11 @@ def _basename_key(filename: str) -> str:
 def record(filename: str, artist: str, title: str, source: str = "",
            replace: bool = False) -> None:
     """
-    Vermerkt fuer die heruntergeladene Datei die sauberen Metadaten.
+    Records the clean metadata for the downloaded file.
 
-    replace=True signalisiert charts-import einen QUALITAETS-UPGRADE: der Song
-    ist bereits in der Library, soll aber ersetzt werden, WENN die neue Datei
-    laut echtem Frequenz-Cutoff besser ist (charts-import entscheidet final).
+    replace=True signals a QUALITY UPGRADE to charts-import: the song is already
+    in the library but should be replaced IF the new file is better according to
+    the real frequency cutoff (charts-import makes the final decision).
     """
     data = _load(config.MANIFEST_FILE)
     entry = {

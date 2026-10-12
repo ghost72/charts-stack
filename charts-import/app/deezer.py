@@ -1,24 +1,24 @@
 """
-Deezer-Casing-Aufloesung fuer charts-import (letzte Instanz).
+Deezer casing resolution for charts-import (last resort).
 
-charts-flashback kanonisiert Artist/Titel bereits ueber Deezer, bevor es sie in
-die missing-Liste schreibt. Trotzdem koennen GROSS-Rohwerte durchrutschen (z.B.
-wenn flashback vor dem Matching-Fix lief, oder ein Lauf den Deezer-Treffer knapp
-verwarf). Damit NIE ein GROSS-Name in der Library landet, loest charts-import
-beim Einsortieren eines Chart-Songs die kanonische Schreibweise HIER noch einmal
-auf - als letzte, zentrale Instanz direkt vor dem Schreiben.
+charts-flashback already canonicalizes artist/title via Deezer before writing
+them into the missing list. Still, UPPERCASE raw values can slip through (e.g.
+if flashback ran before the matching fix, or a run narrowly discarded the Deezer
+hit). So an UPPERCASE name NEVER lands in the library, charts-import resolves the
+canonical spelling HERE once more when filing in a chart song - as the final,
+central authority right before writing.
 
-Self-contained (eigene Normalisierung, kein library-Modul noetig), damit es im
-charts-import-Container ohne Zusatz-Abhaengigkeit laeuft. Logik identisch zu
-charts-flashback/app/deezer.py (dort gegen die Live-API verifiziert):
+Self-contained (own normalization, no library module needed) so it runs in the
+charts-import container without an extra dependency. Logic identical to
+charts-flashback/app/deezer.py (verified there against the live API):
 
-  GET https://api.deezer.com/search?q=<artist> <title>  (Plain-Query; die
-  strukturierte Advanced-Query liefert bei Deezer 0 Treffer).
-  Treffer-Validierung ueber normalize()/similarity() mit asymmetrischer Schwelle
-  (_passes): strikt beide >= MATCH_MIN, ODER ein Feld >= STRONG und das andere
-  >= RELAX. Zusaetzlich Klammer-Zusatz-Strip beim Titelvergleich. Kein
-  belastbarer Treffer -> unveraenderte Rohwerte (lieber GROSS als falsch).
-  Cache (auch Misses) in DEEZER_CACHE_FILE.
+  GET https://api.deezer.com/search?q=<artist> <title>  (plain query; the
+  structured advanced query returns 0 hits on Deezer).
+  Hit validation via normalize()/similarity() with an asymmetric threshold
+  (_passes): strictly both >= MATCH_MIN, OR one field >= STRONG and the other
+  >= RELAX. Plus a trailing-paren strip in the title comparison. No reliable
+  hit -> unchanged raw values (rather UPPERCASE than wrong).
+  Cache (also misses) in DEEZER_CACHE_FILE.
 """
 
 import json
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://api.deezer.com/search"
 
-# --- Normalisierung (identisch zu charts-flashback/charts-sync library.py) ---
+# --- Normalization (identical to charts-flashback/charts-sync library.py) ---
 _NOISE_PATTERNS = [
     r"\(feat\.?.*?\)", r"\[feat\.?.*?\]",
     r"\(ft\.?.*?\)", r"\[ft\.?.*?\]",
@@ -72,7 +72,7 @@ _cache: dict | None = None
 
 
 def _key(artist: str, title: str) -> str:
-    """Cache-Key lowercase 'artist|title' (wie flashback/charts-import)."""
+    """Cache key lowercase 'artist|title' (like flashback/charts-import)."""
     return f"{artist.lower()}|{title.lower()}"
 
 
@@ -107,16 +107,16 @@ _TRAILING_PAREN = re.compile(r"\s*[\(\[][^\(\)\[\]]*[\)\]]\s*$")
 
 
 def _strip_trailing_paren(text: str) -> str:
-    """Schneidet einen abschliessenden (…)/[…]-Zusatz ab (einmal)."""
+    """Cuts off a trailing (…)/[…] addition (once)."""
     return _TRAILING_PAREN.sub("", text or "").strip()
 
 
 def _passes(a_score: int, t_score: int) -> bool:
     """
-    Validierung: strikt (beide >= MATCH_MIN) ODER asymmetrisch (ein Feld
-    >= STRONG, anderes >= RELAX). Faengt Alias-Kuenstler (Titel sicher, Artist
-    niedrig) und Klammer-Titel (Artist sicher, Titel gedrueckt), ohne
-    beidseitig schwache Fehltreffer durchzulassen.
+    Validation: strict (both >= MATCH_MIN) OR asymmetric (one field >= STRONG,
+    the other >= RELAX). Catches alias artists (title certain, artist low) and
+    parenthetical titles (artist certain, title depressed) without letting
+    doubly weak mismatches through.
     """
     mn = config.DEEZER_MATCH_MIN
     strong = config.DEEZER_MATCH_STRONG
@@ -131,7 +131,7 @@ def _passes(a_score: int, t_score: int) -> bool:
 
 
 def _best_canonical(data: list, raw_artist: str, raw_title: str):
-    """Bester belastbarer Deezer-Treffer (nach _passes) oder None."""
+    """Best reliable Deezer hit (per _passes) or None."""
     n_raw_artist = _normalize(raw_artist)
     n_raw_title = _normalize(raw_title)
     n_raw_title_stripped = _normalize(_strip_trailing_paren(raw_title))
@@ -163,11 +163,11 @@ def _best_canonical(data: list, raw_artist: str, raw_title: str):
 
 def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
     """
-    (artist, title) in kanonischer Schreibweise ueber die Deezer-Suche, sonst
-    die unveraenderten Rohwerte (Schalter aus / kein sicherer Treffer /
-    Netzfehler). Gecacht werden nur belastbare Ergebnisse (API erreichbar, mit
-    oder ohne Treffer); Netzfehler/Timeout/API-Error werden NICHT gecacht, damit
-    ein transienter Ausfall nicht dauerhaft den Rohwert einfriert.
+    (artist, title) in canonical spelling via the Deezer search, otherwise the
+    unchanged raw values (switch off / no reliable hit / network error). Only
+    reliable results are cached (API reachable, with or without a hit);
+    network error/timeout/API error are NOT cached, so a transient outage does
+    not permanently freeze the raw value.
     """
     if not config.DEEZER_CANONICAL_ENABLED:
         return artist, title
@@ -183,11 +183,11 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
 
     query = f"{artist} {title}"
     result = (artist, title)
-    # Nur ECHTE Ergebnisse cachen (API erreichbar - mit oder ohne Treffer).
-    # Bei Netzfehler/Timeout/API-Error NICHT cachen, sonst wuerde ein nur
-    # transienter Ausfall den Rohwert (GROSS-Name) dauerhaft einfrieren und der
-    # naechste Lauf fragt nie wieder nach. So heilt sich der Fall von selbst,
-    # sobald Deezer wieder erreichbar ist.
+    # Only cache REAL results (API reachable - with or without a hit). On a
+    # network error/timeout/API error do NOT cache, otherwise a merely
+    # transient outage would permanently freeze the raw value (UPPERCASE name)
+    # and the next run would never ask again. This way the case heals itself as
+    # soon as Deezer is reachable again.
     cacheable = False
     try:
         with httpx.Client(timeout=config.HTTP_TIMEOUT, follow_redirects=True) as client:
@@ -195,15 +195,15 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
             resp.raise_for_status()
             payload = resp.json()
         if isinstance(payload, dict) and payload.get("error"):
-            # Deezer meldet einen API-Fehler (z.B. Rate-Limit/Quota) - das ist
-            # KEIN belastbares "kennt den Song nicht", also nicht cachen.
+            # Deezer reports an API error (e.g. rate limit/quota) - that is NOT
+            # a reliable "does not know the song", so do not cache.
             logger.debug(t("import.deezer.api_error", artist=artist,
                            title=title, error=payload["error"]))
         else:
             data = payload.get("data", []) if isinstance(payload, dict) else []
             best = _best_canonical(data, artist, title)
-            # API hat sauber geantwortet -> Ergebnis ist belastbar (Treffer ODER
-            # echter Miss), beides darf gecacht werden.
+            # The API answered cleanly -> the result is reliable (hit OR a real
+            # miss), both may be cached.
             cacheable = True
             if best:
                 result = best
