@@ -1,15 +1,15 @@
 """
-charts-dashboard - Status-UI fuer den charts-stack.
+charts-dashboard - status UI for the charts-stack.
 
-Zeigt auf einen Blick:
-  - laufen alle Container? (Docker-Status + Health)
-  - sind die Verbindungen gesund? (slskd eingeloggt, Lidarr erreichbar, Pushover)
-  - was wurde zuletzt verarbeitet und wann? (exakte Lauf-Statistik aus den
-    Status-JSONs der Dienste)
-  - Speicher-/Bestandszahlen (Charts-Share, Quarantaene).
+Shows at a glance:
+  - are all containers running? (Docker status + health)
+  - are the connections healthy? (slskd logged in, Lidarr reachable, Pushover)
+  - what was processed last and when? (exact run statistics from the services'
+    status JSONs)
+  - storage/inventory numbers (charts share, quarantine).
 
-Passwortgeschuetzt (Mehrbenutzer, identische Mechanik wie charts-songrequest).
-Auto-Refresh ueber eine kleine JSON-API (/api/status).
+Password-protected (multi-user, identical mechanism to charts-songrequest).
+Auto-refresh via a small JSON API (/api/status).
 """
 
 import json
@@ -70,7 +70,7 @@ _DONATE_FOOTER = (
 app = FastAPI(title="charts-dashboard", docs_url=None, redoc_url=None)
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-# Sessions im Speicher: token -> benutzername.
+# Sessions in memory: token -> username.
 _sessions: dict[str, str] = {}
 
 
@@ -135,7 +135,7 @@ async def logout(request: Request):
     return resp
 
 
-# --- Hauptseite + API ---
+# --- Main page + API ---
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -158,7 +158,7 @@ async def api_status(request: Request):
     return JSONResponse(collector.collect())
 
 
-# --- Quellen-Finder (read-only, fail-open, auth-geschuetzt wie /api/status) ---
+# --- Source finder (read-only, fail-open, auth-protected like /api/status) ---
 
 @app.get("/api/sources/deezer/playlists")
 async def api_sources_deezer_playlists(request: Request, q: str = ""):

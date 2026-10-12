@@ -1,32 +1,32 @@
 """
-ListenBrainz-Client (Multi-User, Download-only).
+ListenBrainz client (multi-user, download-only).
 
-Liest den OEFFENTLICHEN Hoergeschmack eines ListenBrainz-Users aus zwei
-Datenquellen und liefert ihn jeweils als (position, artist, title)-Liste -
-quellenunabhaengig, wie der Deezer-/Last.fm-Client in charts-sync. Beide Quellen
-liefern Kuenstler + Titel DIREKT; es findet KEIN MBID-Resolving statt und der
-CF-Empfehlungs-Endpoint (cf/recommendation/user/<user>/recording) wird BEWUSST
-NICHT verwendet (der liefert nur rohe recording_mbid + score, deren Aufloesung
-MusicBrainz mit 1 req/s oder einen fragilen Player-Endpoint braeuchte).
+Reads the PUBLIC listening taste of a ListenBrainz user from two data sources
+and returns each as a (position, artist, title) list - source-agnostic, like
+the Deezer/Last.fm client in charts-sync. Both sources return artist + title
+DIRECTLY; NO MBID resolving happens and the CF recommendation endpoint
+(cf/recommendation/user/<user>/recording) is DELIBERATELY NOT used (it only
+returns raw recording_mbid + score, whose resolution would need MusicBrainz at
+1 req/s or a fragile player endpoint).
 
-Quelle 1 - "stats" (sofort verfuegbar, robust):
+Source 1 - "stats" (available immediately, robust):
   GET /1/stats/user/<user>/recordings?count=<limit>&range=<range>
-     -> die meistgehoerten Recordings eines Users (artist_name + track_name).
+     -> the most-played recordings of a user (artist_name + track_name).
 
-Quelle 2 - "createdfor" (echte Discovery, kann anfangs leer sein):
-  Zwei-Schritt-Ablauf (ListenBrainz-API, siehe
+Source 2 - "createdfor" (real discovery, may be empty at first):
+  Two-step flow (ListenBrainz API, see
   https://listenbrainz.readthedocs.io/en/latest/users/api/playlist.html):
   1. GET /1/user/<user>/playlists/createdfor
-     -> Metadaten aller "fuer dich erstellten" Playlists inkl. playlist_mbid.
-        Alle public, kein Token noetig. Wir waehlen anhand des Titels die
-        gewuenschten (Weekly Jams / Weekly Exploration) aus.
+     -> metadata of all "created for you" playlists incl. playlist_mbid. All
+        public, no token needed. We pick the desired ones (Weekly Jams / Weekly
+        Exploration) by title.
   2. GET /1/playlist/<mbid>
-     -> die Playlist im JSPF-Format MIT Track-Metadaten (title + creator).
-        Kein separater MusicBrainz-Lookup noetig.
+     -> the playlist in JSPF format WITH track metadata (title + creator).
+        No separate MusicBrainz lookup needed.
 
-WICHTIG (Anlaufzeit): ListenBrainz generiert die createdfor-Playlists erst nach
-einigen Wochen Hoerverlauf. Anfangs liefert createdfor evtl. nichts - das ist
-kein Fehler, sondern fehlende Daten (die "stats"-Quelle hat sofort Daten).
+IMPORTANT (ramp-up time): ListenBrainz only generates the createdfor playlists
+after a few weeks of listening history. At first createdfor may return nothing -
+that is not an error but missing data (the "stats" source has data immediately).
 """
 
 import logging
@@ -45,11 +45,11 @@ _BASE_URL = "https://api.listenbrainz.org"
 
 def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
     """
-    GET mit Wiederholung bei Transport-Fehlern (Timeout/HTTP/Verbindung).
+    GET with retry on transport errors (timeout/HTTP/connection).
 
-    Versucht bis config.HTTP_RETRIES-mal mit kurzem, exponentiellem Backoff.
-    Erst wenn der letzte Versuch scheitert, fliegt der httpx.HTTPError weiter
-    nach oben (dort wird er in einen FetchError uebersetzt).
+    Tries up to config.HTTP_RETRIES times with a short, exponential backoff.
+    Only when the last attempt fails does the httpx.HTTPError propagate upward
+    (where it is translated into a FetchError).
     """
     attempts = max(1, config.HTTP_RETRIES)
     for attempt in range(1, attempts + 1):
@@ -58,9 +58,9 @@ def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
             resp.raise_for_status()
             return resp
         except httpx.HTTPStatusError as e:
-            # 4xx-Client-Fehler (ausser 429 Rate-Limit) sind dauerhaft - ein
-            # Retry bringt nichts (z.B. 404 "User hat keine Daten"). Sofort
-            # durchreichen, der Aufrufer behandelt es (404 = leer, kein Fehler).
+            # 4xx client errors (except 429 rate limit) are permanent - a retry
+            # does not help (e.g. 404 "user has no data"). Propagate immediately,
+            # the caller handles it (404 = empty, not an error).
             code = e.response.status_code
             if 400 <= code < 500 and code != 429:
                 raise
@@ -71,20 +71,20 @@ def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
                              attempts=attempts, error=e, backoff=backoff))
             time.sleep(backoff)
         except httpx.HTTPError as e:
-            # Transport-/Timeout-/Verbindungsfehler -> wiederholen lohnt sich.
+            # Transport/timeout/connection error -> worth retrying.
             if attempt >= attempts:
                 raise
             backoff = min(2 ** (attempt - 1), 8)
             logger.warning(t("recommend.lb.retry", attempt=attempt,
                              attempts=attempts, error=e, backoff=backoff))
             time.sleep(backoff)
-    # Unerreichbar (Schleife endet via return oder raise), nur zur Beruhigung:
+    # Unreachable (the loop ends via return or raise), just for peace of mind:
     raise FetchError(t("recommend.lb.retry_aborted"))
 
 
-# Titel-Marker, um die gewuenschten "Created for you"-Playlists zu erkennen.
-# ListenBrainz benennt sie z.B. "Weekly Jams for <username>, week of ..." bzw.
-# "Weekly Exploration for <username>, week of ...". Wir matchen tolerant.
+# Title markers to recognize the desired "Created for you" playlists.
+# ListenBrainz names them e.g. "Weekly Jams for <username>, week of ..." or
+# "Weekly Exploration for <username>, week of ...". We match leniently.
 PLAYLIST_KINDS = {
     "jams": ["weekly jams", "daily jams"],
     "exploration": ["weekly exploration", "weekly discovery", "exploration"],
@@ -92,19 +92,19 @@ PLAYLIST_KINDS = {
 
 
 def _headers(token: str) -> dict:
-    """Authorization-Header, falls ein Token gesetzt ist (fuer createdfor
-    optional, aber schadet nicht und erlaubt hoehere Rate-Limits)."""
+    """Authorization header if a token is set (optional for createdfor, but
+    does no harm and allows higher rate limits)."""
     return {"Authorization": f"Token {token}"} if token else {}
 
 
 def _list_created_for(user: str, token: str, client: httpx.Client) -> list[dict]:
-    """Holt die Metadaten aller 'createdfor'-Playlists des Users.
+    """Fetch the metadata of all 'createdfor' playlists of the user.
 
-    Ein 404/204 bedeutet NICHT 'Fehler', sondern 'der User hat (noch) keine
-    createdfor-Playlists' - ListenBrainz generiert Weekly Jams/Exploration erst
-    nach einigen Wochen Hoerverlauf, und ein neuer/leerer User liefert dort 404.
-    Das wird - wie beim stats-Endpoint - als leeres Ergebnis behandelt (kein
-    FetchError -> Dashboard bleibt gruen/idle, kein Pushover-Alarm)."""
+    A 404/204 does NOT mean 'error' but 'the user has no createdfor playlists
+    (yet)' - ListenBrainz only generates Weekly Jams/Exploration after a few
+    weeks of listening history, and a new/empty user returns 404 there. This is
+    handled - as with the stats endpoint - as an empty result (no FetchError ->
+    dashboard stays green/idle, no Pushover alarm)."""
     url = f"{_BASE_URL}/1/user/{user}/playlists/createdfor"
     try:
         resp = _get_with_retry(client, url, headers=_headers(token), params={"count": 25})
@@ -115,7 +115,7 @@ def _list_created_for(user: str, token: str, client: httpx.Client) -> list[dict]
             return []
         raise
     data = resp.json()
-    # Antwort: {"playlists": [{"playlist": {...JSPF...}}, ...], "count": ..}
+    # Response: {"playlists": [{"playlist": {...JSPF...}}, ...], "count": ..}
     out = []
     for wrapper in data.get("playlists", []):
         pl = wrapper.get("playlist") if isinstance(wrapper, dict) else None
@@ -126,8 +126,8 @@ def _list_created_for(user: str, token: str, client: httpx.Client) -> list[dict]
 
 def _playlist_identifier(pl: dict) -> str | None:
     """
-    Extrahiert die playlist_mbid aus einem JSPF-Playlist-Metadaten-Objekt.
-    JSPF speichert sie im 'identifier' (URL, die auf .../playlist/<mbid> endet).
+    Extract the playlist_mbid from a JSPF playlist metadata object.
+    JSPF stores it in 'identifier' (a URL ending in .../playlist/<mbid>).
     """
     ident = pl.get("identifier") or ""
     if isinstance(ident, list):
@@ -145,8 +145,8 @@ def _match_kind(title: str, markers: list[str]) -> bool:
 def _fetch_playlist_tracks(mbid: str, token: str,
                            client: httpx.Client) -> list[tuple[int, str, str]]:
     """
-    Holt eine Playlist per MBID und liefert (position, artist, title).
-    JSPF-Track: {"title": <Songtitel>, "creator": <Kuenstler>, ...}.
+    Fetch a playlist by MBID and return (position, artist, title).
+    JSPF track: {"title": <song title>, "creator": <artist>, ...}.
     """
     url = f"{_BASE_URL}/1/playlist/{mbid}"
     resp = _get_with_retry(client, url, headers=_headers(token))
@@ -168,11 +168,11 @@ def _fetch_playlist_tracks(mbid: str, token: str,
 def fetch_recommendations(user: str, token: str, kinds: list[str],
                           limit: int = 100) -> dict[str, list[tuple[int, str, str]]]:
     """
-    Holt die gewuenschten Empfehlungs-Playlists.
+    Fetch the desired recommendation playlists.
 
-    kinds: Teilmenge von PLAYLIST_KINDS.keys() ("jams", "exploration").
-    Rueckgabe: {kind: [(pos, artist, title), ...]}. Fehlt eine Playlist (noch
-    nicht generiert), fehlt der Key bzw. ist leer.
+    kinds: subset of PLAYLIST_KINDS.keys() ("jams", "exploration").
+    Returns: {kind: [(pos, artist, title), ...]}. If a playlist is missing (not
+    yet generated), the key is absent or empty.
     """
     result: dict[str, list[tuple[int, str, str]]] = {}
     try:
@@ -184,8 +184,8 @@ def fetch_recommendations(user: str, token: str, kinds: list[str],
 
             for kind in kinds:
                 markers = PLAYLIST_KINDS.get(kind, [])
-                # Neueste passende Playlist dieses Typs waehlen (Liste ist i.d.R.
-                # nach Datum sortiert; wir nehmen die erste Uebereinstimmung).
+                # Pick the newest matching playlist of this kind (the list is
+                # usually sorted by date; we take the first match).
                 chosen = None
                 for pl in metas:
                     title = pl.get("title") or ""
@@ -204,11 +204,11 @@ def fetch_recommendations(user: str, token: str, kinds: list[str],
                               count=len(tracks), title=chosen.get("title", "")))
                 result[kind] = tracks
     except httpx.HTTPError as e:
-        # Transport-Fehler NACH allen Wiederholungen -> als Fehler nach oben
-        # melden (frueher wurde hier still ein leeres Ergebnis zurueckgegeben,
-        # was der Aufrufer nicht von "noch keine Playlists" unterscheiden
-        # konnte). Ein leeres, aber erfolgreiches Ergebnis (kein Exception)
-        # bleibt davon unberuehrt und ist weiterhin KEIN Fehler.
+        # Transport error AFTER all retries -> report upward as an error
+        # (previously an empty result was returned silently here, which the
+        # caller could not distinguish from "no playlists yet"). An empty but
+        # successful result (no exception) is unaffected by this and remains
+        # NOT an error.
         logger.error(t("recommend.lb.api_error", error=e))
         raise FetchError(t("recommend.lb.unreachable", error=e)) from e
     return result
@@ -217,20 +217,20 @@ def fetch_recommendations(user: str, token: str, kinds: list[str],
 def fetch_stats_recordings(user: str, token: str, range_: str,
                            limit: int = 100) -> list[tuple[int, str, str]]:
     """
-    Holt die meistgehoerten Recordings eines Users (stats-Quelle).
+    Fetch the most-played recordings of a user (stats source).
 
       GET /1/stats/user/<user>/recordings?count=<limit>&range=<range_>
       -> payload.recordings[].{artist_name, track_name}
 
-    Rueckgabe: [(pos, artist, title), ...] - dieselbe 3-Tupel-Form wie
-    fetch_recommendations und lastfm.fetch_recommendations.
+    Returns: [(pos, artist, title), ...] - the same 3-tuple form as
+    fetch_recommendations and lastfm.fetch_recommendations.
 
-    404/204 (kein Profil / noch keine Daten) wird wie "noch keine Daten"
-    behandelt: leere Liste, KEIN FetchError. Jeder andere HTTP-Fehler (nach
-    allen Wiederholungen in _get_with_retry) wird als FetchError gemeldet.
-    Hinweis: Da _get_with_retry erst NACH der Retry-Schleife wirft, wird ein
-    404 pro Lauf HTTP_RETRIES-mal abgefragt, bevor [] zurueckkommt - bewusst in
-    Kauf genommen, um die 5xx-Robustheit fuer diesen Endpoint zu erhalten.
+    404/204 (no profile / no data yet) is handled like "no data yet": empty
+    list, NO FetchError. Any other HTTP error (after all retries in
+    _get_with_retry) is reported as a FetchError.
+    Note: since _get_with_retry only raises AFTER the retry loop, a 404 is
+    requested HTTP_RETRIES times per run before [] comes back - deliberately
+    accepted to keep the 5xx robustness for this endpoint.
     """
     url = f"{_BASE_URL}/1/stats/user/{user}/recordings"
     try:

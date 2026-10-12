@@ -1,14 +1,14 @@
 """
-Playlist- und Missing-List-Writer.
+Playlist and missing-list writer.
 
-Schreibt eine erweiterte M3U-Playlist (#EXTM3U), die Navidrome automatisch als
-Playlist einliest, sowie eine Textdatei mit den Chart-Songs, die (noch) nicht
-in der Library vorhanden sind.
+Writes an extended M3U playlist (#EXTM3U) that Navidrome automatically imports
+as a playlist, plus a text file with the chart songs that are not (yet) present
+in the library.
 
-Wichtig fuer Navidrome:
-  - Die Pfade in der M3U muessen so aussehen, wie Navidrome die Library sieht.
-    Da Navidrome und dieser Service denselben Musik-Ordner mounten, verwenden
-    wir Pfade relativ zum Musik-Wurzelverzeichnis (empfohlen von Navidrome).
+Important for Navidrome:
+  - The paths in the M3U must look the way Navidrome sees the library. Since
+    Navidrome and this service mount the same music folder, we use paths
+    relative to the music root directory (recommended by Navidrome).
 """
 
 import logging
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 def _relative_to_music(path: str) -> str:
     """
-    Wandelt einen absoluten Library-Pfad in einen zu Navidrome passenden
-    relativen Pfad (bezogen auf MUSIC_DIR) um.
+    Convert an absolute library path into a Navidrome-friendly relative path
+    (relative to MUSIC_DIR).
     """
     try:
         return os.path.relpath(path, config.MUSIC_DIR)
@@ -35,20 +35,20 @@ def _relative_to_music(path: str) -> str:
 def write_playlist(matched: list[tuple[int, str, str, str]],
                    file_name: str, display_title: str) -> str:
     """
-    Schreibt die M3U-Playlist.
+    Write the M3U playlist.
 
-    matched:       Liste von (position, artist, title, absolute_path),
-                   bereits nach Chart-Position sortiert.
-    file_name:     Dateiname der .m3u (in PLAYLIST_DIR).
-    display_title: Anzeigename in Navidrome ({date} wird ersetzt).
+    matched:       list of (position, artist, title, absolute_path),
+                   already sorted by chart position.
+    file_name:     file name of the .m3u (in PLAYLIST_DIR).
+    display_title: display name in Navidrome ({date} is replaced).
 
-    Rueckgabe: Pfad der geschriebenen Playlist.
+    Returns: path of the written playlist.
     """
     os.makedirs(config.PLAYLIST_DIR, exist_ok=True)
     playlist_path = os.path.join(config.PLAYLIST_DIR, file_name)
 
     lines = ["#EXTM3U"]
-    # Anzeigename fuer Navidrome. {date} wird durch das aktuelle Datum ersetzt.
+    # Display name for Navidrome. {date} is replaced by the current date.
     title = display_title.replace("{date}", datetime.now().strftime("%d.%m.%Y"))
     lines.append(f"#PLAYLIST:{title}")
 
@@ -59,8 +59,8 @@ def write_playlist(matched: list[tuple[int, str, str, str]],
 
     content = "\n".join(lines) + "\n"
 
-    # Atomar schreiben (erst temp, dann ersetzen), damit Navidrome nie eine
-    # halb geschriebene Datei sieht.
+    # Write atomically (temp first, then replace) so Navidrome never sees a
+    # half-written file.
     tmp_path = playlist_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as fh:
         fh.write(content)
@@ -72,19 +72,19 @@ def write_playlist(matched: list[tuple[int, str, str, str]],
 
 def write_missing(missing: list[tuple[int, str, str]], file_name: str) -> str:
     """
-    Schreibt die Liste der fehlenden Chart-Songs.
+    Write the list of missing chart songs.
 
-    missing:   Liste von (position, artist, title).
-    file_name: Dateiname der Fehlliste (in CHARTS_DIR).
-    Rueckgabe: Pfad der geschriebenen Datei.
+    missing:   list of (position, artist, title).
+    file_name: file name of the missing list (in CHARTS_DIR).
+    Returns:   path of the written file.
     """
     os.makedirs(config.CHARTS_DIR, exist_ok=True)
     missing_path = os.path.join(config.CHARTS_DIR, file_name)
 
-    # Der Header ist EIN mehrzeiliges Template (eine uebersetzbare Einheit); das
-    # Aufsplitten in Zeilen reproduziert exakt die frueheren Listen-Elemente
-    # (inkl. der abschliessenden Leerzeile), damit der Join mit 'body' Byte-fuer-
-    # Byte dieselbe Datei erzeugt wie zuvor.
+    # The header is ONE multi-line template (one translatable unit); splitting
+    # it into lines reproduces exactly the former list elements (incl. the
+    # trailing blank line) so the join with 'body' produces byte-for-byte the
+    # same file as before.
     header = t("playlist.missing_file.header",
                date=datetime.now().strftime("%d.%m.%Y %H:%M")).split("\n")
     body = [f"{pos:>3}. {artist} - {title}" for pos, artist, title in missing]

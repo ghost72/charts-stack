@@ -1,29 +1,28 @@
 """
-charts-recommend – Hauptservice (Multi-User, Download-only).
+charts-recommend - main service (multi-user, download-only).
 
-Liest den oeffentlichen Hoergeschmack mehrerer ListenBrainz-User (optional
-zusaetzlich Last.fm) und laesst die GEMEINSAME Library mitwachsen. Er schreibt
-KEINE Playlists mehr - die Personalisierung/Anzeige uebernimmt der Client
-(z.B. Substreamer) pro Account.
+Reads the public listening taste of several ListenBrainz users (optionally
+additionally Last.fm) and lets the SHARED library grow with it. It no longer
+writes any playlists - personalization/display is handled by the client
+(e.g. Substreamer) per account.
 
-  1. Library-Index bauen (wie charts-sync).
-  2. Fuer jeden konfigurierten ListenBrainz-User die aktiven Quellen abfragen:
-       - "stats"      (meistgehoerte Recordings, sofort da)
-       - "createdfor" (Weekly Jams / Weekly Exploration, evtl. erst nach Wochen)
-     Optional zusaetzlich Last.fm (globale Quelle des Betreibers).
-  3. Alle Ergebnisse zusammenfuehren + deduplizieren (gleicher Song nur einmal).
-  4. Gegen die Library matchen:
-       - vorhanden -> zaehlen (nichts nachzuladen)
-       - fehlt     -> in EINE kombinierte missing-Datei (charts-download laedt
-                      nach, wenn WRITE_MISSING=1 und die Datei in dessen
-                      MISSING_FILES steht)
-  5. Pushover-Meldung.
+  1. Build the library index (like charts-sync).
+  2. For each configured ListenBrainz user, query the active sources:
+       - "stats"      (most-played recordings, available immediately)
+       - "createdfor" (Weekly Jams / Weekly Exploration, possibly only after weeks)
+     Optionally also Last.fm (global source of the operator).
+  3. Merge all results + deduplicate (the same song only once).
+  4. Match against the library:
+       - present -> count (nothing to fetch)
+       - missing -> into ONE combined missing file (charts-download fetches
+                    when WRITE_MISSING=1 and the file is in its MISSING_FILES)
+  5. Pushover message.
 
-Laeuft als Scheduler-Loop (alle INTERVAL_HOURS Stunden).
+Runs as a scheduler loop (every INTERVAL_HOURS hours).
 
-HINWEIS: ListenBrainz generiert die createdfor-Playlists erst nach einigen
-Wochen Hoerverlauf. Bis dahin ist diese Quelle leer - kein Fehler, nur fehlende
-Daten (die "stats"-Quelle hat sofort Daten).
+NOTE: ListenBrainz only generates the createdfor playlists after a few weeks of
+listening history. Until then this source is empty - not an error, just missing
+data (the "stats" source has data immediately).
 """
 
 import logging
@@ -42,10 +41,10 @@ logger = logging.getLogger("charts-recommend")
 
 def _match_all(lib, tracks: list[tuple[int, str, str]]):
     """
-    Matcht eine Empfehlungsliste gegen die Library.
-    Rueckgabe: (matched, missing)
-      matched: [(pos, artist, title, path), ...] (in Library gefunden)
-      missing: [(pos, artist, title), ...] (nicht gefunden)
+    Match a recommendation list against the library.
+    Returns: (matched, missing)
+      matched: [(pos, artist, title, path), ...] (found in the library)
+      missing: [(pos, artist, title), ...] (not found)
     """
     matched = []
     missing = []
@@ -60,10 +59,10 @@ def _match_all(lib, tracks: list[tuple[int, str, str]]):
 
 def _merge(tracks, merged: list, seen: set) -> None:
     """
-    Haengt (artist, title) an merged, dedupliziert ueber seen.
-    tracks sind (pos, artist, title) 3-Tupel; pos wird nach dem Merge verworfen.
-    Der Dedupe-Key ist identisch zur Last.fm-Logik, damit derselbe Song, den
-    mehrere User moegen, nur EINMAL nachgeladen wird.
+    Append (artist, title) to merged, deduplicated via seen.
+    tracks are (pos, artist, title) 3-tuples; pos is discarded after the merge.
+    The dedupe key is identical to the Last.fm logic so the same song that
+    several users like is fetched only ONCE.
     """
     for item in tracks:
         _pos, artist, title = item
@@ -76,29 +75,28 @@ def _merge(tracks, merged: list, seen: set) -> None:
 
 def run_once() -> tuple[dict, list[str], int, int]:
     """
-    Fuehrt einen Empfehlungs-Lauf aus.
+    Run one recommendation run.
 
-    Rueckgabe: (counters, fetch_errors, transport_attempts, transport_failures)
-      counters:           Zaehler fuer das Dashboard (sources/candidates/
-                          matched/missing, Momentanwerte).
-      fetch_errors:       Liste der Quellen-Fehlermeldungen mit user/source-
-                          Praefix (Transport-Fehler nach allen Wiederholungen).
-      transport_attempts: Wie viele (user,source)-Abrufe stattfanden.
-      transport_failures: Davon mit FetchError.
+    Returns: (counters, fetch_errors, transport_attempts, transport_failures)
+      counters:           counters for the dashboard (sources/candidates/
+                          matched/missing, point-in-time values).
+      fetch_errors:       list of the source error messages with a user/source
+                          prefix (transport errors after all retries).
+      transport_attempts: how many (user,source) fetches took place.
+      transport_failures: of those, how many with a FetchError.
 
-    Jede Quelle wird einzeln abgesichert: Faellt ein User/eine Quelle aus, kann
-    eine andere trotzdem Ergebnisse liefern (teilweiser Erfolg). Nur ein
-    FetchError zaehlt als Fehler - ein leeres, aber erfolgreiches Ergebnis (noch
-    keine Daten) ist kein Fehler.
+    Each source is guarded individually: if one user/one source fails, another
+    can still return results (partial success). Only a FetchError counts as an
+    error - an empty but successful result (no data yet) is not an error.
     """
     logger.info(t("recommend.run.start"))
     lib = library.build_index(config.MUSIC_DIR)
-    merged: list[tuple[str, str]] = []   # [(artist, title)] in Reihenfolge
+    merged: list[tuple[str, str]] = []   # [(artist, title)] in order
     seen: set[str] = set()               # key = f"{artist.lower()}|{title.lower()}"
     source_results: list[dict] = []      # [{"user":.., "source":.., "n":..}]
-    fetch_errors: list[str] = []         # FetchError-Meldungen (user/source)
-    transport_attempts = 0               # wie viele Abrufe fanden statt
-    transport_failures = 0               # davon mit FetchError
+    fetch_errors: list[str] = []         # FetchError messages (user/source)
+    transport_attempts = 0               # how many fetches took place
+    transport_failures = 0               # of those, how many with a FetchError
 
     if config.LISTENBRAINZ_ENABLED and config.LISTENBRAINZ_USERS:
         for user in config.LISTENBRAINZ_USERS:
@@ -136,7 +134,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
             lfm = lastfm.fetch_recommendations(
                 config.LASTFM_MODE, config.LASTFM_USER, config.LASTFM_API_KEY,
                 config.LASTFM_SEEDS, config.RECOMMEND_LIMIT)
-            _merge(lfm, merged, seen)   # eigener Cap in lastfm
+            _merge(lfm, merged, seen)   # its own cap in lastfm
             source_results.append({"user": "-", "source": "lastfm",
                                    "n": len(lfm)})
         except FetchError as e:
@@ -145,7 +143,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
         finally:
             transport_attempts += 1
 
-    # merged (2-Tupel) -> flache 3-Tupel fuer das unveraenderte _match_all().
+    # merged (2-tuples) -> flat 3-tuples for the unchanged _match_all().
     tracks = [(pos, artist, title)
               for pos, (artist, title) in enumerate(merged, 1)]
     matched, missing = _match_all(lib, tracks)
@@ -170,19 +168,19 @@ def run_once() -> tuple[dict, list[str], int, int]:
 
 def _prev_status() -> str:
     """
-    Status des VORHERIGEN Laufs aus der Status-JSON lesen (bevor status.start()
-    sie auf 'running' setzt). Dient dem Nur-bei-Wechsel-Alarm (B): so laesst
-    sich erkennen, ob der letzte Lauf bereits ein Fehler war. Wir lesen die
-    Datei bewusst ueber das Status-Modul (dieselbe Datei/Pfad), legen aber
-    kein zusaetzliches State-File an. Fehlt die Datei, gilt der Lauf als 'ok'
-    (kein vorheriger Fehler).
+    Read the status of the PREVIOUS run from the status JSON (before
+    status.start() sets it to 'running'). Serves the only-on-change alarm (B):
+    this way it can be detected whether the last run was already an error. We
+    deliberately read the file via the status module (same file/path) but do not
+    create an additional state file. If the file is missing, the run counts as
+    'ok' (no previous error).
     """
     data = status._read()
     val = data.get("status")
     return val if isinstance(val, str) else "ok"
 
 
-# Counter-Keys (literal, dashboard-Payload) -> i18n-Key fuer das lesbare Label.
+# Counter keys (literal, dashboard payload) -> i18n key for the readable label.
 _COUNTER_LABEL_KEYS = {
     "sources": "recommend.counter.sources",
     "candidates": "recommend.counter.candidates",
@@ -192,8 +190,8 @@ _COUNTER_LABEL_KEYS = {
 
 
 def _base_msg(counters: dict) -> str:
-    """Baut die lesbare Status-/Dashboard-Zeile aus den Countern (uebersetztes
-    Label je Counter, keine rohen englischen Counter-Keys)."""
+    """Build the readable status/dashboard line from the counters (translated
+    label per counter, no raw English counter keys)."""
     parts = [f"{v} {t(_COUNTER_LABEL_KEYS[k])}"
              for k, v in counters.items()
              if k in _COUNTER_LABEL_KEYS and isinstance(v, (int, float)) and v]
@@ -206,7 +204,7 @@ def _notify(source_results: list[dict], counters: dict) -> None:
     if cand == 0:
         logger.info(t("recommend.notify.none_received"))
         return
-    # Pro User gruppieren, Reihenfolge der ersten Nennung beibehalten.
+    # Group per user, keep the order of first mention.
     by_user: dict[str, list[str]] = {}
     for s in source_results:
         if s["n"] <= 0:
@@ -225,17 +223,17 @@ def _notify(source_results: list[dict], counters: dict) -> None:
 
 
 def _next_run_iso() -> str:
-    """Zeitpunkt des naechsten Laufs als ISO-8601 (fuer das Dashboard)."""
+    """Time of the next run as ISO-8601 (for the dashboard)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z",
                          time.localtime(time.time() + max(1, config.INTERVAL_HOURS) * 3600))
 
 
 def _alert_fetch_error(message: str, was_error_before: bool) -> None:
     """
-    Pushover-Alarm bei Abruf-Fehler - nur bei Zustandswechsel (B), wenn
-    NOTIFY_ONLY_ON_CHANGE gesetzt ist. So gibt es nicht bei jedem 24h-Lauf
-    einen neuen Alarm, solange die Stoerung anhaelt. notify.send() ist ohne
-    PUSHOVER_* ohnehin ein No-op.
+    Pushover alarm on a fetch error - only on state change (B), when
+    NOTIFY_ONLY_ON_CHANGE is set. This way there is no new alarm on every 24h run
+    while the outage persists. Without PUSHOVER_* notify.send() is a no-op
+    anyway.
     """
     if config.NOTIFY_ONLY_ON_CHANGE and was_error_before:
         logger.info(t("recommend.alert.still_failing"))
@@ -244,8 +242,8 @@ def _alert_fetch_error(message: str, was_error_before: bool) -> None:
 
 
 def _guarded_run() -> None:
-    """Fuehrt run_once() aus und schreibt den Status (Erfolg/Fehler)."""
-    # Vorherigen Status VOR start() merken (start() setzt 'running').
+    """Run run_once() and write the status (success/error)."""
+    # Remember the previous status BEFORE start() (start() sets 'running').
     prev_status = _prev_status()
     status.start()
     try:
@@ -254,29 +252,29 @@ def _guarded_run() -> None:
         err_msg = "; ".join(fetch_errors)
 
         if attempts == 0:
-            # Keine User konfiguriert / Feature aus -> idle, kein Fehler.
+            # No users configured / feature off -> idle, not an error.
             status.finish("ok", t("recommend.status.nothing_to_do"),
                           counters, _next_run_iso())
         elif failures == attempts:
-            # Alle Abrufe transport-fehlgeschlagen -> echter Fehler.
+            # All fetches transport-failed -> real error.
             status.finish("error", err_msg, counters, _next_run_iso())
             _alert_fetch_error(err_msg, prev_status == "error")
         elif failures > 0:
-            # Teilweiser Erfolg: eine Quelle lieferte, eine andere fiel aus.
+            # Partial success: one source delivered, another failed.
             status.finish("ok",
                           t("recommend.status.source_disrupted", base=base, error=err_msg),
                           counters, _next_run_iso())
             _alert_fetch_error(t("recommend.alert.one_source_disrupted", error=err_msg),
                                prev_status == "error")
         else:
-            # Alles ok (auch ein leeres Ergebnis ist hier ein Erfolg).
-            # Sonderfall: Abrufe liefen fehlerfrei, aber es kam NICHTS (0
-            # Empfehlungen) - typisch, wenn ListenBrainz fuer die konfigurierten
-            # User noch keine Stats/Playlists generiert hat (zu wenig
-            # Hoerverlauf; die stats-/createdfor-Endpoints geben dann 404).
-            # Statt des nichtssagenden "nichts gefunden" eine sprechende Zeile,
-            # damit im Dashboard klar ist WARUM nichts kommt (bleibt gruen/ok,
-            # kein Fehler).
+            # All ok (an empty result is also a success here).
+            # Special case: fetches ran without errors but NOTHING came back (0
+            # recommendations) - typical when ListenBrainz has not yet generated
+            # stats/playlists for the configured users (too little listening
+            # history; the stats/createdfor endpoints then return 404).
+            # Instead of the uninformative "nothing found", a descriptive line
+            # so the dashboard makes clear WHY nothing comes (stays green/ok,
+            # not an error).
             if counters["candidates"] == 0:
                 msg = t("recommend.status.no_recommendations")
             else:
