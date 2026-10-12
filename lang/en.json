@@ -748,6 +748,7 @@
   "watchdog.start.banner": "started - monitoring [%s] every %ss (debounce %s, recovery %s, cooldown %ss, external services debounce %ss/%s polls)",
   "watchdog.state.unhealthy": "unhealthy (healthcheck failing)",
   "watchdog.state.restarting": "is stuck in a restart loop",
+  "watchdog.state.starting": "is starting up",
   "watchdog.state.exited": "is stopped (exited)",
   "watchdog.state.dead": "is dead (dead)",
   "watchdog.state.paused": "is paused",

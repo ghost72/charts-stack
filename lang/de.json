@@ -748,6 +748,7 @@
   "watchdog.start.banner": "gestartet - überwache [%s] alle %ss (Entprellung %s, Erholung %s, Cooldown %ss, externe Dienste Debounce %ss/%s Polls)",
   "watchdog.state.unhealthy": "unhealthy (Healthcheck schlägt an)",
   "watchdog.state.restarting": "hängt in einer Neustart-Schleife",
+  "watchdog.state.starting": "startet gerade",
   "watchdog.state.exited": "ist gestoppt (exited)",
   "watchdog.state.dead": "ist tot (dead)",
   "watchdog.state.paused": "ist pausiert",
