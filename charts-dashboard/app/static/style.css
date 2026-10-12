@@ -352,7 +352,7 @@ body.login {
 /* Titel/Tracks (bzw. Kuenstler/Fans) kompakt halten, die Snippet-Spalte
    bekommt den Rest - ihr Inhalt scrollt horizontal statt umzubrechen. */
 .finder-table th:nth-child(1), .finder-table td:nth-child(1) { width: 42%; overflow-wrap: anywhere; }
-.finder-table th:nth-child(2), .finder-table td:nth-child(2) { width: 4.5em; }
+.finder-table th:nth-child(2), .finder-table td:nth-child(2) { width: 6em; }
 .finder-table th:nth-child(3), .finder-table td:nth-child(3) { width: auto; }
 .finder-table thead th, #dz-genres thead th {
   color: var(--muted); font-weight: 600; border-bottom: 1px solid #37304755;
