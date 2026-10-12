@@ -79,7 +79,7 @@ def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
                              attempts=attempts, error=e, backoff=backoff))
             time.sleep(backoff)
     # Unerreichbar (Schleife endet via return oder raise), nur zur Beruhigung:
-    raise FetchError("ListenBrainz: unerwarteter Abbruch der Retry-Schleife")
+    raise FetchError(t("recommend.lb.retry_aborted"))
 
 
 # Titel-Marker, um die gewuenschten "Created for you"-Playlists zu erkennen.
@@ -210,7 +210,7 @@ def fetch_recommendations(user: str, token: str, kinds: list[str],
         # konnte). Ein leeres, aber erfolgreiches Ergebnis (kein Exception)
         # bleibt davon unberuehrt und ist weiterhin KEIN Fehler.
         logger.error(t("recommend.lb.api_error", error=e))
-        raise FetchError(f"ListenBrainz nicht erreichbar: {e}") from e
+        raise FetchError(t("recommend.lb.unreachable", error=e)) from e
     return result
 
 
@@ -243,10 +243,10 @@ def fetch_stats_recordings(user: str, token: str, range_: str,
                           status=e.response.status_code))
             return []
         logger.error(t("recommend.lb.stats_error", user=user, error=e))
-        raise FetchError(f"ListenBrainz stats '{user}' nicht erreichbar: {e}") from e
+        raise FetchError(t("recommend.lb.stats_unreachable", user=user, error=e)) from e
     except httpx.HTTPError as e:
         logger.error(t("recommend.lb.stats_error", user=user, error=e))
-        raise FetchError(f"ListenBrainz stats '{user}' nicht erreichbar: {e}") from e
+        raise FetchError(t("recommend.lb.stats_unreachable", user=user, error=e)) from e
 
     payload = (resp.json() or {}).get("payload", {})
     recs = payload.get("recordings", []) or []

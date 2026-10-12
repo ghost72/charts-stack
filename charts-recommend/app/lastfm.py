@@ -51,8 +51,9 @@ def _get(client: httpx.Client, params: dict) -> dict:
             time.sleep(backoff)
     payload = resp.json()
     if isinstance(payload, dict) and payload.get("error"):
-        raise RuntimeError(f"Last.fm-Fehler {payload.get('error')}: "
-                           f"{payload.get('message', '')}".strip())
+        raise RuntimeError(t("recommend.lastfm.api_error_raise",
+                             error=payload.get('error'),
+                             message=payload.get('message', '')).strip())
     return payload
 
 
@@ -158,4 +159,4 @@ def fetch_recommendations(mode: str, user: str, api_key: str,
         # melden (frueher wurde hier still [] zurueckgegeben). Ein leeres, aber
         # erfolgreiches Ergebnis (kein Exception) bleibt KEIN Fehler.
         logger.error(t("recommend.lastfm.api_error", error=e))
-        raise FetchError(f"Last.fm-Abruf fehlgeschlagen: {e}") from e
+        raise FetchError(t("recommend.lastfm.fetch_failed", error=e)) from e

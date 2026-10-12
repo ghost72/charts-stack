@@ -112,7 +112,7 @@ def test_contradiction_service_deezer_type_lastfm(monkeypatch, examples, caplog)
     with caplog.at_level(logging.WARNING):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "deezer"  # service gewinnt
-    assert any("widersprüchlich" in r.message for r in caplog.records)
+    assert any("contradictory" in r.message for r in caplog.records)
 
 
 def test_unknown_service_falls_back_to_deezer(monkeypatch, examples, caplog):
@@ -121,7 +121,7 @@ def test_unknown_service_falls_back_to_deezer(monkeypatch, examples, caplog):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "deezer"
     assert feed.enabled is True
-    assert any("unbekannter service" in r.message for r in caplog.records)
+    assert any("unknown service" in r.message for r in caplog.records)
 
 
 def test_unknown_deezer_type_falls_back_to_chart(monkeypatch, examples, caplog):
@@ -131,7 +131,7 @@ def test_unknown_deezer_type_falls_back_to_chart(monkeypatch, examples, caplog):
     assert feed.kind == "deezer"
     assert feed.deezer_type == "chart"
     assert feed.enabled is True  # Deezer-Fallback bleibt aktiv
-    assert any("unbekannter Deezer-type" in r.message for r in caplog.records)
+    assert any("unknown Deezer type" in r.message for r in caplog.records)
 
 
 def test_unknown_lastfm_method_disables_feed(monkeypatch, examples, caplog):
@@ -140,7 +140,7 @@ def test_unknown_lastfm_method_disables_feed(monkeypatch, examples, caplog):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "lastfm"
     assert feed.enabled is False
-    assert any("unbekannte Last.fm-method" in r.message for r in caplog.records)
+    assert any("unknown Last.fm method" in r.message for r in caplog.records)
 
 
 def test_lastfm_missing_required_param_disables_feed(monkeypatch, examples, caplog):
@@ -149,7 +149,7 @@ def test_lastfm_missing_required_param_disables_feed(monkeypatch, examples, capl
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "lastfm"
     assert feed.enabled is False
-    assert any("braucht Parameter 'country'" in r.message for r in caplog.records)
+    assert any("needs parameter 'country'" in r.message for r in caplog.records)
 
 
 def test_lastfm_with_deezer_source_is_ignored(monkeypatch, examples, caplog):
@@ -161,7 +161,7 @@ def test_lastfm_with_deezer_source_is_ignored(monkeypatch, examples, caplog):
     assert feed.enabled is True  # chart.getTopTracks braucht keinen Parameter
     # 'source' darf NICHT als Last.fm-Query-Param durchgereicht werden.
     assert "source" not in feed.params
-    assert any("mit Deezer-Feld 'source'" in r.message for r in caplog.records)
+    assert any("with Deezer field 'source'" in r.message for r in caplog.records)
 
 
 def test_camelcase_lastfm_method_valid_and_lowercased(monkeypatch, examples, caplog):
@@ -174,7 +174,7 @@ def test_camelcase_lastfm_method_valid_and_lowercased(monkeypatch, examples, cap
     assert feed.method == "geo.gettoptracks"
     assert feed.params == {"country": "Switzerland"}
     # KEINE "unbekannte method"-Warnung
-    assert not any("unbekannte Last.fm-method" in r.message for r in caplog.records)
+    assert not any("unknown Last.fm method" in r.message for r in caplog.records)
 
 
 # --- Fehlerhafte Eintraege / JSON -------------------------------------------
@@ -184,7 +184,7 @@ def test_missing_name_skips_entry(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         sources = _parse(monkeypatch, data)
     assert sources == []
-    assert any("kein 'name'" in r.message for r in caplog.records)
+    assert any("has no 'name'" in r.message for r in caplog.records)
 
 
 def test_empty_sources_list_warns(monkeypatch, caplog):
@@ -193,7 +193,7 @@ def test_empty_sources_list_warns(monkeypatch, caplog):
         sources = _parse(monkeypatch, data)
     assert len(sources) == 1
     assert sources[0].feeds == []
-    assert any("leere sources-Liste" in r.message for r in caplog.records)
+    assert any("empty sources list" in r.message for r in caplog.records)
 
 
 def test_broken_json_falls_back_to_defaults(monkeypatch, caplog):
@@ -203,7 +203,7 @@ def test_broken_json_falls_back_to_defaults(monkeypatch, caplog):
     # Fall auf eingebaute Defaults -> genau so viele Playlists wie _DEFAULT_CHARTS.
     assert len(sources) == len(config._DEFAULT_CHARTS)
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any("kein gültiges JSON" in r.message for r in errors)
+    assert any("not valid JSON" in r.message for r in errors)
     assert any("CHARTS-SOURCES.md" in r.message for r in errors)
 
 
@@ -220,7 +220,7 @@ def test_info_line_counts_active_feeds_after_downgrade(monkeypatch, caplog):
     # Nur die Deezer-Quelle bleibt aktiv.
     assert sum(len(cs.active_feeds) for cs in sources) == 1
     info = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("1 aktive Quelle(n)" in r.message for r in info)
+    assert any("1 active source(s)" in r.message for r in info)
 
 
 # --- Drift-Test (HIGH-1) -----------------------------------------------------

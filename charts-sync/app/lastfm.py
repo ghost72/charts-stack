@@ -89,7 +89,7 @@ def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
     """
     method = method.lower()
     if method not in _METHOD_PARAM:
-        raise ValueError(f"Unbekannte Last.fm-Methode: {method}")
+        raise ValueError(t("sync.lastfm.unknown_method", method=method))
 
     target = min(max(1, limit), _MAX_TRACKS)
     tracks: list[ChartTrack] = []
@@ -112,9 +112,9 @@ def _fetch_lastfm_feed(method: str, extra: dict, limit: int, api_key: str,
 
         # Last.fm meldet Fehler als {"error": <code>, "message": ".."} (HTTP 200).
         if isinstance(payload, dict) and payload.get("error"):
-            raise RuntimeError(
-                f"Last.fm-API-Fehler ({method}): "
-                f"{payload.get('error')} {payload.get('message', '')}".strip())
+            raise RuntimeError(t("sync.lastfm.api_error", method=method,
+                                 error=payload.get('error'),
+                                 message=payload.get('message', '')).strip())
 
         items = _tracks_from_payload(payload)
         if not items:
@@ -139,8 +139,7 @@ def fetch_feed(feed, api_key: str, client: httpx.Client) -> list[ChartTrack]:
     Attributen: method, params (dict mit country/tag/user/period), limit.
     """
     if not api_key:
-        raise RuntimeError(
-            "LASTFM_API_KEY ist nicht gesetzt, aber ein 'lastfm'-Feed ist aktiv.")
+        raise RuntimeError(t("sync.lastfm.no_api_key"))
     return _fetch_lastfm_feed(feed.method, dict(feed.params or {}),
                               feed.limit, api_key, client)
 

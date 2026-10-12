@@ -7,6 +7,8 @@ import json
 import logging
 import os
 
+from .i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -386,45 +388,38 @@ def _build_feed(s: dict, entry_limit: int, context: str,
         kind = "lastfm"
         if type_ == "chart" or type_ == "playlist":
             # Harmlos, aber verwirrend: Deezer-type an einer Last.fm-Quelle.
-            warnings.append(
-                f"Playlist '{context}', Quelle #{index}: service=lastfm, aber "
-                f"Deezer-type '{type_}' gesetzt - type wird ignoriert.")
+            warnings.append(t("sync.config.lastfm_deezer_type",
+                               context=context, index=index, type=type_))
     elif service == "deezer":
         kind = "deezer"
         if type_ == "lastfm":
-            warnings.append(
-                f"Playlist '{context}', Quelle #{index}: widersprüchlich - "
-                f"service=deezer, aber type=lastfm. Behandle als Deezer.")
+            warnings.append(t("sync.config.deezer_type_lastfm",
+                               context=context, index=index))
     elif service == "":
         # Abwaertskompatibler Fallback (unveraendertes Alt-Verhalten).
         kind = "lastfm" if type_ == "lastfm" else "deezer"
     else:
-        warnings.append(
-            f"Playlist '{context}', Quelle #{index}: unbekannter service "
-            f"'{service}' (erlaubt: deezer, lastfm). Behandle als deezer.")
+        warnings.append(t("sync.config.unknown_service",
+                           context=context, index=index, service=service))
         kind = "deezer"
 
     # 2) Feed je nach Dienst bauen + validieren.
     if kind == "lastfm":
         method = method_raw or "chart.gettoptracks"
         if method not in _VALID_LASTFM_METHODS:
-            warnings.append(
-                f"Playlist '{context}', Quelle #{index}: unbekannte Last.fm-"
-                f"method '{method}' (erlaubt: chart.gettoptracks, "
-                f"geo.gettoptracks, tag.gettoptracks, user.gettoptracks). "
-                f"Quelle deaktiviert.")
+            warnings.append(t("sync.config.unknown_lastfm_method",
+                               context=context, index=index, method=method))
             enabled = False
         else:
             param, required = _VALID_LASTFM_METHODS[method]
             if required and not str(s.get(param, "")).strip():
-                warnings.append(
-                    f"Playlist '{context}', Quelle #{index}: Last.fm-method "
-                    f"'{method}' braucht Parameter '{param}'. Quelle deaktiviert.")
+                warnings.append(t("sync.config.lastfm_missing_param",
+                                   context=context, index=index,
+                                   method=method, param=param))
                 enabled = False
         if str(s.get("source", "")).strip():
-            warnings.append(
-                f"Playlist '{context}', Quelle #{index}: Last.fm-Quelle mit "
-                f"Deezer-Feld 'source' - wird ignoriert.")
+            warnings.append(t("sync.config.lastfm_has_source",
+                               context=context, index=index))
         # Alle nicht-Meta-Schluessel sind method-Parameter (country/tag/user/period).
         params = {k: v for k, v in s.items() if k not in _LASTFM_META_KEYS}
         return Feed(kind="lastfm", limit=limit, enabled=enabled,
@@ -432,16 +427,14 @@ def _build_feed(s: dict, entry_limit: int, context: str,
 
     # Deezer
     if type_ and type_ not in _DEEZER_TYPES:
-        warnings.append(
-            f"Playlist '{context}', Quelle #{index}: unbekannter Deezer-type "
-            f"'{type_}' (erlaubt: chart, playlist, artist). Nutze 'chart'.")
+        warnings.append(t("sync.config.unknown_deezer_type",
+                           context=context, index=index, type=type_))
     deezer_type = type_ if type_ in _DEEZER_TYPES else "chart"
     source = str(s.get("source", "0")).strip() or "0"
     # playlist und artist brauchen eine echte ID (leer/"0" liefert nichts).
     if deezer_type in ("playlist", "artist") and source in ("", "0"):
-        warnings.append(
-            f"Playlist '{context}', Quelle #{index}: Deezer-{deezer_type} ohne "
-            f"gültige 'source'-ID.")
+        warnings.append(t("sync.config.deezer_no_source_id",
+                           context=context, index=index, deezer_type=deezer_type))
     return Feed(kind="deezer", limit=limit, enabled=enabled,
                 deezer_type=deezer_type, source=source)
 
@@ -461,8 +454,7 @@ def _extract_feeds(entry: dict, entry_limit: int, context: str,
     """
     if isinstance(entry.get("sources"), list):
         if not entry["sources"]:
-            warnings.append(
-                f"Playlist '{context}' hat eine leere sources-Liste.")
+            warnings.append(t("sync.config.empty_sources", context=context))
         return [_build_feed(s, entry_limit, context, i, warnings)
                 for i, s in enumerate(entry["sources"], start=1)]
     # Einzelquelle
@@ -499,28 +491,18 @@ def _load_charts_data():
             try:
                 with open(CHARTS_FILE, "r", encoding="utf-8") as fh:
                     data = json.load(fh)
-                logger.info("CHARTS aus Datei geladen: %s", CHARTS_FILE)
+                logger.info(t("sync.config.loaded_from_file", path=CHARTS_FILE))
                 return data
             except json.JSONDecodeError as e:
-                logger.error(
-                    "CHARTS_FILE %s ist kein gültiges JSON an Position %d (%s). "
-                    "Schema siehe CHARTS-SOURCES.md. Nutze die eingebauten "
-                    "Default-Playlists, bis die Datei korrigiert ist.",
-                    CHARTS_FILE, e.pos, e.msg,
-                )
+                logger.error(t("sync.config.file_bad_json",
+                               path=CHARTS_FILE, pos=e.pos, msg=e.msg))
                 return _DEFAULT_CHARTS
             except OSError as e:
-                logger.error(
-                    "CHARTS_FILE %s nicht lesbar (%s). Nutze Default-Playlists.",
-                    CHARTS_FILE, e,
-                )
+                logger.error(t("sync.config.file_unreadable",
+                               path=CHARTS_FILE, error=e))
                 return _DEFAULT_CHARTS
         else:
-            logger.error(
-                "CHARTS_FILE gesetzt (%s), aber Datei existiert nicht. "
-                "Prüfe den Pfad/Volume-Mount. Nutze bis dahin CHARTS-Env bzw. "
-                "Default-Playlists.", CHARTS_FILE,
-            )
+            logger.error(t("sync.config.file_missing", path=CHARTS_FILE))
             # bewusst weiter zur Env-Stufe (Datei fehlt != kaputte Datei)
 
     # 2. CHARTS-Env (einzeiliges JSON).
@@ -529,12 +511,7 @@ def _load_charts_data():
         try:
             return json.loads(raw)
         except json.JSONDecodeError as e:
-            logger.error(
-                "CHARTS ist kein gültiges JSON an Position %d (%s). "
-                "Beispiel/Schema siehe CHARTS-SOURCES.md. Nutze die eingebauten "
-                "Default-Playlists, bis CHARTS korrigiert ist.",
-                e.pos, e.msg,
-            )
+            logger.error(t("sync.config.env_bad_json", pos=e.pos, msg=e.msg))
             return _DEFAULT_CHARTS
 
     # 3. Default.
@@ -559,23 +536,18 @@ def _parse_charts() -> list[ChartSource]:
     sources: list[ChartSource] = []
     for i, entry in enumerate(data):
         if not isinstance(entry, dict):
-            warnings.append(
-                f"CHARTS-Eintrag #{i} ist kein Objekt -> übersprungen.")
+            warnings.append(t("sync.config.entry_not_object", i=i))
             continue
         name = str(entry.get("name", "")).strip()
         if not name:
-            warnings.append(
-                f"CHARTS-Eintrag #{i} hat kein 'name' (Playlist-Datei) "
-                f"-> übersprungen.")
+            warnings.append(t("sync.config.entry_no_name", i=i))
             continue
         context = str(entry.get("title") or name)
         try:
             entry_limit = _parse_limit(entry.get("limit"), CHART_LIMIT)
             feeds = _extract_feeds(entry, entry_limit, context, warnings)
             if not feeds:
-                warnings.append(
-                    f"Playlist '{context}' hat keine Quellen (weder 'sources' "
-                    f"noch Einzelquelle).")
+                warnings.append(t("sync.config.entry_no_feeds", context=context))
             # Pro-Playlist-Genre-Filter: nur ein echter bool ueberschreibt den
             # globalen GENRE_FILTER; fehlt das Feld oder ist es kein bool,
             # bleibt es None -> globaler Default.
@@ -590,7 +562,7 @@ def _parse_charts() -> list[ChartSource]:
                 genre_filter=gf if isinstance(gf, bool) else None,
             ))
         except (KeyError, TypeError, ValueError) as e:
-            warnings.append(f"CHARTS-Eintrag #{i} übersprungen: {e}")
+            warnings.append(t("sync.config.entry_skipped", i=i, error=e))
 
     # Alle gesammelten Validierungsbefunde gebuendelt loggen (jeweils eine WARN).
     for w in warnings:
@@ -599,17 +571,10 @@ def _parse_charts() -> list[ChartSource]:
     # Aktive Quellen NACH dem enabled=False-Downgrade zaehlen.
     active = sum(len(cs.active_feeds) for cs in sources)
     if warnings:
-        logger.info(
-            "CHARTS geladen: %d Playlist(s), %d aktive Quelle(n), %d Warnung(en). "
-            "Details oben; Schema siehe CHARTS-SOURCES.md.",
-            len(sources), active, len(warnings),
-        )
+        logger.info(t("sync.config.summary_warn", n_pl=len(sources),
+                      n_src=active, n_warn=len(warnings)))
     else:
-        logger.info(
-            "CHARTS geladen: %d Playlist(s), %d aktive Quelle(n). "
-            "Schema siehe CHARTS-SOURCES.md.",
-            len(sources), active,
-        )
+        logger.info(t("sync.config.summary", n_pl=len(sources), n_src=active))
     return sources
 
 

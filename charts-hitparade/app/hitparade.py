@@ -137,8 +137,7 @@ def fetch_chart(chart: str, day: date, timeout_s: float = 15.0,
         # Harte Fehlersignalisierung: Seite erreichbar, aber kein einziger
         # Chart-Eintrag erkannt -> Markup geaendert oder leer. Das MUSS
         # auffallen (Monitoring), nicht still als "nichts fehlt" durchgehen.
-        raise HitparadeError(
-            f"Chart '{chart}' lieferte 0 Songs - Seite evtl. umgebaut/blockiert.")
+        raise HitparadeError(t("hitparade.err.zero_songs", chart=chart))
 
     logger.info(t("hitparade.fetch.parsed",
                   chart=chart, date=day.strftime("%d.%m.%Y"), count=len(entries)))
