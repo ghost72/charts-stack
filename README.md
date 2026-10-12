@@ -24,6 +24,12 @@ services are coupled **only through shared folders** (one music, one charts
 folder) – no service calls another directly. The whole stack is **one** compose
 project with **one** central `.env`.
 
+The stack feeds a **Navidrome** music server (required) – that is where the
+playlists and the library live. To enjoy the result like a streaming service you
+point any **Subsonic-compatible app** at Navidrome: e.g. **Substreamer** on
+iPhone, or **Symfonium / DSub / Ultrasonic** on Android. Navidrome speaks the
+Subsonic API, so practically any Subsonic client works, on any platform.
+
 | Service | Job | Interval |
 | --- | --- | --- |
 | **charts-sync** | Fetches Deezer/Last.fm charts, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
@@ -238,6 +244,13 @@ Mehrere eigenständige Dienste plus slskd als Download-Engine. Die Verarbeitungs
 Dienste sind **nur über gemeinsame Ordner** gekoppelt (ein Musik- und ein
 Charts-Ordner) – kein Dienst ruft einen anderen direkt auf. Der ganze Stack ist
 **ein** compose-Projekt mit **einer** zentralen `.env`.
+
+Der Stack füttert einen **Navidrome**-Musikserver (vorausgesetzt) – dort liegen
+die Playlists und die Library. Um das Ganze wie einen Streaming-Dienst zu
+geniessen, richtest du eine beliebige **Subsonic-kompatible App** auf Navidrome:
+z. B. **Substreamer** auf dem iPhone oder **Symfonium / DSub / Ultrasonic** auf
+Android. Navidrome spricht die Subsonic-API, deshalb funktioniert praktisch jeder
+Subsonic-Client auf jeder Plattform.
 
 | Dienst | Aufgabe | Intervall |
 | --- | --- | --- |
