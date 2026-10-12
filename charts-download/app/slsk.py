@@ -35,7 +35,7 @@ class SlskdError(Exception):
 def connect() -> "slskd_api.SlskdClient":
     """Baut den slskd-Client auf. Wirft SlskdError bei fehlendem Key/Host."""
     if not config.SLSKD_API_KEY:
-        raise SlskdError("SLSKD_API_KEY ist nicht gesetzt.")
+        raise SlskdError(t("download.slsk.no_api_key"))
     try:
         client = slskd_api.SlskdClient(
             host=config.SLSKD_HOST,
@@ -46,7 +46,7 @@ def connect() -> "slskd_api.SlskdClient":
         client.application.state()
         return client
     except Exception as e:
-        raise SlskdError(f"Verbindung zu slskd fehlgeschlagen: {e}") from e
+        raise SlskdError(t("download.slsk.connect_failed", error=e)) from e
 
 
 # Bekannte Nicht-MP3-Audioendungen, die wir NIE laden wollen (nur MP3).

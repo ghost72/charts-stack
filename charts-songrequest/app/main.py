@@ -31,11 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger("charts-songrequest")
 
 if not config.APP_USERS:
-    raise RuntimeError(
-        "Keine Benutzer konfiguriert. Setze SONGREQUEST_USERS "
-        "(user1:pass1,user2:pass2) in der .env. Aus Sicherheitsgruenden startet "
-        "die App nicht ohne Login (die Seite ist von aussen erreichbar)."
-    )
+    raise RuntimeError(t("songrequest.err.no_users"))
 logger.info(t("songrequest.login.active",
               count=len(config.APP_USERS),
               users=", ".join(sorted(config.APP_USERS))))

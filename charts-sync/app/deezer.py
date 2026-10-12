@@ -108,8 +108,8 @@ def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
 
         # Deezer meldet Fehler als {"error": {...}} mit HTTP 200.
         if isinstance(payload, dict) and payload.get("error"):
-            raise RuntimeError(
-                f"Deezer-API-Fehler ({feed_type}:{feed_id}): {payload['error']}")
+            raise RuntimeError(t("sync.deezer.api_error", feed_type=feed_type,
+                                 feed_id=feed_id, error=payload['error']))
 
         items = payload.get("data", []) if isinstance(payload, dict) else []
         if not items:
