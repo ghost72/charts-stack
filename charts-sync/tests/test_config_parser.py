@@ -112,7 +112,7 @@ def test_contradiction_service_deezer_type_lastfm(monkeypatch, examples, caplog)
     with caplog.at_level(logging.WARNING):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "deezer"  # service gewinnt
-    assert any("widerspruechlich" in r.message for r in caplog.records)
+    assert any("widersprüchlich" in r.message for r in caplog.records)
 
 
 def test_unknown_service_falls_back_to_deezer(monkeypatch, examples, caplog):
@@ -203,7 +203,7 @@ def test_broken_json_falls_back_to_defaults(monkeypatch, caplog):
     # Fall auf eingebaute Defaults -> genau so viele Playlists wie _DEFAULT_CHARTS.
     assert len(sources) == len(config._DEFAULT_CHARTS)
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
-    assert any("kein gueltiges JSON" in r.message for r in errors)
+    assert any("kein gültiges JSON" in r.message for r in errors)
     assert any("CHARTS-SOURCES.md" in r.message for r in errors)
 
 

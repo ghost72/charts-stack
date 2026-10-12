@@ -86,12 +86,12 @@ def run_once(force_notify: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="charts-digest - taegliche Zusammenfassung neuer Library-Songs.")
+        description="charts-digest - tägliche Zusammenfassung neuer Library-Songs.")
     parser.add_argument(
         "--now", action="store_true",
         help="SOFORT eine Zusammenfassung senden und beenden (manuelle "
-             "Ausloesung, laeuft parallel zum Scheduler im Container). Sendet "
-             "auch bei 0 neuen Songs eine Rueckmeldung.")
+             "Auslösung, läuft parallel zum Scheduler im Container). Sendet "
+             "auch bei 0 neuen Songs eine Rückmeldung.")
     args = parser.parse_args()
 
     status.init("charts-digest")

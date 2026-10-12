@@ -154,8 +154,8 @@ def test_de_missing_file_header_byte_exact(tmp_path, monkeypatch):
     content = pathlib.Path(out).read_text(encoding="utf-8")
     expected = (
         "# Fehlende Empfehlungen (Stand 02.01.2026 15:04)\n"
-        "# Oeffentlicher Hoergeschmack mehrerer ListenBrainz-User (optional Last.fm),\n"
-        "# der noch nicht in der Library ist. charts-download laedt die Songs nach,\n"
+        "# Öffentlicher Hörgeschmack mehrerer ListenBrainz-User (optional Last.fm),\n"
+        "# der noch nicht in der Library ist. charts-download lädt die Songs nach,\n"
         "# charts-import sortiert sie ein - so wachsen sie in die gemeinsame Library.\n"
         "\n"
         "  1. Artist - Title\n"

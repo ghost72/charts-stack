@@ -151,10 +151,10 @@ def test_de_missing_file_header_byte_exact(tmp_path, monkeypatch):
     expected = (
         "# Fehlende FLASHBACK-Songs (Stand 02.01.2026 15:04)\n"
         "# Rotation von FLASHBACK FM, die noch nicht in der Library ist.\n"
-        "# charts-download laedt sie nach, charts-import sortiert sie ein. Das\n"
-        "# Erscheinungsjahr kommt separat ueber die Jahr-Map (nur als Tag, NICHT\n"
+        "# charts-download lädt sie nach, charts-import sortiert sie ein. Das\n"
+        "# Erscheinungsjahr kommt separat über die Jahr-Map (nur als Tag, NICHT\n"
         "# im Datei-/Ordnernamen) - so wachsen sie in die gemeinsame Library und\n"
-        "# erscheinen ueber die Navidrome Smart Playlists in der richtigen Dekade.\n"
+        "# erscheinen über die Navidrome Smart Playlists in der richtigen Dekade.\n"
         "\n"
         "  1. Artist - Title\n"
     )

@@ -155,7 +155,7 @@ def test_de_missing_file_header_byte_exact(tmp_path, monkeypatch):
         "# Fehlende Chart-Songs (Stand 02.01.2026 15:04)\n"
         "# Diese Titel sind in den aktuellen Deezer-Charts, aber nicht in der\n"
         "# Library gefunden worden. Auf legalem Weg beschaffen (Kauf/eigene Rips)\n"
-        "# und in die Library legen - beim naechsten Lauf landen sie automatisch\n"
+        "# und in die Library legen - beim nächsten Lauf landen sie automatisch\n"
         "# in der Playlist.\n"
         "\n"
         "  1. Artist - Title\n"

@@ -239,7 +239,7 @@ def test_lastfm_tag_invalid(monkeypatch):
     _patch_get(monkeypatch, resp=_FakeResp(200, {}), capture=calls)
     out = collector.lastfm_tag_check("pop; drop")   # ';' nicht erlaubt
     assert out["ok"] is False
-    assert out["detail"] == "ungueltiges Tag"
+    assert out["detail"] == "ungültiges Tag"
     assert calls == []
 
 
@@ -249,7 +249,7 @@ def test_lastfm_tag_empty_query(monkeypatch):
     _patch_get(monkeypatch, resp=_FakeResp(200, {}), capture=calls)
     out = collector.lastfm_tag_check("   ")
     assert out["ok"] is False
-    assert out["detail"] == "ungueltiges Tag"
+    assert out["detail"] == "ungültiges Tag"
     assert calls == []
 
 
