@@ -112,12 +112,44 @@ charts-stack only produces the `.m3u` playlists and sorts the music into
 `MUSIC_ROOT/Music` – playback happens through **Navidrome** (a separate service,
 not part of this stack). To make them work together:
 
-- Navidrome must mount the **same** `MUSIC_ROOT/Music` folder as its music
-  library that charts-import fills.
-- Enable **playlist scanning** in Navidrome (setting `ND_PLAYLISTSPATH` / "import
-  `.m3u` automatically") so the playlists written by charts-sync (`charts.m3u`,
-  `mundart.m3u`) show up in Navidrome.
+- Navidrome must mount the **same** two shared folders charts-stack uses:
+  `MUSIC_ROOT/Music` (the library charts-import fills) **and** `MUSIC_ROOT/Charts`
+  (where charts-sync writes the `.m3u` playlists).
+- Enable **playlist scanning** in Navidrome (`ND_PLAYLISTPARSING_ENABLED=true`)
+  so the playlists written by charts-sync (`charts.m3u`, `mundart.m3u`) show up
+  in Navidrome.
+- Run Navidrome as the **same** uid/gid as the charts-stack services so all
+  services can read/write the shared folders.
 - Navidrome scans periodically; new songs/playlists appear after the next scan.
+
+A minimal Navidrome `compose.yml` that works with charts-stack (it is a separate
+project, not part of this stack; the placeholders read the same central `.env`):
+
+```yaml
+services:
+  navidrome:
+    image: deluan/navidrome:latest   # pin a version for production
+    container_name: navidrome
+    # Run as the SAME uid:gid as the charts-stack services so every service can
+    # read/write the shared folders. The official image uses `user:` for this,
+    # NOT PUID/PGID/UMASK (those are ignored by this image).
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_DELETEMISSINGFILES=false
+      - ND_LOGLEVEL=info
+      - ND_MUSICFOLDER=/Music
+      - ND_PLAYLISTPARSING_ENABLED=true
+    volumes:
+      - ./navidrome-data:/data                 # Navidrome config + DB
+      # The SAME two shared folders charts-stack uses, read-only:
+      - ${MUSIC_ROOT}/Music:/Music:ro          # library charts-import fills
+      - ${MUSIC_ROOT}/Charts:/Charts:ro        # playlists charts-sync writes
+    ports:
+      - 4533:4533
+    restart: unless-stopped
+```
 
 That's it. The services talk to each other over the automatically created
 project network (e.g. charts-download → `http://slskd:5030`); you don't need to
@@ -357,14 +389,46 @@ charts-stack erzeugt nur die `.m3u`-Playlists und sortiert die Musik in
 `MUSIC_ROOT/Music` ein – abgespielt wird über **Navidrome** (separater Dienst,
 nicht Teil dieses Stacks). Damit es zusammenspielt:
 
-- Navidrome muss **denselben** `MUSIC_ROOT/Music`-Ordner als Musik-Library
-  einbinden, den charts-import befüllt.
-- In Navidrome den **Playlist-Scan** aktivieren (Einstellung
-  `ND_PLAYLISTSPATH` bzw. „automatisch `.m3u` importieren"), damit die von
-  charts-sync geschriebenen Playlists (`charts.m3u`, `mundart.m3u`) in
-  Navidrome erscheinen.
+- Navidrome muss **dieselben** zwei gemeinsamen Ordner einbinden wie
+  charts-stack: `MUSIC_ROOT/Music` (die Library, die charts-import befüllt)
+  **und** `MUSIC_ROOT/Charts` (dorthin schreibt charts-sync die `.m3u`-Playlists).
+- In Navidrome den **Playlist-Scan** aktivieren (`ND_PLAYLISTPARSING_ENABLED=true`),
+  damit die von charts-sync geschriebenen Playlists (`charts.m3u`, `mundart.m3u`)
+  in Navidrome erscheinen.
+- Navidrome unter **derselben** UID/GID laufen lassen wie die charts-stack-
+  Dienste, damit alle Dienste die gemeinsamen Ordner lesen/schreiben können.
 - Navidrome scannt periodisch; neue Songs/Playlists tauchen nach dem nächsten
   Scan auf.
+
+Eine minimale Navidrome-`compose.yml`, die mit charts-stack zusammenspielt (es
+ist ein separates Projekt, nicht Teil dieses Stacks; die Platzhalter lesen
+dieselbe zentrale `.env`):
+
+```yaml
+services:
+  navidrome:
+    image: deluan/navidrome:latest   # für den Produktivbetrieb eine Version pinnen
+    container_name: navidrome
+    # Unter DERSELBEN uid:gid wie die charts-stack-Dienste laufen, damit jeder
+    # Dienst die gemeinsamen Ordner lesen/schreiben kann. Das offizielle Image
+    # nutzt dafür `user:`, NICHT PUID/PGID/UMASK (die ignoriert dieses Image).
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_DELETEMISSINGFILES=false
+      - ND_LOGLEVEL=info
+      - ND_MUSICFOLDER=/Music
+      - ND_PLAYLISTPARSING_ENABLED=true
+    volumes:
+      - ./navidrome-data:/data                 # Navidrome Config + DB
+      # Dieselben zwei gemeinsamen Ordner wie charts-stack, read-only:
+      - ${MUSIC_ROOT}/Music:/Music:ro          # Library, die charts-import befüllt
+      - ${MUSIC_ROOT}/Charts:/Charts:ro        # Playlists, die charts-sync schreibt
+    ports:
+      - 4533:4533
+    restart: unless-stopped
+```
 
 **Was wann läuft:** slskd ist Dauerdienst; charts-sync (12 h) erzeugt Playlists +
 `missing-*.txt`; charts-download (60 min) lädt die fehlenden Songs; charts-import
