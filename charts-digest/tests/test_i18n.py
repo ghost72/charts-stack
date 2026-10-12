@@ -59,7 +59,7 @@ def test_de_golden_digest_strings():
     # taeglich %02d:%02d | Fenster %dh | Log: %s").
     assert (i18n.t("digest.scheduler.started", hour=9, minute=0, hours=24,
                    log="/charts/.charts-imported-log.jsonl")
-            == "charts-digest gestartet | taeglich 09:00 | Fenster 24h | "
+            == "charts-digest gestartet | täglich 09:00 | Fenster 24h | "
                "Log: /charts/.charts-imported-log.jsonl")
 
 

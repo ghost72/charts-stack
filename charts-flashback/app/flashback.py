@@ -120,25 +120,25 @@ def fetch_played(channel: str, hash_: str,
     except httpx.HTTPError as e:
         raise FetchError(f"FLASHBACK nicht erreichbar: {e}") from e
     except ValueError as e:
-        raise FetchError(f"FLASHBACK: ungueltiges JSON: {e}") from e
+        raise FetchError(f"FLASHBACK: ungültiges JSON: {e}") from e
 
     _check_graphql_errors(data)
 
     player = (data.get("data") or {}).get("audioPlayer")
     if not isinstance(player, dict):
-        raise FetchError("FLASHBACK: data.audioPlayer fehlt (Hash tot / API geaendert?)")
+        raise FetchError("FLASHBACK: data.audioPlayer fehlt (Hash tot / API geändert?)")
     stream = player.get("stream")
     if not isinstance(stream, dict):
         raise FetchError(
-            f"FLASHBACK: stream fehlt fuer '{channel}' (Hash tot / API geaendert?)")
+            f"FLASHBACK: stream fehlt für '{channel}' (Hash tot / API geändert?)")
     played = stream.get("played")
     # played=null bedeutet: dieser Stream fuehrt keine Historie (nur der
     # Hauptstream flashbackfm.ffm tut das). Das ist ein Konfig-/Stream-Fehler,
     # KEIN leerer Erfolg -> als FetchError melden.
     if played is None:
         raise FetchError(
-            f"FLASHBACK: stream.played=null fuer '{channel}' - nur der "
-            "Hauptstream (flashbackfm.ffm) fuehrt eine Historie.")
+            f"FLASHBACK: stream.played=null für '{channel}' - nur der "
+            "Hauptstream (flashbackfm.ffm) führt eine Historie.")
 
     out: list[tuple[str, str, str]] = []
     for tr in played:

@@ -393,7 +393,7 @@ def _build_feed(s: dict, entry_limit: int, context: str,
         kind = "deezer"
         if type_ == "lastfm":
             warnings.append(
-                f"Playlist '{context}', Quelle #{index}: widerspruechlich - "
+                f"Playlist '{context}', Quelle #{index}: widersprüchlich - "
                 f"service=deezer, aber type=lastfm. Behandle als Deezer.")
     elif service == "":
         # Abwaertskompatibler Fallback (unveraendertes Alt-Verhalten).
@@ -441,7 +441,7 @@ def _build_feed(s: dict, entry_limit: int, context: str,
     if deezer_type in ("playlist", "artist") and source in ("", "0"):
         warnings.append(
             f"Playlist '{context}', Quelle #{index}: Deezer-{deezer_type} ohne "
-            f"gueltige 'source'-ID.")
+            f"gültige 'source'-ID.")
     return Feed(kind="deezer", limit=limit, enabled=enabled,
                 deezer_type=deezer_type, source=source)
 
@@ -503,7 +503,7 @@ def _load_charts_data():
                 return data
             except json.JSONDecodeError as e:
                 logger.error(
-                    "CHARTS_FILE %s ist kein gueltiges JSON an Position %d (%s). "
+                    "CHARTS_FILE %s ist kein gültiges JSON an Position %d (%s). "
                     "Schema siehe CHARTS-SOURCES.md. Nutze die eingebauten "
                     "Default-Playlists, bis die Datei korrigiert ist.",
                     CHARTS_FILE, e.pos, e.msg,
@@ -518,7 +518,7 @@ def _load_charts_data():
         else:
             logger.error(
                 "CHARTS_FILE gesetzt (%s), aber Datei existiert nicht. "
-                "Pruefe den Pfad/Volume-Mount. Nutze bis dahin CHARTS-Env bzw. "
+                "Prüfe den Pfad/Volume-Mount. Nutze bis dahin CHARTS-Env bzw. "
                 "Default-Playlists.", CHARTS_FILE,
             )
             # bewusst weiter zur Env-Stufe (Datei fehlt != kaputte Datei)
@@ -530,7 +530,7 @@ def _load_charts_data():
             return json.loads(raw)
         except json.JSONDecodeError as e:
             logger.error(
-                "CHARTS ist kein gueltiges JSON an Position %d (%s). "
+                "CHARTS ist kein gültiges JSON an Position %d (%s). "
                 "Beispiel/Schema siehe CHARTS-SOURCES.md. Nutze die eingebauten "
                 "Default-Playlists, bis CHARTS korrigiert ist.",
                 e.pos, e.msg,
@@ -560,13 +560,13 @@ def _parse_charts() -> list[ChartSource]:
     for i, entry in enumerate(data):
         if not isinstance(entry, dict):
             warnings.append(
-                f"CHARTS-Eintrag #{i} ist kein Objekt -> uebersprungen.")
+                f"CHARTS-Eintrag #{i} ist kein Objekt -> übersprungen.")
             continue
         name = str(entry.get("name", "")).strip()
         if not name:
             warnings.append(
                 f"CHARTS-Eintrag #{i} hat kein 'name' (Playlist-Datei) "
-                f"-> uebersprungen.")
+                f"-> übersprungen.")
             continue
         context = str(entry.get("title") or name)
         try:
@@ -590,7 +590,7 @@ def _parse_charts() -> list[ChartSource]:
                 genre_filter=gf if isinstance(gf, bool) else None,
             ))
         except (KeyError, TypeError, ValueError) as e:
-            warnings.append(f"CHARTS-Eintrag #{i} uebersprungen: {e}")
+            warnings.append(f"CHARTS-Eintrag #{i} übersprungen: {e}")
 
     # Alle gesammelten Validierungsbefunde gebuendelt loggen (jeweils eine WARN).
     for w in warnings:
