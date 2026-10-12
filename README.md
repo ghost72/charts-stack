@@ -26,9 +26,10 @@ project with **one** central `.env`.
 
 The stack feeds a **Navidrome** music server (required) – that is where the
 playlists and the library live. To enjoy the result like a streaming service you
-point any **Subsonic-compatible app** at Navidrome: e.g. **Substreamer** on
-iPhone, or **Symfonium / DSub / Ultrasonic** on Android. Navidrome speaks the
-Subsonic API, so practically any Subsonic client works, on any platform.
+point any **Subsonic-compatible app** at Navidrome: e.g. **Substreamer /
+play:Sub / Amperfy / iSub** on iPhone, or **Symfonium / DSub / Ultrasonic** on
+Android. Which one is a matter of taste. Navidrome speaks the Subsonic API, so
+practically any Subsonic client works, on any platform.
 
 | Service | Job | Interval |
 | --- | --- | --- |
@@ -248,8 +249,9 @@ Charts-Ordner) – kein Dienst ruft einen anderen direkt auf. Der ganze Stack is
 Der Stack füttert einen **Navidrome**-Musikserver (vorausgesetzt) – dort liegen
 die Playlists und die Library. Um das Ganze wie einen Streaming-Dienst zu
 geniessen, richtest du eine beliebige **Subsonic-kompatible App** auf Navidrome:
-z. B. **Substreamer** auf dem iPhone oder **Symfonium / DSub / Ultrasonic** auf
-Android. Navidrome spricht die Subsonic-API, deshalb funktioniert praktisch jeder
+z. B. **Substreamer / play:Sub / Amperfy / iSub** auf dem iPhone oder
+**Symfonium / DSub / Ultrasonic** auf Android. Welche davon ist Geschmackssache.
+Navidrome spricht die Subsonic-API, deshalb funktioniert praktisch jeder
 Subsonic-Client auf jeder Plattform.
 
 | Dienst | Aufgabe | Intervall |
