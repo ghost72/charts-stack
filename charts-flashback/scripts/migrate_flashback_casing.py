@@ -1,89 +1,89 @@
 #!/usr/bin/env python3
 """
-Einmalige, idempotente Migration der 7 bereits GROSS in der Library liegenden
-charts-flashback-Songs auf ihre kanonische Schreibweise.
+One-off, idempotent migration of the 7 charts-flashback songs already sitting in
+the library in UPPERCASE to their canonical spelling.
 
-Hintergrund: FLASHBACK FM lieferte Artist/Titel frueher in GROSSBUCHSTABEN;
-diese Rohwerte landeten als Ordner-/Dateiname in der Library (z.B.
-``U2/WHERE THE STREETS HAVE NO NAME/WHERE THE STREETS HAVE NO NAME.mp3``). Ab
-sofort kanonisiert charts-flashback die Schreibweise ueber Deezer; dieses Skript
-raeumt die 7 Altlasten nach.
+Background: FLASHBACK FM used to deliver artist/title in UPPERCASE; those raw
+values ended up as folder/file names in the library (e.g.
+``U2/WHERE THE STREETS HAVE NO NAME/WHERE THE STREETS HAVE NO NAME.mp3``). From
+now on charts-flashback canonicalizes the spelling via Deezer; this script
+cleans up the 7 legacy cases.
 
-KONSISTENZ IST DAS ZIEL: Kuenftige flashback-Songs bekommen GENAU das Casing,
-das app.deezer.resolve_canonical() liefert. Damit Alt- und Neufaelle identisch
-geschrieben sind, holt dieses Skript die Zielschreibweise der 7 Songs ZUR
-LAUFZEIT ueber dieselbe resolve_canonical()-Funktion - KEINE hartkodierten
-Zielnamen als Normalfall. So gibt es per Konstruktion keine Drift zwischen der
-laufenden Aufloesung und der Migration.
+CONSISTENCY IS THE GOAL: future flashback songs get EXACTLY the casing that
+app.deezer.resolve_canonical() returns. So that old and new cases are written
+identically, this script fetches the target spelling of the 7 songs AT RUNTIME
+via the same resolve_canonical() function - NO hardcoded target names as the
+normal case. By construction there is no drift between the live resolution and
+the migration.
 
-FALLBACK: Liefert resolve_canonical() fuer einen Song keinen validierten
-Deezer-Treffer (Netz weg / kein Match -> Rueckgabe == GROSS-Rohwert), faellt das
-Skript fuer DIESEN Song auf eine hartkodierte Schreibweise (FALLBACK_CASING)
-zurueck und LOGGT das deutlich (WARN), damit der User es manuell pruefen kann -
-statt den Song GROSS zu lassen oder abzubrechen.
+FALLBACK: if resolve_canonical() returns no validated Deezer match for a song
+(no network / no match -> returns == UPPERCASE raw value), the script falls back
+to a hardcoded spelling (FALLBACK_CASING) for THAT song and LOGS it clearly
+(WARN) so the user can check it manually - instead of leaving the song UPPERCASE
+or aborting.
 
-Manuell auf der NAS auszufuehren (youruser@your-nas), die Library liegt dort
-unter /volume2/music/Music. Basis-Pfad per CLI-Arg oder Env MUSIC_DIR
-ueberschreibbar (Default /volume2/music/Music). Das Skript importiert das
-app-Paket (fuer resolve_canonical) - am einfachsten im Container ausfuehren:
+Run manually on the NAS (youruser@your-nas), where the library lives under
+/volume2/music/Music. The base path is overridable via CLI arg or env MUSIC_DIR
+(default /volume2/music/Music). The script imports the app package (for
+resolve_canonical) - easiest to run inside the container:
 ``docker exec charts-flashback python /app/scripts/migrate_flashback_casing.py``
-(Library dort unter /music/Music), oder auf der NAS mit gesetztem PYTHONPATH auf
-das charts-flashback-Verzeichnis.
+(library there under /music/Music), or on the NAS with PYTHONPATH set to the
+charts-flashback directory.
 
-WICHTIG (Lehre aus der Erstmigration): Der charts-flashback-Container mountet
-die Library READ-ONLY (/music:ro) - er muss nur lesen (Matching). Das --dry-run
-laeuft im Container problemlos, der ECHTE Lauf scheitert dort aber mit
-``OSError: [Errno 30] Read-only file system``. Darum den echten Rename ENTWEDER
-direkt auf dem NAS-Host laufen lassen (als root, mit PYTHONPATH auf das
-charts-flashback-Verzeichnis, damit ``import app.deezer`` klappt) ODER in einem
-Container, der die Library beschreibbar gemountet hat (z.B. charts-import mit
-/music=rw) - dann aber ohne resolve_canonical, da nur charts-flashback das
-deezer-Modul hat. Fuer die Erstmigration wurde der Host-Weg genommen.
+IMPORTANT (lesson from the first migration): the charts-flashback container
+mounts the library READ-ONLY (/music:ro) - it only needs to read (matching). The
+--dry-run runs fine in the container, but the REAL run fails there with
+``OSError: [Errno 30] Read-only file system``. So run the real rename EITHER
+directly on the NAS host (as root, with PYTHONPATH on the charts-flashback
+directory so ``import app.deezer`` works) OR in a container that has the library
+mounted writable (e.g. charts-import with /music=rw) - but then without
+resolve_canonical, since only charts-flashback has the deezer module. The first
+migration used the host route.
 
-Pro Song wird umbenannt:
-  - Artist-Ordner  <ARTIST GROSS>        -> <Artist kanonisch>
-  - Album-Ordner   <TITLE GROSS>         -> <Title kanonisch>
-  - Audiodatei(en) <TITLE GROSS>.<ext>   -> <Title kanonisch>.<ext>
+Per song the following is renamed:
+  - Artist folder <ARTIST UPPER>        -> <Artist canonical>
+  - Album folder  <TITLE UPPER>         -> <Title canonical>
+  - Audio file(s) <TITLE UPPER>.<ext>   -> <Title canonical>.<ext>
 
-Robustheit:
-  - Idempotent: fehlt die Quelle, ist aber das Ziel schon da -> uebersprungen.
-  - Zielpfad darf noch nicht existieren (ausser reiner Casing-Wechsel) -> sonst
-    Konflikt-Warnung, kein Ueberschreiben.
-  - Case-insensitive Mounts: reiner Casing-Wechsel laeuft ueber einen
-    Zwischen-Rename (``.casingtmp``), damit er auch dort greift.
-  - @eaDir (Synology-Thumbnails) wandert beim Ordner-Rename automatisch mit; es
-    wird nicht gesondert angefasst (DSM erzeugt es bei Bedarf neu).
-  - chown 1027:100 (PUID/PGID) auf jeden angefassten Pfad; Fehler nicht fatal.
-  - --dry-run zeigt nur, was passieren wuerde.
+Robustness:
+  - Idempotent: if the source is missing but the target already exists -> skipped.
+  - The target path must not exist yet (except a pure casing change) -> otherwise
+    conflict warning, no overwrite.
+  - Case-insensitive mounts: a pure casing change goes through an intermediate
+    rename (``.casingtmp``) so it works there too.
+  - @eaDir (Synology thumbnails) moves along automatically on a folder rename; it
+    is not touched separately (DSM recreates it on demand).
+  - chown 1027:100 (PUID/PGID) on every touched path; errors are not fatal.
+  - --dry-run only shows what would happen.
 
-WICHTIG - Jahr-Map NICHT anfassen: Die Jahr-Tags (date/originaldate) der 7 Songs
-sind bereits manuell korrekt gesetzt und werden hier NICHT beruehrt (nur Ordner-
-und Dateinamen). Der Key in .charts-flashback-years.json ist zudem lowercase
+IMPORTANT - do NOT touch the year map: the year tags (date/originaldate) of the 7
+songs are already set correctly by hand and are NOT touched here (only folder and
+file names). The key in .charts-flashback-years.json is also lowercase
 'artist|title' (flashback main._key == charts-import importer._flashback_year,
-beide .lower()); Casing-Aenderungen am Namen aendern den Key NICHT -> die
-Jahr-Map bleibt gueltig, kein Eingriff noetig.
+both .lower()); casing changes to the name do NOT change the key -> the year map
+stays valid, no intervention needed.
 """
 
 import argparse
 import os
 import sys
 
-# app-Paket importierbar machen, egal von wo das Skript gestartet wird
-# (scripts/ liegt direkt unter dem Projekt-Root, der das app-Paket enthaelt).
+# Make the app package importable regardless of where the script is started
+# (scripts/ sits directly under the project root that contains the app package).
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from app import deezer  # noqa: E402
 
-# PUID/PGID der Container-Workloads auf der NAS (youruser: UID 1027, GID 100).
+# PUID/PGID of the container workloads on the NAS (youruser: UID 1027, GID 100).
 CHOWN_UID = 1027
 CHOWN_GID = 100
 
 DEFAULT_MUSIC_DIR = os.environ.get("MUSIC_DIR", "/volume2/music/Music")
 
-# Die 7 GROSS-Rohwerte (so liegen Ordner/Datei aktuell in der Library).
-# Die Zielschreibweise wird ZUR LAUFZEIT via resolve_canonical() geholt.
+# The 7 UPPERCASE raw values (how folder/file currently sit in the library).
+# The target spelling is fetched AT RUNTIME via resolve_canonical().
 RAW_SONGS = [
     ("FREDDIE MERCURY", "I WAS BORN TO LOVE YOU"),            # 1. (1985)
     ("BLOODHOUND GANG", "THE BAD TOUCH"),                     # 2. (1999)
@@ -94,11 +94,11 @@ RAW_SONGS = [
     ("MARILLION", "KAYLEIGH"),                                # 7. (1985)
 ]
 
-# Hartkodierte NOTFALL-Schreibweise - NUR benutzt, wenn resolve_canonical()
-# keinen validierten Deezer-Treffer liefert (dann GROSS-Rohwert zurueck). Key =
-# GROSS-Rohwert (artist, title). Wird dann mit lautem WARN-Log angewendet.
-# Hinweis: Dies kann vom Live-Deezer-Casing leicht abweichen (z.B. kurze
-# Woerter) - daher nur Fallback, nicht Normalfall.
+# Hardcoded EMERGENCY spelling - ONLY used when resolve_canonical() returns no
+# validated Deezer match (then the UPPERCASE raw value comes back). Key =
+# UPPERCASE raw value (artist, title). Applied with a loud WARN log.
+# Note: this can differ slightly from the live Deezer casing (e.g. short
+# words) - hence only a fallback, not the normal case.
 FALLBACK_CASING = {
     ("FREDDIE MERCURY", "I WAS BORN TO LOVE YOU"):
         ("Freddie Mercury", "I Was Born to Love You"),
@@ -119,57 +119,57 @@ FALLBACK_CASING = {
 
 def _resolve_target(old_artist: str, old_title: str) -> tuple[str, str]:
     """
-    Zielschreibweise fuer einen Song: zuerst Deezer (resolve_canonical, exakt wie
-    im laufenden Dienst), sonst hartkodierter Fallback mit lautem WARN-Log.
+    Target spelling for a song: first Deezer (resolve_canonical, exactly as in
+    the running service), otherwise the hardcoded fallback with a loud WARN log.
 
-    resolve_canonical() gibt bei fehlendem/validiertem Deezer-Treffer die
-    unveraenderten (GROSS-)Rohwerte zurueck. Erkennen wir das (Ergebnis ==
-    Rohwert, obwohl der Rohwert GROSS ist), greifen wir auf FALLBACK_CASING.
+    resolve_canonical() returns the unchanged (UPPERCASE) raw values when there
+    is no validated Deezer match. If we detect that (result == raw value even
+    though the raw value is UPPERCASE), we fall back to FALLBACK_CASING.
     """
     new_artist, new_title = deezer.resolve_canonical(old_artist, old_title)
     unchanged = (new_artist == old_artist and new_title == old_title)
     if unchanged:
         fb = FALLBACK_CASING.get((old_artist, old_title))
         if fb:
-            print(f"    WARN: Kein validierter Deezer-Treffer fuer "
-                  f"'{old_artist} / {old_title}' -> Fallback-Casing "
-                  f"'{fb[0]} / {fb[1]}' (bitte manuell pruefen).")
+            print(f"    WARN: no validated Deezer match for "
+                  f"'{old_artist} / {old_title}' -> fallback casing "
+                  f"'{fb[0]} / {fb[1]}' (please check manually).")
             return fb
-        print(f"    WARN: Kein Deezer-Treffer UND kein Fallback fuer "
-              f"'{old_artist} / {old_title}' -> bleibt GROSS (bitte pruefen).")
+        print(f"    WARN: no Deezer match AND no fallback for "
+              f"'{old_artist} / {old_title}' -> stays UPPERCASE (please check).")
     return new_artist, new_title
 
 
 def _chown(path: str, dry_run: bool) -> None:
-    """Setzt Eigentuemer auf 1027:100. Fehler sind nicht fatal (nur Log)."""
+    """Set owner to 1027:100. Errors are not fatal (log only)."""
     if dry_run:
         print(f"    [dry-run] chown {CHOWN_UID}:{CHOWN_GID} {path}")
         return
     try:
         os.chown(path, CHOWN_UID, CHOWN_GID)
     except OSError as e:
-        print(f"    WARN: chown fehlgeschlagen ({path}): {e}")
+        print(f"    WARN: chown failed ({path}): {e}")
 
 
 def _rename(src: str, dst: str, dry_run: bool) -> bool:
     """
-    Benennt src -> dst um. Reiner Casing-Wechsel (gleiche Pfade bei
-    case-insensitivem Vergleich, aber unterschiedliche Schreibweise) laeuft ueber
-    einen Zwischen-Rename, damit er auch auf case-insensitiven Mounts greift.
-    Rueckgabe: True, wenn umbenannt (oder im dry-run wuerde).
+    Rename src -> dst. A pure casing change (same paths under a case-insensitive
+    comparison but different spelling) goes through an intermediate rename so it
+    works on case-insensitive mounts too.
+    Returns: True if renamed (or would be in dry-run).
     """
     if src == dst:
         return False
-    # Reiner Casing-Wechsel plattformunabhaengig erkennen: os.path.normcase
-    # lowercased NUR unter Windows, nicht unter Linux/macOS - deshalb direkt
-    # ueber .lower() vergleichen.
+    # Detect a pure casing change platform-independently: os.path.normcase
+    # lowercases ONLY on Windows, not on Linux/macOS - so compare via .lower()
+    # directly.
     casing_only = src.lower() == dst.lower()
 
-    # Konflikt nur melden, wenn das Ziel wirklich ein ANDERER Pfad ist (nicht
-    # nur ein Casing-Wechsel). Auf case-insensitiven Mounts "existiert" das Ziel
-    # bei reinem Casing-Wechsel scheinbar schon - das ist aber dieselbe Datei.
+    # Only report a conflict if the target really is a DIFFERENT path (not just
+    # a casing change). On case-insensitive mounts the target seemingly already
+    # "exists" for a pure casing change - but that is the same file.
     if not casing_only and os.path.exists(dst):
-        print(f"    WARN: Ziel existiert bereits, uebersprungen: {dst}")
+        print(f"    WARN: target already exists, skipped: {dst}")
         return False
 
     if dry_run:
@@ -178,9 +178,9 @@ def _rename(src: str, dst: str, dry_run: bool) -> bool:
 
     if casing_only:
         tmp = src + ".casingtmp"
-        # Falls ein frueherer Lauf abbrach, tmp aufraeumen.
+        # If an earlier run aborted, clean up tmp.
         if os.path.exists(tmp) and tmp.lower() != src.lower():
-            print(f"    WARN: Zwischenpfad existiert bereits: {tmp}")
+            print(f"    WARN: intermediate path already exists: {tmp}")
             return False
         os.rename(src, tmp)
         os.rename(tmp, dst)
@@ -193,9 +193,9 @@ def _rename(src: str, dst: str, dry_run: bool) -> bool:
 def _migrate_file_in(album_dir: str, old_title: str, new_title: str,
                      dry_run: bool) -> None:
     """
-    Benennt die Audiodatei(en) im Album-Ordner von <old_title>.<ext> auf
-    <new_title>.<ext> um (Dateiendung bleibt). Fasst jede Datei an, deren
-    Basisname (ohne Endung) dem alten Titel entspricht (case-insensitiv).
+    Rename the audio file(s) in the album folder from <old_title>.<ext> to
+    <new_title>.<ext> (file extension kept). Touches every file whose base name
+    (without extension) matches the old title (case-insensitive).
     """
     if not os.path.isdir(album_dir):
         return
@@ -218,67 +218,67 @@ def _migrate_song(music_dir: str, old_artist: str, old_title: str,
     old_artist_dir = os.path.join(music_dir, old_artist)
     new_artist_dir = os.path.join(music_dir, new_artist)
 
-    # 1. Artist-Ordner auf kanonische Schreibweise bringen (falls noetig).
+    # 1. Bring the artist folder to the canonical spelling (if needed).
     if os.path.isdir(old_artist_dir):
         _rename(old_artist_dir, new_artist_dir, dry_run)
         if not dry_run and os.path.isdir(new_artist_dir):
             _chown(new_artist_dir, dry_run)
     elif os.path.isdir(new_artist_dir):
-        pass  # Artist-Ordner schon kanonisch (idempotent)
+        pass  # artist folder already canonical (idempotent)
     else:
-        print(f"    WARN: Artist-Ordner nicht gefunden: {old_artist_dir}")
+        print(f"    WARN: artist folder not found: {old_artist_dir}")
         return
 
-    # Ab hier mit dem (ggf. schon umbenannten) kanonischen Artist-Ordner weiter.
-    # Im dry-run existiert new_artist_dir evtl. noch nicht -> auf vorhandenen
-    # Pfad zurueckfallen, damit die Vorschau weiterlaufen kann.
+    # From here on continue with the (possibly already renamed) canonical artist
+    # folder. In dry-run new_artist_dir may not exist yet -> fall back to the
+    # existing path so the preview can continue.
     base_artist_dir = new_artist_dir if os.path.isdir(new_artist_dir) else old_artist_dir
 
     old_album_dir = os.path.join(base_artist_dir, old_title)
     new_album_dir = os.path.join(base_artist_dir, new_title)
 
-    # 2. Album-Ordner umbenennen (falls noetig).
+    # 2. Rename the album folder (if needed).
     if os.path.isdir(old_album_dir):
         _rename(old_album_dir, new_album_dir, dry_run)
         if not dry_run and os.path.isdir(new_album_dir):
             _chown(new_album_dir, dry_run)
     elif os.path.isdir(new_album_dir):
-        pass  # Album-Ordner schon kanonisch (idempotent)
+        pass  # album folder already canonical (idempotent)
     else:
-        print(f"    WARN: Album-Ordner nicht gefunden: {old_album_dir}")
+        print(f"    WARN: album folder not found: {old_album_dir}")
         return
 
-    # 3. Audiodatei(en) im (ggf. umbenannten) Album-Ordner anpassen.
+    # 3. Adjust the audio file(s) in the (possibly renamed) album folder.
     target_album_dir = new_album_dir if os.path.isdir(new_album_dir) else old_album_dir
     _migrate_file_in(target_album_dir, old_title, new_title, dry_run)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Migriert die 7 GROSS-Songs auf kanonische Schreibweise.")
+        description="Migrates the 7 UPPERCASE songs to canonical spelling.")
     parser.add_argument("music_dir", nargs="?", default=DEFAULT_MUSIC_DIR,
-                        help=f"Library-Basis-Pfad (Default: {DEFAULT_MUSIC_DIR})")
+                        help=f"library base path (default: {DEFAULT_MUSIC_DIR})")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Nur anzeigen, was passieren wuerde.")
+                        help="only show what would happen.")
     args = parser.parse_args()
 
     music_dir = args.music_dir
     if not os.path.isdir(music_dir):
-        print(f"FEHLER: Library-Pfad existiert nicht: {music_dir}")
+        print(f"ERROR: library path does not exist: {music_dir}")
         return 1
 
     print(f"Library: {music_dir}{'  (DRY-RUN)' if args.dry_run else ''}")
-    print(f"{len(RAW_SONGS)} Songs werden geprueft.\n")
+    print(f"{len(RAW_SONGS)} songs will be checked.\n")
 
     for old_artist, old_title in RAW_SONGS:
-        # Zielschreibweise exakt wie der laufende Dienst (Deezer) ermitteln.
+        # Determine the target spelling exactly like the running service (Deezer).
         new_artist, new_title = _resolve_target(old_artist, old_title)
         _migrate_song(music_dir, old_artist, old_title,
                       new_artist, new_title, args.dry_run)
 
-    print("\nFertig. Jahr-Tags (date/originaldate) und Jahr-Map "
-          "(.charts-flashback-years.json) wurden NICHT angefasst "
-          "(Tags bereits korrekt; Map-Key ist lowercase -> casing-stabil).")
+    print("\nDone. Year tags (date/originaldate) and the year map "
+          "(.charts-flashback-years.json) were NOT touched "
+          "(tags already correct; map key is lowercase -> casing-stable).")
     return 0
 
 

@@ -1,41 +1,41 @@
 #!/usr/bin/env python3
 """
-Einmalige, idempotente Korrektur der flashback-Songs, die bereits GROSS in der
-Library einsortiert sind (Altfaelle von vor dem Deezer-Casing-Matching-Fix).
+One-off, idempotent correction of the flashback songs already sorted into the
+library in UPPERCASE (legacy cases from before the Deezer casing-matching fix).
 
-Hintergrund: charts-import kanonisiert ab sofort GROSS-Namen beim Import (letzte
-Instanz, siehe tags.build_target_path/_canonicalize). Das verhindert KUENFTIGE
-GROSS-Faelle. Songs, die aber schon VOR dem Fix einsortiert wurden, liegen
-weiter GROSS in der Library - ihre Download-Dateien sind oft laengst weg
-(KEEP_LATEST-Cleanup), ein normaler Import-Lauf fasst sie daher nicht mehr an.
-Dieses Skript raeumt genau diese Bestands-Altfaelle nach.
+Background: charts-import now canonicalizes UPPERCASE names on import (last
+line of defense, see tags.build_target_path/_canonicalize). That prevents FUTURE
+UPPERCASE cases. But songs sorted in BEFORE the fix still sit in the library in
+UPPERCASE - their download files are often long gone (KEEP_LATEST cleanup), so a
+normal import run no longer touches them. This script cleans up exactly those
+pre-existing legacy cases.
 
-Vorgehen (SICHER, nutzt denselben konservativen Resolver wie der Import):
-  Fuer jeden Manifest-Eintrag mit src=flashback und GROSS-Titel/Artist:
-  1. app.deezer.resolve_canonical() -> kanonische Schreibweise. Liefert Deezer
-     KEINEN sicheren Treffer (Alias-Kuenstler wie OMD, von FLASHBACK falsch
-     benannte Titel), bleibt der Song unveraendert und landet in der
-     "manuell"-Restliste - NIE wird geraten.
-  2. Library-Ordner/Datei auf die kanonische Schreibweise umbenennen
-     (Artist-Ordner, Album-Ordner, Audiodatei).
-  3. Tags title/album setzen (vorhandenes date/originaldate bleibt erhalten);
-     Herkunfts-Tags werden durch write_tags ohnehin mitentfernt.
-  4. Manifest-Eintrag (artist/title) auf die kanonische Schreibweise
-     aktualisieren, damit charts-import den Song nicht erneut GROSS behandelt.
+Procedure (SAFE, uses the same conservative resolver as the import):
+  For every manifest entry with src=flashback and UPPERCASE title/artist:
+  1. app.deezer.resolve_canonical() -> canonical spelling. If Deezer returns
+     NO safe match (alias artists like OMD, titles misnamed by FLASHBACK), the
+     song stays unchanged and lands in the "manual" leftover list - nothing is
+     ever guessed.
+  2. Rename the library folder/file to the canonical spelling (artist folder,
+     album folder, audio file).
+  3. Set the title/album tags (existing date/originaldate is preserved);
+     provenance tags are stripped by write_tags anyway.
+  4. Update the manifest entry (artist/title) to the canonical spelling so
+     charts-import does not treat the song as UPPERCASE again.
 
-Idempotent: schon korrigierte Songs (Manifest bereits Mixed-Case) tauchen nicht
-mehr als GROSS-Verdacht auf; existiert der Zielordner schon, wird nicht
-ueberschrieben. --dry-run zeigt nur, was passieren wuerde.
+Idempotent: already corrected songs (manifest already mixed-case) no longer show
+up as UPPERCASE suspects; if the target folder already exists, nothing is
+overwritten. --dry-run only shows what would happen.
 
-Aufruf (im charts-import-Container; /music ist dort beschreibbar, deezer+tags
-liegen im selben app-Paket):
+Usage (inside the charts-import container; /music is writable there, deezer+tags
+live in the same app package):
   docker exec charts-import python /app/scripts/recanonicalize_flashback.py --dry-run
   docker exec charts-import python /app/scripts/recanonicalize_flashback.py [--clear-cache]
-Danach einen Navidrome-Scan ausloesen.
+Afterwards trigger a Navidrome scan.
 
---clear-cache: loescht vorher die Deezer-Cache-Eintraege der betroffenen Songs,
-damit mit dem NEUEN Matching neu aufgeloest wird (sonst liefert der Cache evtl.
-den alten GROSS-Miss von vor dem Fix). Beim ersten Lauf nach dem Fix empfohlen.
+--clear-cache: first deletes the Deezer cache entries of the affected songs so
+they are re-resolved with the NEW matching (otherwise the cache may return the
+old UPPERCASE miss from before the fix). Recommended on the first run after the fix.
 """
 
 import argparse
@@ -92,7 +92,7 @@ def _rename(src: str, dst: str, dry: bool) -> bool:
         return False
     casing_only = src.lower() == dst.lower()
     if not casing_only and os.path.exists(dst):
-        print(f"    WARN: Ziel existiert, uebersprungen: {dst}")
+        print(f"    WARN: target exists, skipped: {dst}")
         return False
     if dry:
         print(f"    [dry] rename {src} -> {dst}")
@@ -124,8 +124,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--clear-cache", action="store_true",
-                    help="Deezer-Cache der betroffenen Songs vorher loeschen "
-                         "(mit neuem Matching neu aufloesen).")
+                    help="delete the Deezer cache of the affected songs first "
+                         "(re-resolve with the new matching).")
     args = ap.parse_args()
 
     music = config.MUSIC_DIR
@@ -133,22 +133,22 @@ def main() -> int:
         with open(config.MANIFEST_FILE, "r", encoding="utf-8") as fh:
             manifest = json.load(fh)
     except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
-        print(f"FEHLER: Manifest nicht lesbar: {e}")
+        print(f"ERROR: manifest not readable: {e}")
         return 1
     entries = manifest.get("entries", {}) if isinstance(manifest, dict) else {}
 
     todo = [(k, v) for k, v in entries.items()
             if isinstance(v, dict) and _needs_fix(v)]
     tag = " (DRY-RUN)" if args.dry_run else ""
-    print(f"== flashback-Recanonicalize{tag} ==")
+    print(f"== flashback recanonicalize{tag} ==")
     print(f"Library:  {music}")
     print(f"Manifest: {config.MANIFEST_FILE}")
-    print(f"{len(todo)} GROSS-flashback-Eintraege zu pruefen.\n")
+    print(f"{len(todo)} UPPERCASE flashback entries to check.\n")
 
     if args.clear_cache:
-        # Auch im Dry-Run leeren: sonst liefert resolve_canonical die alten
-        # GROSS-Misses aus dem Cache und der Dry-Run zeigt faelschlich "0". Ein
-        # geleerter Cache-Eintrag wird beim naechsten Lookup ohnehin neu gefuellt.
+        # Clear even in dry-run: otherwise resolve_canonical returns the old
+        # UPPERCASE misses from the cache and the dry-run wrongly shows "0". A
+        # cleared cache entry is refilled on the next lookup anyway.
         try:
             cache = deezer._load_cache()
             removed = 0
@@ -158,10 +158,10 @@ def main() -> int:
                     del cache[ck]
                     removed += 1
             deezer._save_cache()
-            print(f"Deezer-Cache: {removed} Eintraege invalidiert"
-                  f"{' (dry-run: nur Cache, keine Dateiaenderung)' if args.dry_run else ''}.\n")
+            print(f"Deezer cache: {removed} entries invalidated"
+                  f"{' (dry-run: cache only, no file change)' if args.dry_run else ''}.\n")
         except Exception as e:
-            print(f"WARN: Cache-Invalidierung fehlgeschlagen: {e}\n")
+            print(f"WARN: cache invalidation failed: {e}\n")
 
     fixed = 0
     manual = []
@@ -211,7 +211,7 @@ def main() -> int:
                 print(f"    tags: title/album -> {new_t}"
                       f"{' (date '+year+')' if year else ''}")
         else:
-            print(f"    WARN: Audiodatei nicht gefunden in {target_album_dir}")
+            print(f"    WARN: audio file not found in {target_album_dir}")
 
         if not args.dry_run:
             entries[key]["artist"] = new_a
@@ -224,14 +224,14 @@ def main() -> int:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(manifest, fh, ensure_ascii=False, indent=0)
         os.replace(tmp, config.MANIFEST_FILE)
-        print(f"\nManifest aktualisiert ({fixed} Eintraege).")
+        print(f"\nManifest updated ({fixed} entries).")
 
-    print(f"\nFertig{tag}. {fixed} sicher korrigiert, "
-          f"{len(manual)} brauchen manuelle Pruefung:")
+    print(f"\nDone{tag}. {fixed} corrected safely, "
+          f"{len(manual)} need manual review:")
     for a, t in sorted(manual):
-        print(f"  MANUELL: {a} | {t}")
+        print(f"  MANUAL: {a} | {t}")
     if not args.dry_run and fixed:
-        print("\nDanach einen Navidrome-Scan ausloesen.")
+        print("\nAfterwards trigger a Navidrome scan.")
     return 0
 
 
