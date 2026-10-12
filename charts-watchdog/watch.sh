@@ -399,6 +399,7 @@ describe() {
   case "$1" in
     running-unhealthy) t watchdog.state.unhealthy ;;
     restarting)        t watchdog.state.restarting ;;
+    created|starting|running-starting) t watchdog.state.starting ;;
     exited)            t watchdog.state.exited ;;
     dead)              t watchdog.state.dead ;;
     paused)            t watchdog.state.paused ;;
@@ -411,6 +412,15 @@ describe() {
 # DEBOUNCE: only report a problem once a non-ok state persists for this many
 #   polls in a row (against short start/recreate hiccups 'created'->'running').
 DEBOUNCE="${WATCH_DEBOUNCE_POLLS:-2}"
+# TRANSIENT_DEBOUNCE: a transient state (created/starting/restarting) is a
+#   normal part of a rebuild and must NOT alarm at the short DEBOUNCE - a
+#   'created'->'running' transition during `docker compose up` would otherwise
+#   trigger a false "Problem". So a transient state only alarms once it has
+#   PERSISTED for this (much higher) number of consecutive polls, which still
+#   catches a container genuinely STUCK transient (e.g. a real restart loop) so
+#   it is never silently ignored. A real problem (unhealthy/exited/dead/...)
+#   keeps the normal DEBOUNCE.
+TRANSIENT_DEBOUNCE="${WATCH_TRANSIENT_DEBOUNCE_POLLS:-8}"
 # RECOVER_POLLS: all-clear only after this many OK polls in a row. If an app
 #   flaps (ok/problem/ok/...), this counter is reset constantly -> NO all-clear
 #   and therefore no repeated problem message.
@@ -470,9 +480,18 @@ main_loop() {
         bad="$(read_num "/tmp/wd/$c.bad")"
         bad=$((bad + 1))
         echo "$bad" > "/tmp/wd/$c.bad"
-        # Alarm only if: bad for long enough (DEBOUNCE), no open alarm yet, AND
+        # Threshold depends on the kind of non-ok state: a transient state
+        # (created/starting/restarting) is expected during a rebuild and only
+        # alarms after the HIGHER TRANSIENT_DEBOUNCE (stuck-transient guard),
+        # whereas a real problem keeps the normal, short DEBOUNCE.
+        if [ "$kind" = "transient" ]; then
+          _thr="$TRANSIENT_DEBOUNCE"
+        else
+          _thr="$DEBOUNCE"
+        fi
+        # Alarm only if: bad for long enough (threshold), no open alarm yet, AND
         # the cooldown since the last message has expired.
-        if [ "$bad" -ge "$DEBOUNCE" ] && [ "$alarmed" != "1" ]; then
+        if [ "$bad" -ge "$_thr" ] && [ "$alarmed" != "1" ]; then
           last="$(read_num "/tmp/wd/$c.last")"
           # Only apply the cooldown if something was ever reported at all
           # (last > 0). The FIRST alarm must never be suppressed.

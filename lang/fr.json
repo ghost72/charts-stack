@@ -748,6 +748,7 @@
   "watchdog.start.banner": "démarré - surveille [%s] toutes les %ss (anti-rebond %s, récupération %s, délai %ss, services externes anti-rebond %ss/%s sondages)",
   "watchdog.state.unhealthy": "unhealthy (le healthcheck échoue)",
   "watchdog.state.restarting": "est bloqué dans une boucle de redémarrage",
+  "watchdog.state.starting": "démarre",
   "watchdog.state.exited": "est arrêté (exited)",
   "watchdog.state.dead": "est mort (dead)",
   "watchdog.state.paused": "est en pause",
