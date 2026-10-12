@@ -1,8 +1,8 @@
 """
-Optionale Pushover-Benachrichtigung.
+Optional Pushover notification.
 
-Wird nur aktiv, wenn PUSHOVER_TOKEN und PUSHOVER_USER gesetzt sind.
-Identisch schlank gehalten wie in charts-sync / jellyfin-webhook.
+Only becomes active if PUSHOVER_TOKEN and PUSHOVER_USER are set.
+Kept identically lean to charts-sync / jellyfin-webhook.
 """
 
 import logging
@@ -15,27 +15,27 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# Cache der gültigen Pushover-Gerätenamen (vom Account geladen). Siehe
-# _valid_pushover_devices(). TTL, damit neu angelegte Geräte irgendwann sichtbar
-# werden, ohne bei jeder Nachricht einen Validate-Call zu machen.
+# Cache of the valid Pushover device names (loaded from the account). See
+# _valid_pushover_devices(). TTL so newly added devices eventually become
+# visible without making a validate call on every message.
 _pushover_devices_cache: "set[str] | None" = None
 _pushover_devices_ts: float = 0.0
 
 
 def _valid_pushover_devices(client: httpx.Client):
-    """Liefert die gültigen Gerätenamen des Pushover-Accounts (gecacht).
+    """Returns the valid device names of the Pushover account (cached).
 
-    WICHTIG – der Grund für diese Funktion: Pushover verwirft einen Request mit
-    einem UNBEKANNTEN/deaktivierten `device`-Namen NICHT, sondern stellt ihn
-    ersatzweise an ALLE Geräte des Accounts zu. Steht also ein toter Gerätename
-    (z.B. ein deaktiviertes Gerät) in der Liste, bekommt jedes Gerät zusätzlich
-    zu seiner gezielten Nachricht noch die "an alle"-Streuung -> Doppel-Push bei
-    jedem Empfänger. Darum filtern wir vor dem Senden gegen die echte Geräte-
-    liste des Accounts (users/validate.json liefert sie im Feld `devices`).
+    IMPORTANT – the reason for this function: Pushover does NOT reject a request
+    with an UNKNOWN/disabled `device` name, but instead delivers it to ALL
+    devices of the account. So if a dead device name (e.g. a disabled device) is
+    in the list, every device gets, in addition to its targeted message, the
+    "to all" broadcast -> double push for every recipient. That is why we filter
+    before sending against the account's real device list (users/validate.json
+    returns it in the `devices` field).
 
-    Rückgabe: Set der gültigen Namen, oder None wenn die Liste nicht ermittelt
-    werden konnte (dann wird NICHT gefiltert – fail-open, damit ein API-Problem
-    die Benachrichtigungen nicht komplett unterdrückt)."""
+    Return: set of valid names, or None if the list could not be determined
+    (then we do NOT filter – fail-open, so an API problem does not suppress
+    notifications entirely)."""
     global _pushover_devices_cache, _pushover_devices_ts
     now = time.time()
     if _pushover_devices_cache is not None and (now - _pushover_devices_ts) < config.PUSHOVER_DEVICES_TTL:
@@ -58,11 +58,10 @@ def _valid_pushover_devices(client: httpx.Client):
     return None
 
 
-# Pushover-Nachrichten werden mit html=1 gesendet. Dabei interpretiert Pushover
-# < > & als HTML. Ein Songtitel/Grund mit z.B. "<", ">" oder "&" wuerde die
-# Anzeige zerschiessen (der Rest der Zeile wird als Tag verschluckt). Deshalb
-# escapen wir generell &, <, > und stellen danach nur die von uns bewusst
-# genutzten Formatierungs-Tags wieder her.
+# Pushover messages are sent with html=1. Pushover then interprets < > & as
+# HTML. A song title/reason with e.g. "<", ">" or "&" would break the display
+# (the rest of the line is swallowed as a tag). So we generally escape &, <, >
+# and afterwards restore only the formatting tags we deliberately use.
 _ALLOWED_TAGS = ["b", "i", "u"]
 
 
@@ -76,21 +75,21 @@ def _escape_html_keep_tags(text: str) -> str:
 
 def send(title: str, message: str, device: "str | None" = None,
          sound: "str | None" = None) -> None:
-    """Sendet eine Pushover-Nachricht, falls konfiguriert.
+    """Sends a Pushover message if configured.
 
-    device: Optionaler per-Call-Empfänger. Ist er gesetzt (nicht None), wird
-    GENAU dieser Gerätename/diese Liste statt config.PUSHOVER_DEVICE verwendet –
-    z.B. für die Verfügbarkeits-Meldung an das Gerät des Users, der einen Song
-    manuell angefordert hat. Der Geräte-Validierungsfilter unten greift auch für
-    diesen per-Call-device, d.h. ein ungültiger Name wird NICHT gesendet (kein
-    "an alle"-Fallback). Ein leerer String als device führt – nach dem Filter –
-    dazu, dass nichts gesendet wird (bewusst: nie device-los an alle).
+    device: optional per-call recipient. If set (not None), EXACTLY this device
+    name/list is used instead of config.PUSHOVER_DEVICE – e.g. for the
+    availability message to the device of the user who requested a song
+    manually. The device validation filter below also applies to this per-call
+    device, i.e. an invalid name is NOT sent (no "to all" fallback). An empty
+    string as device leads – after the filter – to nothing being sent
+    (deliberately: never device-less to all).
 
-    sound: Optionaler per-Call-Ton. None (Default) => der Dienst-Default
-    config.PUSHOVER_SOUND ("incoming") wird genutzt. Ein nicht-leerer String
-    uebersteuert den Dienst-Default (z.B. "magic" fuer die manuell via
-    charts-songrequest angeforderte Verfuegbarkeits-Meldung). Ein leerer String
-    => KEIN sound-Feld => Pushover nimmt den Account-Default.
+    sound: optional per-call sound. None (default) => the service default
+    config.PUSHOVER_SOUND ("incoming") is used. A non-empty string overrides the
+    service default (e.g. "magic" for the availability message of a song
+    requested manually via charts-songrequest). An empty string => NO sound
+    field => Pushover takes the account default.
     """
     if not config.PUSHOVER_ENABLED:
         return
@@ -104,21 +103,20 @@ def send(title: str, message: str, device: "str | None" = None,
         "message": _escape_html_keep_tags(message),
         "html": 1,
     }
-    # Ton bestimmen: per-Call-sound (falls uebergeben) uebersteuert den
-    # Dienst-Default config.PUSHOVER_SOUND. sound=None => Dienst-Default;
-    # sound="" => bewusst KEIN sound-Feld (Account-Default). Das Feld nur
-    # setzen, wenn der final gewaehlte Wert nicht leer ist.
+    # Determine the sound: a per-call sound (if passed) overrides the service
+    # default config.PUSHOVER_SOUND. sound=None => service default; sound="" =>
+    # deliberately NO sound field (account default). Set the field only if the
+    # finally chosen value is not empty.
     effective_sound = config.PUSHOVER_SOUND if sound is None else sound
     if effective_sound:
         payload["sound"] = effective_sound
-    # Device-Quelle: per-Call-device (falls übergeben) überschreibt die globale
-    # config.PUSHOVER_DEVICE-Liste. PUSHOVER_DEVICE darf eine kommagetrennte
-    # Liste sein; die Pushover-API nimmt pro Request nur EINEN Gerätenamen,
-    # deshalb pro Gerät eine eigene Nachricht. Leer => [""] => ein Request ohne
-    # device-Feld => alle Geräte des Accounts.
+    # Device source: a per-call device (if passed) overrides the global
+    # config.PUSHOVER_DEVICE list. PUSHOVER_DEVICE may be a comma-separated
+    # list; the Pushover API takes only ONE device name per request, so one
+    # message per device. Empty => [""] => one request without a device field
+    # => all devices of the account.
     device_src = config.PUSHOVER_DEVICE if device is None else device
-    # Kommagetrennte Liste splitten/strippen, Duplikate entfernen (Reihenfolge
-    # erhalten).
+    # Split/strip the comma-separated list, remove duplicates (keep order).
     requested = []
     seen = set()
     for d in device_src.split(","):
@@ -127,20 +125,20 @@ def send(title: str, message: str, device: "str | None" = None,
             seen.add(d)
             requested.append(d)
 
-    # Sonderfall per-Call-device: Wurde explizit ein device übergeben, es ergibt
-    # aber nach dem Splitten KEIN gültiges Ziel (leerer String o.ä.), dann NICHT
-    # device-los senden (das ginge an alle Geräte) – gar nicht senden. Betrifft
-    # nur den per-Call-Fall; die globale Config (device is None) darf weiterhin
-    # device-los an alle gehen, wenn PUSHOVER_DEVICE bewusst leer ist.
+    # Special case per-call device: if a device was passed explicitly but after
+    # splitting yields NO valid target (empty string etc.), then do NOT send
+    # device-less (that would go to all devices) – do not send at all. Affects
+    # only the per-call case; the global config (device is None) may still go
+    # device-less to all if PUSHOVER_DEVICE is deliberately empty.
     if device is not None and not requested:
         logger.info(t("import.notify.no_valid_device", title=title))
         return
 
     try:
         with httpx.Client(timeout=15.0) as client:
-            # Gegen die echte Geräteliste des Accounts filtern (verhindert den
-            # "unbekannter Name -> an alle"-Fallback von Pushover). Nur filtern,
-            # wenn konkrete Geräte angefragt sind UND die Liste abrufbar war.
+            # Filter against the account's real device list (prevents Pushover's
+            # "unknown name -> to all" fallback). Only filter if concrete
+            # devices are requested AND the list could be fetched.
             if requested:
                 valid = _valid_pushover_devices(client)
                 if valid is not None:
@@ -150,14 +148,14 @@ def send(title: str, message: str, device: "str | None" = None,
                                          devices=", ".join(dropped)))
                     requested = [d for d in requested if d in valid]
                     if not requested:
-                        # Alle angefragten Geräte ungültig: NICHT device-los
-                        # senden (das ginge an alle) – lieber gar nicht senden.
+                        # All requested devices invalid: do NOT send without a
+                        # device (that would go to all) – rather send nothing.
                         logger.error(t("notify.devices.none_valid",
                                        devices=", ".join(dropped), title=title))
                         return
 
-            # Leere Anfrage (device war leer) => ein Request ohne device-Feld
-            # => alle Geräte des Accounts.
+            # Empty request (device was empty) => one request without a device
+            # field => all devices of the account.
             devices = requested or [""]
             for dev in devices:
                 data = dict(payload)

@@ -1,22 +1,21 @@
 """
-Aufraeum-Logik fuer den Downloads-Ordner.
+Cleanup logic for the downloads folder.
 
-Soulseek/slskd kennt keinen Seed-Zaehler wie BitTorrent ("nach N Uploads
-loeschen"). Wichtiger als die Upload-Menge ist ohnehin die ANZAHL der geteilten
-Dateien: Wer zu wenige Dateien teilt, gilt als "Leecher" und wird ausgebremst.
+Soulseek/slskd has no seed counter like BitTorrent ("delete after N uploads").
+More important than the upload amount is the NUMBER of shared files anyway:
+sharing too few files makes you a "leecher" and gets you throttled.
 
-Deshalb gibt es zwei Strategien (KEEP_LATEST hat Vorrang):
+Hence there are two strategies (KEEP_LATEST takes precedence):
 
-  1. KEEP_LATEST (Anzahl-basiert, empfohlen):
-     Behalte immer die N neuesten Downloads, loesche nur den Ueberschuss. Der
-     Share bleibt stabil bei ~N Dateien, unabhaengig davon, wie oft du manuell
-     neue Songs suchst.
+  1. KEEP_LATEST (count-based, recommended):
+     Always keep the N newest downloads, delete only the excess. The share
+     stays stable at ~N files, regardless of how often you manually search for
+     new songs.
 
-  2. RETENTION_DAYS (Alter-basiert, Fallback):
-     Loesche Downloads, die aelter als N Tage sind. Nur aktiv, wenn
-     KEEP_LATEST = 0.
+  2. RETENTION_DAYS (age-based, fallback):
+     Delete downloads older than N days. Only active when KEEP_LATEST = 0.
 
-Nach dem Loeschen werden leere Unterordner im DOWNLOADS_DIR entfernt.
+After deletion, empty subfolders in DOWNLOADS_DIR are removed.
 """
 
 import logging
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _iter_files_with_mtime(root: str) -> list[tuple[str, float]]:
-    """Liefert alle Dateien unter root als (Pfad, mtime), inkl. Unterordner."""
+    """Returns all files under root as (path, mtime), incl. subfolders."""
     result: list[tuple[str, float]] = []
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
@@ -43,7 +42,7 @@ def _iter_files_with_mtime(root: str) -> list[tuple[str, float]]:
 
 
 def _remove_empty_dirs(root: str) -> None:
-    """Entfernt leere Unterordner unterhalb von root (root selbst bleibt)."""
+    """Removes empty subfolders below root (root itself stays)."""
     for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
         if os.path.abspath(dirpath) == os.path.abspath(root):
             continue
@@ -56,13 +55,13 @@ def _remove_empty_dirs(root: str) -> None:
 
 
 def _cleanup_keep_latest(keep: int) -> list[str]:
-    """Behaelt die 'keep' neuesten Dateien, loescht alle aelteren."""
+    """Keeps the 'keep' newest files, deletes all older ones."""
     files = _iter_files_with_mtime(config.DOWNLOADS_DIR)
     if len(files) <= keep:
         logger.debug(t("import.cleanup.below_keep", count=len(files), keep=keep))
         return []
 
-    # Neueste zuerst; alles ab Index 'keep' wird geloescht.
+    # Newest first; everything from index 'keep' onward is deleted.
     files.sort(key=lambda item: item[1], reverse=True)
     to_delete = files[keep:]
 
@@ -78,7 +77,7 @@ def _cleanup_keep_latest(keep: int) -> list[str]:
 
 
 def _cleanup_by_age(days: int) -> list[str]:
-    """Loescht Dateien, die aelter als 'days' Tage sind."""
+    """Deletes files older than 'days' days."""
     cutoff = time.time() - days * 86400
     removed: list[str] = []
     for path, mtime in _iter_files_with_mtime(config.DOWNLOADS_DIR):
@@ -94,17 +93,17 @@ def _cleanup_by_age(days: int) -> list[str]:
 
 def cleanup_downloads() -> list[str]:
     """
-    Raeumt den DOWNLOADS_DIR nach der aktiven Strategie auf.
-    Rueckgabe: Liste der geloeschten Dateipfade.
+    Tidies up DOWNLOADS_DIR according to the active strategy.
+    Returns: list of the deleted file paths.
     """
-    # Papierkorb (ersetzte Upgrade-Versionen) unabhaengig vom Downloads-Ordner
-    # bereinigen - auch wenn KEEP_LATEST=all ist.
+    # Clean the trash (replaced upgrade versions) independently of the downloads
+    # folder - even when KEEP_LATEST=all.
     cleanup_trash(config.TRASH_RETENTION_DAYS)
 
-    # Quarantaene (_rejected) unabhaengig bereinigen. Abgelehnte Dateien werden
-    # NICHT vom KEEP_LATEST-Aufraeumen erfasst (der _rejected-Ordner ist davon
-    # ausgenommen), sammeln sich also sonst unbegrenzt an. Der Song wird ohnehin
-    # neu/besser nachgeladen - die Quarantaene ist nur ein kurzlebiger Puffer.
+    # Clean the quarantine (_rejected) independently. Rejected files are NOT
+    # covered by the KEEP_LATEST cleanup (the _rejected folder is exempt), so
+    # they would otherwise accumulate unbounded. The song is reloaded
+    # better/anew anyway - the quarantine is only a short-lived buffer.
     cleanup_rejected(config.REJECTED_RETENTION_DAYS)
 
     if not os.path.isdir(config.DOWNLOADS_DIR):
@@ -127,10 +126,10 @@ def cleanup_downloads() -> list[str]:
 
 def cleanup_trash(days: int) -> int:
     """
-    Loescht Dateien im Upgrade-Papierkorb (MUSIC_DIR/.charts-trash/), die aelter
-    als 'days' Tage sind, und raeumt leer gewordene Datums-Unterordner auf.
-    days <= 0 -> deaktiviert (Papierkorb bleibt, manuell leeren).
-    Rueckgabe: Anzahl geloeschter Dateien.
+    Deletes files in the upgrade trash (MUSIC_DIR/.charts-trash/) older than
+    'days' days and cleans up date subfolders that became empty.
+    days <= 0 -> disabled (trash stays, empty manually).
+    Returns: number of deleted files.
     """
     if days <= 0:
         return 0
@@ -155,15 +154,15 @@ def cleanup_trash(days: int) -> int:
 
 def cleanup_rejected(days: int) -> int:
     """
-    Loescht Dateien in der Quarantaene (REJECTED_DIR), die aelter als 'days'
-    Tage sind, und raeumt den Ordner auf, wenn er leer wird.
+    Deletes files in the quarantine (REJECTED_DIR) older than 'days' days and
+    cleans up the folder when it becomes empty.
 
-    Abgelehnte Dateien (zu kurz, Remix, Fake-Bitrate ...) werden vom
-    Tuersteher hierhin verschoben und sonst NIE geloescht - der _rejected-Ordner
-    ist vom KEEP_LATEST-Aufraeumen ausgenommen. Ohne diese Bereinigung waechst
-    die Quarantaene unbegrenzt (Speicherplatz-Fresser). Der betroffene Song wird
-    ohnehin neu/besser nachgeladen; die aussortierte Datei wird nicht gebraucht.
-    days <= 0 -> deaktiviert. Rueckgabe: Anzahl geloeschter Dateien.
+    Rejected files (too short, remix, fake bitrate ...) are moved here by the
+    gatekeeper and otherwise NEVER deleted - the _rejected folder is exempt from
+    the KEEP_LATEST cleanup. Without this cleanup the quarantine grows unbounded
+    (a disk-space eater). The affected song is reloaded better/anew anyway; the
+    sorted-out file is not needed. days <= 0 -> disabled. Returns: number of
+    deleted files.
     """
     if days <= 0:
         return 0

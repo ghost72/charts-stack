@@ -1,31 +1,31 @@
 """
-Gemeinsames Status-Modul fuer alle charts-Dienste (Dashboard-Anbindung).
+Shared status module for all charts services (dashboard integration).
 
-Jeder Dienst schreibt am Ende eines Laufs (bzw. nach einem Request) eine kleine
-JSON-Statusdatei nach STATUS_DIR/<service>.json. Der charts-dashboard-Dienst
-liest diese Dateien und zeigt sie an - so bekommt das UI EXAKTE Lauf-Statistiken
-(wie viel verarbeitet, wann zuletzt, Erfolg/Fehler) ohne Log-Parsing.
+Each service writes a small JSON status file to STATUS_DIR/<service>.json at
+the end of a run (or after a request). The charts-dashboard service reads these
+files and displays them - so the UI gets EXACT run statistics (how much
+processed, when last, success/error) without log parsing.
 
-Dieses Modul wird (wie slsk.py/manifest.py) in jeden Dienst KOPIERT - keine
-Laufzeit-Abhaengigkeit zwischen den Diensten.
+This module is COPIED into every service (like slsk.py/manifest.py) - no
+runtime dependency between the services.
 
 Schema (STATUS_DIR/<service>.json):
 {
   "service": "charts-import",
-  "last_run_start": "<ISO-8601>",   # Beginn des letzten Laufs
-  "last_run_end":   "<ISO-8601>",   # Ende des letzten Laufs
-  "last_success":   "<ISO-8601>",   # Ende des letzten ERFOLGREICHEN Laufs
+  "last_run_start": "<ISO-8601>",   # start of the last run
+  "last_run_end":   "<ISO-8601>",   # end of the last run
+  "last_success":   "<ISO-8601>",   # end of the last SUCCESSFUL run
   "status": "ok" | "error" | "running",
-  "message": "<kurze Zusammenfassung>",
-  "counters": { ... },              # Zaehler des LETZTEN Laufs (dienstspezifisch)
-  "totals":   { ... },              # kumulativ ueber alle Laeufe (summiert)
-  "next_run": "<ISO-8601 oder leer>"
+  "message": "<short summary>",
+  "counters": { ... },              # counters of the LAST run (service-specific)
+  "totals":   { ... },              # cumulative over all runs (summed)
+  "next_run": "<ISO-8601 or empty>"
 }
 
-Umgebungsvariablen:
-  STATUS_DIR  - Zielverzeichnis (Default: /charts/.charts-status). Muss im
-                gemounteten Charts-Ordner liegen, den auch das Dashboard sieht.
-  STATUS_SERVICE - Name des Dienstes (Default: aus Argument an init()).
+Environment variables:
+  STATUS_DIR  - target directory (default: /charts/.charts-status). Must sit in
+                the mounted charts folder that the dashboard also sees.
+  STATUS_SERVICE - name of the service (default: from the argument to init()).
 """
 
 import json
@@ -40,17 +40,17 @@ logger = logging.getLogger(__name__)
 
 STATUS_DIR = os.environ.get("STATUS_DIR", "/charts/.charts-status")
 
-# Nur diese Counter sind "geleistete Arbeit" und werden in 'totals' kumuliert.
-# Alles andere (missing, library_tracks, sources, scanned, bad, planned,
-# matched ...) ist ein Momentan-/Zustandswert und wird NICHT aufsummiert.
+# Only these counters are "work done" and are accumulated into 'totals'.
+# Everything else (missing, library_tracks, sources, scanned, bad, planned,
+# matched ...) is a momentary/state value and is NOT summed.
 CUMULATIVE_KEYS = {
-    "imported",    # charts-import: einsortierte Songs
-    "enqueued",    # charts-download: angestossene Downloads
-    "upgraded",    # charts-upgrade: ersetzte Songs
-    "rejected",    # charts-import: aussortierte Dateien
-    "cleaned",     # charts-import: aufgeraeumte Downloads
-    "retried",     # charts-download: neu angestossene Fehlschlaege
-    "requests",    # charts-songrequest: bediente Anfragen
+    "imported",    # charts-import: filed-in songs
+    "enqueued",    # charts-download: triggered downloads
+    "upgraded",    # charts-upgrade: replaced songs
+    "rejected",    # charts-import: discarded files
+    "cleaned",     # charts-import: cleaned-up downloads
+    "retried",     # charts-download: re-triggered failures
+    "requests",    # charts-songrequest: served requests
 }
 
 _service = os.environ.get("STATUS_SERVICE", "unknown")
@@ -58,12 +58,12 @@ _run_start_iso = ""
 
 
 def _now_iso() -> str:
-    """Lokale Zeit als ISO-8601 mit Zeitzonen-Offset."""
+    """Local time as ISO-8601 with timezone offset."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def init(service: str) -> None:
-    """Einmal beim Start aufrufen: legt den Dienstnamen fest."""
+    """Call once at startup: sets the service name."""
     global _service
     _service = os.environ.get("STATUS_SERVICE", service)
 
@@ -86,8 +86,8 @@ def _read() -> dict:
 def _write(data: dict) -> None:
     try:
         os.makedirs(STATUS_DIR, exist_ok=True)
-        # Atomar schreiben (temp + replace), damit das Dashboard nie eine
-        # halb geschriebene Datei liest.
+        # Write atomically (temp + replace) so the dashboard never reads a
+        # half-written file.
         fd, tmp = tempfile.mkstemp(dir=STATUS_DIR, prefix=f".{_service}.", suffix=".tmp")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2)
@@ -97,7 +97,7 @@ def _write(data: dict) -> None:
 
 
 def start() -> None:
-    """Beginn eines Laufs markieren (status=running)."""
+    """Mark the start of a run (status=running)."""
     global _run_start_iso
     _run_start_iso = _now_iso()
     data = _read()
@@ -110,9 +110,9 @@ def start() -> None:
 def finish(status: str = "ok", message: str = "",
            counters: dict | None = None, next_run: str = "") -> None:
     """
-    Ende eines Laufs markieren. 'counters' sind die Zaehler DIESES Laufs; sie
-    werden zusaetzlich in 'totals' aufsummiert (kumulativ ueber alle Laeufe).
-    status: "ok" (erfolgreich) oder "error" (fehlgeschlagen).
+    Mark the end of a run. 'counters' are the counters of THIS run; they are
+    additionally summed into 'totals' (cumulative over all runs).
+    status: "ok" (successful) or "error" (failed).
     """
     now = _now_iso()
     data = _read()
@@ -125,11 +125,11 @@ def finish(status: str = "ok", message: str = "",
     data["counters"] = counters or {}
     if status == "ok":
         data["last_success"] = now
-    # Totals NUR fuer echte "geleistete Arbeit" kumulieren (Durchsatz-Werte).
-    # Momentanwerte wie 'missing', 'library_tracks', 'sources' sind ein ZUSTAND,
-    # kein Durchsatz - sie aufzusummieren ergibt unsinnige Zahlen (z.B. 'missing'
-    # waechst mit jedem Lauf, obwohl es dieselben fehlenden Songs sind). Daher
-    # eine Whitelist: nur diese Keys landen in 'totals'.
+    # Accumulate totals ONLY for real "work done" (throughput values).
+    # Momentary values like 'missing', 'library_tracks', 'sources' are a STATE,
+    # not throughput - summing them yields nonsensical numbers (e.g. 'missing'
+    # grows every run even though it is the same missing songs). Hence a
+    # whitelist: only these keys land in 'totals'.
     totals = data.get("totals") or {}
     for k, v in (counters or {}).items():
         if k in CUMULATIVE_KEYS and isinstance(v, (int, float)):
@@ -141,10 +141,10 @@ def finish(status: str = "ok", message: str = "",
 
 def set_next_run(next_run: str) -> None:
     """
-    Aktualisiert NUR den naechsten geplanten Lauf-Zeitpunkt, ohne Status,
-    Lauf-Zeiten oder Zaehler anzutasten. Gedacht fuer Scheduler-Dienste, die den
-    next_run laufend aktuell halten wollen (sonst zeigt das Dashboard einen beim
-    letzten Lauf eingefrorenen - evtl. 'ueberfaelligen' - Wert).
+    Updates ONLY the next scheduled run timestamp, without touching status, run
+    times or counters. Intended for scheduler services that want to keep
+    next_run continuously current (otherwise the dashboard shows a value frozen
+    at the last run - possibly 'overdue').
     """
     if not next_run:
         return
@@ -156,9 +156,9 @@ def set_next_run(next_run: str) -> None:
 
 def heartbeat(message: str = "", next_run: str = "") -> None:
     """
-    Lebenszeichen ohne vollen Lauf (z.B. ein ereignisgesteuerter Dienst wie
-    songrequest, der nur bei Requests arbeitet). Setzt status=ok und die Zeit,
-    ohne Zaehler zu veraendern.
+    Sign of life without a full run (e.g. an event-driven service like
+    songrequest that only works on requests). Sets status=ok and the time,
+    without changing counters.
     """
     now = _now_iso()
     data = _read()

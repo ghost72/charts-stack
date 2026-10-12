@@ -1,20 +1,20 @@
 """
-Einmal-Skript: ReplayGain-Tags fuer die bestehenden Chart-Songs nachruesten.
+One-off script: retrofit ReplayGain tags for the existing chart songs.
 
-Geht NUR ueber die Chart-Songs (die in den charts-sync-Playlists .m3u gelisteten
-Dateien, PLAYLIST_DIR) - NICHT ueber die ganze Library, damit deine uebrige
-(Lidarr-)Sammlung unangetastet bleibt.
+Goes ONLY over the chart songs (the files listed in the charts-sync playlists
+.m3u, PLAYLIST_DIR) - NOT over the whole library, so your rest of the (Lidarr)
+collection stays untouched.
 
-Nutzung (im Container):
-  python -m app.backfill_replaygain --dry-run   # nur zaehlen, was fehlt
-  python -m app.backfill_replaygain             # ReplayGain berechnen + schreiben
-  python -m app.backfill_replaygain --overwrite # auch vorhandene neu berechnen
+Usage (in the container):
+  python -m app.backfill_replaygain --dry-run   # only count what is missing
+  python -m app.backfill_replaygain             # compute + write ReplayGain
+  python -m app.backfill_replaygain --overwrite # recompute existing ones too
 
-Umgebungsvariablen:
-  PLAYLIST_DIR   Ordner mit den charts-sync-Playlists (.m3u). Default MUSIC_DIR.
-  MUSIC_DIR      Library-Root (zum Aufloesen relativer Playlist-Pfade).
+Environment variables:
+  PLAYLIST_DIR   folder with the charts-sync playlists (.m3u). Default MUSIC_DIR.
+  MUSIC_DIR      library root (to resolve relative playlist paths).
 
-Braucht ffmpeg im Image. Fehler bei einer Datei stoppen den Lauf nicht.
+Needs ffmpeg in the image. Errors on one file do not stop the run.
 """
 
 import logging

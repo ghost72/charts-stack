@@ -1,17 +1,17 @@
 """
-Normalisierung, Aehnlichkeitsvergleich und Compilation-Heuristik fuer das
-Matching von slskd-Suchergebnissen gegen "Artist - Titel".
+Normalization, similarity comparison and compilation heuristic for matching
+slskd search results against "Artist - Title".
 
-KOPIE aus charts-download/charts-songrequest (bewusst dupliziert, keine
-Laufzeit-Abhaengigkeit zwischen den Diensten - wie bei den anderen charts-*
-Modulen). Aenderungen hier bei Bedarf mit den Schwester-Diensten abgleichen.
+COPY from charts-download/charts-songrequest (deliberately duplicated, no
+runtime dependency between the services - like the other charts-* modules).
+Reconcile changes here with the sister services when needed.
 """
 
 import re
 import unicodedata
 from difflib import SequenceMatcher
 
-# Zusaetze, die vor dem Vergleich aus Titeln entfernt werden.
+# Additions removed from titles before comparison.
 _NOISE_PATTERNS = [
     r"\(feat\.?.*?\)", r"\[feat\.?.*?\]",
     r"\(ft\.?.*?\)", r"\[ft\.?.*?\]",
@@ -23,7 +23,7 @@ _NOISE_PATTERNS = [
 
 
 def normalize(text: str) -> str:
-    """Normalisiert einen String fuer den Vergleich (siehe charts-sync)."""
+    """Normalizes a string for comparison (see charts-sync)."""
     if not text:
         return ""
     text = text.lower()
@@ -37,22 +37,22 @@ def normalize(text: str) -> str:
 
 
 def similarity(a: str, b: str) -> int:
-    """Aehnlichkeit zweier normalisierter Strings als Wert 0-100."""
+    """Similarity of two normalized strings as a value 0-100."""
     if not a or not b:
         return 0
     return round(SequenceMatcher(None, a, b).ratio() * 100)
 
 
-# Marker im Pfad, die auf eine Compilation / Sampler / Chart-Zusammenstellung
-# hindeuten (statt Single oder regulaeres Album). slskd liefert nur Pfade,
-# keine echten Metadaten - das ist daher eine Heuristik, kein sicheres Signal.
+# Markers in the path that hint at a compilation / sampler / chart collection
+# (rather than a single or regular album). slskd only delivers paths, no real
+# metadata - so this is a heuristic, not a reliable signal.
 _COMPILATION_MARKERS = [
     "va -", "va-", "various", "verschiedene",
-    "varios", "varias",                  # span./ital. "Various"
+    "varios", "varias",                  # Spanish/Italian "Various"
     "compilation", "sampler", "mastermix", "megamix", "mixtape",
     "top 100", "top100", "top 40", "top40", "charts", "hitlist", "hit list",
     "hits", "greatest hits", "best of", "best ever", "the essential",
-    "nouveautes", "nouveaute",           # normalisiert ohne Akzent
+    "nouveautes", "nouveaute",           # normalized without accent
     "new music friday", "new music",
     "muziek singles", "singles flac", "singles pack",
     "week ", "semaine", "vol ", "volume ", "disc ", "cd1", "cd 1", "cd2", "cd 2",
@@ -63,38 +63,38 @@ _COMPILATION_MARKERS = [
 
 def is_compilation(path: str) -> bool:
     """
-    Heuristik: True, wenn der Datei-/Ordnerpfad auf eine Compilation/Sampler
-    hindeutet. Prueft den GESAMTEN Pfad (nicht nur den Dateinamen), da der
-    Compilation-Hinweis meist im Ordnernamen steht.
+    Heuristic: True if the file/folder path hints at a compilation/sampler.
+    Checks the ENTIRE path (not just the file name), since the compilation hint
+    is usually in the folder name.
     """
     norm = normalize(path.replace("\\", "/"))
     return any(marker in norm for marker in _COMPILATION_MARKERS)
 
 
-# Schluesselwoerter, die auf eine unerwuenschte Version hindeuten: YouTube-Rips
-# ("lyrics", "audio", "video"), Bootlegs/Edits (acapella, remix, mashup),
-# Live-/Karaoke-/Cover-Versionen usw. Solche Dateien will Lidarr/Navidrome
-# nicht - sie werden komplett verworfen, egal wie gut der Titel matcht.
+# Keywords that hint at an unwanted version: YouTube rips ("lyrics", "audio",
+# "video"), bootlegs/edits (acapella, remix, mashup), live/karaoke/cover
+# versions etc. Lidarr/Navidrome does not want such files - they are discarded
+# entirely no matter how well the title matches.
 DEFAULT_EXCLUDE_KEYWORDS = [
-    # YouTube-/Rip-Marker
+    # YouTube/rip markers
     "lyrics", "lyric video", "official video", "official audio", "music video",
     "visualizer", "video edit",
-    # Bearbeitungen / Bootlegs
+    # edits / bootlegs
     "acapella", "a capella", "instrumental", "karaoke",
     "remix", "mashup", "bootleg", "flip", "rework", "vip mix",
     "extended mix", "club mix", "radio mix", "dance mix",
-    # abweichende Auffuehrungen
+    # alternative performances
     "live", "cover", "tribute", "unplugged",
-    # Trend-Versionen
+    # trend versions
     "sped up", "spedup", "slowed", "reverb", "nightcore", "8d", "8d audio",
-    # Fragmente
+    # fragments
     "snippet", "teaser", "preview", "loop",
-    # DJ-Edits / Acapella-Break-Ins
+    # DJ edits / acapella break-ins
     "break in",
     "intro clean", "clean intro", "intro dirty", "dirty intro",
     "uptempo", "downtempo", "transition", "acap out", "acapella out",
     "quick hit", "short edit", "redrum", "hyper remix", "dj edit", "dj intro",
-    # DJ-Pool-/Edit-Anbieter-Marker
+    # DJ pool / edit provider markers
     "froogle", "starjunk", "djcity", "mastermix", "ultimix", "funkymix",
     "hypeedit", "bpm supreme", "digital djpool", "clean edit", "dirty edit",
 ]
@@ -102,8 +102,8 @@ DEFAULT_EXCLUDE_KEYWORDS = [
 
 def looks_like_dj_edit(filename: str) -> bool:
     """
-    Heuristik fuer DJ-Pool-Edits: Dateiname endet auf eine BPM-Zahl (70-199).
-    Solche Dateien sind fast immer Edits/Transitions, keine Originalversionen.
+    Heuristic for DJ pool edits: the file name ends in a BPM number (70-199).
+    Such files are almost always edits/transitions, not original versions.
     """
     import os
 
@@ -117,14 +117,14 @@ def looks_like_dj_edit(filename: str) -> bool:
 
 def has_excluded_keyword(filename: str, keywords: list[str]) -> str | None:
     """
-    Prueft, ob im Dateinamen ein Ausschluss-Keyword vorkommt.
-    Gibt das gefundene Keyword zurueck (fuer Logging) oder None.
+    Checks whether an exclude keyword appears in the file name.
+    Returns the found keyword (for logging) or None.
     """
     import os
 
     base = os.path.basename(filename.replace("\\", "/")).lower()
     cleaned = re.sub(r"[^a-z0-9]+", " ", base)
-    cleaned = f" {cleaned} "  # Wortgrenzen-Schutz
+    cleaned = f" {cleaned} "  # word-boundary protection
     for kw in keywords:
         kw_norm = f" {kw.lower().strip()} "
         if kw_norm in cleaned:
@@ -134,8 +134,8 @@ def has_excluded_keyword(filename: str, keywords: list[str]) -> str | None:
 
 def is_excluded_artist(artist: str, excluded: list[str]) -> bool:
     """
-    True, wenn 'artist' auf einen global ausgeschlossenen Kuenstler passt.
-    Vergleich ueber normalisierte Namen; trifft auch feat.-Kombinationen.
+    True if 'artist' matches a globally excluded artist.
+    Comparison via normalized names; also matches feat. combinations.
     """
     if not excluded:
         return False
@@ -152,8 +152,8 @@ def is_excluded_artist(artist: str, excluded: list[str]) -> bool:
 
 def artist_in_path(artist: str, filename: str) -> bool:
     """
-    Prueft, ob der Kuenstlername im Datei-PFAD (Ordner + Dateiname) vorkommt.
-    Fuer die Absicherung der Titel-only-Fallback-Suche (Coverschutz).
+    Checks whether the artist name appears in the file PATH (folder + file
+    name). To safeguard the title-only fallback search (cover guard).
     """
     a = normalize(artist)
     if not a:
@@ -168,8 +168,8 @@ def artist_in_path(artist: str, filename: str) -> bool:
 
 def match_score(query_norm: str, filename: str) -> int:
     """
-    Score 0-100, wie gut ein slskd-Dateiname zur normalisierten Suchanfrage
-    ("artist title") passt.
+    Score 0-100 for how well an slskd file name matches the normalized search
+    query ("artist title").
     """
     import os
 

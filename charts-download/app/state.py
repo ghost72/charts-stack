@@ -1,8 +1,8 @@
 """
-Persistenter Zustand: welche Songs wurden bereits angefragt/geladen.
+Persistent state: which songs have already been requested/loaded.
 
-Verhindert, dass derselbe Song bei jedem Lauf erneut gesucht und geladen wird.
-Gespeichert als JSON, Schluessel ist "normalized_artist|normalized_title".
+Prevents the same song from being searched and loaded again on every run.
+Stored as JSON, the key is "normalized_artist|normalized_title".
 """
 
 import json
@@ -22,7 +22,7 @@ def _key(artist: str, title: str) -> str:
 
 
 def load() -> dict:
-    """Laedt den Zustand. Leeres Dict, wenn keine/ungueltige Datei."""
+    """Loads the state. Empty dict if the file is missing/invalid."""
     try:
         with open(config.STATE_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -36,7 +36,7 @@ def load() -> dict:
 
 
 def save(state: dict) -> None:
-    """Schreibt den Zustand atomar."""
+    """Writes the state atomically."""
     try:
         os.makedirs(os.path.dirname(config.STATE_FILE), exist_ok=True)
         tmp = config.STATE_FILE + ".tmp"
@@ -54,9 +54,8 @@ def already_requested(state: dict, artist: str, title: str) -> bool:
 def mark_requested(state: dict, artist: str, title: str,
                    username: str, filename: str) -> None:
     """
-    Vermerkt einen angefragten Download inkl. slskd-Referenz (username +
-    filename), damit ein spaeterer Lauf den Download-Status nachverfolgen und
-    Fehlschlaege wieder freigeben kann.
+    Records a requested download incl. slskd reference (username + filename),
+    so a later run can track the download status and release failures.
     """
     state.setdefault("requested", {})[_key(artist, title)] = {
         "artist": artist,
@@ -67,20 +66,20 @@ def mark_requested(state: dict, artist: str, title: str,
 
 
 def clear_requested(state: dict, artist: str, title: str) -> None:
-    """Entfernt einen Eintrag, damit der Song erneut gesucht/geladen wird."""
+    """Removes an entry so the song is searched/loaded again."""
     state.get("requested", {}).pop(_key(artist, title), None)
 
 
-# --- Fehlgeschlagene Suchen (Cooldown) ---
-# Ein Song, der gesucht, aber nicht in ausreichender Qualitaet gefunden wurde,
-# wird mit Zeitstempel vermerkt und fuer SEARCH_COOLDOWN_HOURS uebersprungen.
-# So blockieren dauerhaft nicht-findbare Songs (z.B. viele Mundart-Titel) nicht
-# in JEDEM Lauf das MAX_PER_RUN-Kontingent und die findbaren Songs kommen dran.
-# Nach Ablauf des Cooldowns wird erneut versucht (falls inzwischen jemand eine
-# gute Version teilt).
+# --- Failed searches (cooldown) ---
+# A song that was searched for but not found in sufficient quality is recorded
+# with a timestamp and skipped for SEARCH_COOLDOWN_HOURS. This keeps
+# permanently unfindable songs (e.g. many Mundart titles) from blocking the
+# MAX_PER_RUN quota on EVERY run so the findable songs get through. After the
+# cooldown expires the search is retried (in case someone now shares a good
+# version).
 
 def mark_failed(state: dict, artist: str, title: str) -> None:
-    """Vermerkt eine erfolglose Suche mit aktuellem Zeitstempel."""
+    """Records an unsuccessful search with the current timestamp."""
     state.setdefault("failed", {})[_key(artist, title)] = {
         "artist": artist,
         "title": title,
@@ -90,9 +89,9 @@ def mark_failed(state: dict, artist: str, title: str) -> None:
 
 def in_cooldown(state: dict, artist: str, title: str, cooldown_hours: int) -> bool:
     """
-    True, wenn der Song kuerzlich (innerhalb cooldown_hours) erfolglos gesucht
-    wurde und daher uebersprungen werden soll. cooldown_hours <= 0 = kein
-    Cooldown (immer erneut suchen).
+    True if the song was recently (within cooldown_hours) searched without
+    success and should therefore be skipped. cooldown_hours <= 0 = no cooldown
+    (always search again).
     """
     if cooldown_hours <= 0:
         return False
@@ -104,26 +103,25 @@ def in_cooldown(state: dict, artist: str, title: str, cooldown_hours: int) -> bo
 
 
 def clear_failed(state: dict, artist: str, title: str) -> None:
-    """Entfernt einen Fehlversuch-Eintrag (z.B. nach erfolgreichem Download)."""
+    """Removes a failed-attempt entry (e.g. after a successful download)."""
     state.get("failed", {}).pop(_key(artist, title), None)
 
 
-# --- Anbieter-Blockliste pro Song ---
-# charts-import merkt sich (ueber blocked_providers im State), welcher Soulseek-
-# Anbieter fuer einen bestimmten Song eine schlechte/upgesampelte Datei geliefert
-# hat. Diese Kombination (song, username) wird bei der naechsten Suche
-# uebersprungen - so wird nicht endlos derselbe Muell vom selben Anbieter
-# geladen. Bewusst PRO SONG (nicht global): derselbe Anbieter kann fuer andere
-# Songs eine gute Datei haben. Die Blockade verfaellt nach BLOCK_TTL_DAYS, damit
-# ein Anbieter, der seine Datei inzwischen ersetzt hat, wieder eine Chance
-# bekommt.
+# --- Per-song provider block list ---
+# charts-import remembers (via blocked_providers in the state) which Soulseek
+# provider delivered a bad/upsampled file for a given song. This combination
+# (song, username) is skipped on the next search - so the same junk is not
+# loaded endlessly from the same provider. Deliberately PER SONG (not global):
+# the same provider may have a good file for other songs. The block expires
+# after BLOCK_TTL_DAYS so a provider that has since replaced its file gets
+# another chance.
 
 def blocked_providers_for(state: dict, artist: str, title: str,
                           ttl_days: int) -> set[str]:
     """
-    Liefert die aktuell (noch nicht verfallenen) geblockten Anbieter-Namen fuer
-    diesen Song. Verfallene Eintraege (aelter als ttl_days) werden dabei gleich
-    aus dem State entfernt (Lazy-Cleanup). ttl_days <= 0 -> nie verfallen.
+    Returns the currently (not yet expired) blocked provider names for this
+    song. Expired entries (older than ttl_days) are removed from the state at
+    the same time (lazy cleanup). ttl_days <= 0 -> never expire.
     """
     key = _key(artist, title)
     song_block = state.get("blocked_providers", {}).get(key)
@@ -137,7 +135,7 @@ def blocked_providers_for(state: dict, artist: str, title: str,
         for user in expired:
             song_block.pop(user, None)
         if not song_block:
-            # Ganzen Song-Eintrag entfernen, wenn keine Blockade mehr aktiv ist.
+            # Remove the whole song entry if no block is active anymore.
             state.get("blocked_providers", {}).pop(key, None)
 
     return set(song_block.keys())

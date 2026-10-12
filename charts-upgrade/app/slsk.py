@@ -1,15 +1,15 @@
 """
-slskd-Anbindung: Suche, Ergebnisauswahl und Download-Enqueue.
+slskd integration: search, result selection and download enqueue.
 
-KOPIE aus charts-download (bewusst dupliziert, keine Laufzeit-Abhaengigkeit
-zwischen den Diensten - wie matching.py/manifest.py). Aenderungen mit
-charts-download abgleichen.
+COPY from charts-download (deliberately duplicated, no runtime dependency
+between the services - like matching.py/manifest.py). Reconcile changes with
+charts-download.
 
-Nutzt die Library `slskd-api`. Pro Song:
-  1. Suche starten und auf Abschluss warten.
-  2. Ergebnisse holen und das beste passende MP3 >= MIN_BITRATE auswaehlen.
-  3. Download per enqueue anstossen.
-Nur MP3 >= MIN_BITRATE; andere Formate werden ignoriert.
+Uses the `slskd-api` library. Per song:
+  1. Start a search and wait for completion.
+  2. Fetch the results and pick the best matching MP3 >= MIN_BITRATE.
+  3. Trigger the download via enqueue.
+Only MP3 >= MIN_BITRATE; other formats are ignored.
 """
 
 import logging
@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 class SlskdError(Exception):
-    """Fehler bei der Kommunikation mit slskd."""
+    """Error communicating with slskd."""
 
 
 def connect() -> "slskd_api.SlskdClient":
-    """Baut den slskd-Client auf. Wirft SlskdError bei fehlendem Key/Host."""
+    """Builds the slskd client. Raises SlskdError on a missing key/host."""
     if not config.SLSKD_API_KEY:
         raise SlskdError(t("upgrade.slsk.no_api_key"))
     try:
@@ -55,7 +55,7 @@ _NON_MP3_EXTENSIONS = {
 
 
 def _is_mp3(f: dict) -> bool:
-    """True nur, wenn die Datei eindeutig eine MP3 ist (defensive Endungspruefung)."""
+    """True only if the file is unambiguously an MP3 (defensive extension check)."""
     import os
 
     name = (f.get("filename") or "").replace("\\", "/").lower()
@@ -68,7 +68,7 @@ def _is_mp3(f: dict) -> bool:
 
 
 def _run_search(client, query: str) -> str | None:
-    """Startet eine Suche und wartet auf Abschluss. Gibt die Such-ID zurueck."""
+    """Starts a search and waits for completion. Returns the search ID."""
     search_id = str(uuid.uuid1())
     try:
         client.searches.search_text(
@@ -96,8 +96,8 @@ def _run_search(client, query: str) -> str | None:
 def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str = "",
                      blocked_users: set[str] | None = None):
     """
-    Bewertet alle Such-Antworten und liefert eine nach Qualitaet sortierte Liste
-    passender MP3-Kandidaten (>= MIN_BITRATE). Bestes Ergebnis zuerst.
+    Scores all search responses and returns a quality-sorted list of matching
+    MP3 candidates (>= MIN_BITRATE). Best result first.
     """
     candidates = []
     for resp in responses or []:
@@ -133,9 +133,9 @@ def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str
             if score < config.MATCH_THRESHOLD:
                 continue
             not_compilation = 0 if is_compilation(filename) else 1
-            # charts-upgrade laedt NIE Compilations als Ersatz (REJECT_COMPILATIONS
-            # ist hier fest an): eine kuratierte Single/ein Album soll nicht durch
-            # einen Sampler-Rip ersetzt werden.
+            # charts-upgrade NEVER loads compilations as a replacement
+            # (REJECT_COMPILATIONS is hard-wired on here): a curated single/album
+            # must not be replaced by a sampler rip.
             if config.REJECT_COMPILATIONS and not not_compilation:
                 logger.debug(t("download.slsk.rejected_compilation", filename=filename))
                 continue
@@ -149,7 +149,7 @@ def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str
 
 
 def _search_and_collect(client, query: str) -> list[dict]:
-    """Fuehrt eine Suche aus und liefert die Antworten. Wirft SlskdError."""
+    """Runs a search and returns the responses. Raises SlskdError."""
     search_id = _run_search(client, query)
     if not search_id:
         return []
@@ -168,10 +168,10 @@ def _search_and_collect(client, query: str) -> list[dict]:
 def find_candidates(client, artist: str, title: str,
                     blocked_users: set[str] | None = None) -> list[tuple[str, dict, float]]:
     """
-    Sucht den Song und liefert ALLE passenden Treffer als nach Qualitaet
-    sortierte Liste (bestes zuerst) oder []. blocked_users werden gefiltert.
-    Zweistufig: Artist+Titel, sonst Titel-only mit Kuenstler-Check.
-    Wirft SlskdError bei Verbindungs-/API-Fehler.
+    Searches the song and returns ALL matching hits as a quality-sorted list
+    (best first) or []. blocked_users are filtered out. Two-stage:
+    artist+title, otherwise title-only with an artist check.
+    Raises SlskdError on a connection/API error.
     """
     query = f"{artist} {title}".strip()
     query_norm = normalize(query)
@@ -191,7 +191,7 @@ def find_candidates(client, artist: str, title: str,
 
 
 def enqueue(client, username: str, file_dict: dict) -> bool:
-    """Stoesst den Download an. Gibt True bei Erfolg zurueck."""
+    """Triggers the download. Returns True on success."""
     try:
         return bool(client.transfers.enqueue(username=username, files=[file_dict]))
     except Exception as e:

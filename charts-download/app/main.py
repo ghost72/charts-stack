@@ -1,22 +1,22 @@
 """
-charts-download – Hauptservice.
+charts-download – main service.
 
-Automatisiert das Herunterladen der fehlenden Chart-Songs:
+Automates downloading the missing chart songs:
 
-  1. Liest die von charts-sync geschriebene(n) missing-Datei(en).
-  2. Prueft den Status bereits angefragter Downloads - fehlgeschlagene
-     (Aborted/Errored/TimedOut) werden aus dem State freigegeben und in slskd
-     weggeraeumt, damit sie in diesem Lauf erneut gesucht werden.
-  3. Ueberspringt Songs, die bereits erfolgreich angefragt wurden (State).
-  4. Sucht pro Song via slskd-API und waehlt das beste MP3 >= MIN_BITRATE
-     (Standard 256 kbps) aus.
-  5. DRY_RUN=1 (Standard): loggt/meldet nur, was geladen WUERDE.
-     DRY_RUN=0: stoesst die Downloads tatsaechlich per slskd-API an.
-  6. Maximal MAX_PER_RUN Songs pro Lauf (Standard 10).
+  1. Reads the missing file(s) written by charts-sync.
+  2. Checks the status of already-requested downloads - failed ones
+     (Aborted/Errored/TimedOut) are released from the state and cleaned up in
+     slskd so they are searched again in this run.
+  3. Skips songs that were already requested successfully (state).
+  4. Searches per song via the slskd API and picks the best MP3 >= MIN_BITRATE
+     (default 256 kbps).
+  5. DRY_RUN=1 (default): only logs/reports what WOULD be loaded.
+     DRY_RUN=0: actually triggers the downloads via the slskd API.
+  6. At most MAX_PER_RUN songs per run (default 10).
 
-Stellung in der Kette:
-  charts-sync (missing.txt) -> charts-download (laedt) -> slskd -> /Charts
-  -> charts-import (sortiert ein) -> Navidrome
+Position in the chain:
+  charts-sync (missing.txt) -> charts-download (loads) -> slskd -> /Charts
+  -> charts-import (files them in) -> Navidrome
 """
 
 import logging
@@ -34,8 +34,8 @@ logger = logging.getLogger("charts-download")
 
 def run_once() -> dict:
     """
-    Fuehrt einen einzelnen Such-/Download-Lauf aus.
-    Rueckgabe: Zaehler-Dict fuer das Status-/Dashboard-Modul.
+    Runs a single search/download pass.
+    Returns: counter dict for the status/dashboard module.
     """
     logger.info(t("download.run.start", dry_run="1" if config.DRY_RUN else "0"))
 
@@ -52,24 +52,23 @@ def run_once() -> dict:
 
     st = state.load()
 
-    # Zuerst: fehlgeschlagene Downloads aus dem State freigeben, damit sie in
-    # diesem Lauf erneut gesucht/geladen werden. Fehlgeschlagene Transfers in
-    # slskd werden dabei weggeraeumt.
+    # First: release failed downloads from the state so they are searched/loaded
+    # again in this run. Failed transfers in slskd are cleaned up in the process.
     retried = _requeue_failed(client, st)
 
-    # Jeder Eintrag ist (label, "#pos Artist - Title (bitrate)"), damit die
-    # Meldung nach Herkunfts-Playlist gruppieren kann.
-    planned: list[tuple[str, str]] = []   # fuer Dry-Run / Meldung
-    enqueued: list[tuple[str, str]] = []  # tatsaechlich angestossen
+    # Each entry is (label, "#pos Artist - Title (bitrate)") so the message can
+    # group by the originating playlist.
+    planned: list[tuple[str, str]] = []   # for dry-run / message
+    enqueued: list[tuple[str, str]] = []  # actually triggered
     processed = 0
 
-    # Heuristik gegen den "slskd eingeloggt aber noch nicht suchfaehig"-Fall
-    # (direkt nach Rebuild/Neustart liefert JEDE Suche 0 Treffer, obwohl die
-    # Songs real auffindbar sind). searched = Anzahl echt durchsuchter Songs,
-    # empty_results = davon mit 0 Treffern. Liefert ein ganzer Lauf fuer ALLE
-    # durchsuchten Songs 0 Treffer und wurde NICHTS angestossen, werten wir das
-    # als "slskd evtl. noch nicht suchfaehig" und nehmen die soeben gesetzten
-    # Cooldowns wieder zurueck (sonst steht der ganze Rueckstand bis zu 6h brach).
+    # Heuristic against the "slskd logged in but not yet search-ready" case
+    # (right after a rebuild/restart EVERY search returns 0 hits even though the
+    # songs really are findable). searched = number of songs actually searched,
+    # empty_results = of those, the ones with 0 hits. If a whole run returns
+    # 0 hits for ALL searched songs and NOTHING was triggered, we treat that as
+    # "slskd maybe not search-ready yet" and revert the cooldowns we just set
+    # (otherwise the whole backlog sits idle for up to 6h).
     searched = 0
     empty_results = 0
     failed_this_run: list[tuple[str, str]] = []
@@ -84,10 +83,10 @@ def run_once() -> dict:
             logger.debug(t("download.song.already_requested", artist=artist, title=title))
             continue
 
-        # Kuerzlich erfolglos gesucht? Dann ueberspringen, OHNE einen der
-        # MAX_PER_RUN-Slots zu verbrauchen. So blockieren dauerhaft nicht
-        # findbare Songs (z.B. Mundart) nicht jeden Lauf und die findbaren
-        # kommen dran. Nach Ablauf des Cooldowns wird erneut versucht.
+        # Recently searched without success? Then skip WITHOUT consuming one of
+        # the MAX_PER_RUN slots. This keeps permanently unfindable songs (e.g.
+        # Mundart) from blocking every run so the findable ones get through.
+        # After the cooldown expires the search is retried.
         if state.in_cooldown(st, artist, title, config.SEARCH_COOLDOWN_HOURS):
             skipped_cooldown += 1
             continue
@@ -96,9 +95,9 @@ def run_once() -> dict:
         logger.info(t("download.song.searching", pos=pos, source=source,
                       artist=artist, title=title))
 
-        # Anbieter, die fuer diesen Song schon eine schlechte/upgesampelte Datei
-        # geliefert haben (von charts-import vorgemerkt), bei der Suche
-        # ausfiltern. Verfallene Eintraege werden dabei gleich aufgeraeumt.
+        # Filter out providers that already delivered a bad/upsampled file for
+        # this song (flagged by charts-import). Expired entries are cleaned up
+        # at the same time.
         blocked_users = state.blocked_providers_for(
             st, artist, title, config.BLOCK_TTL_DAYS)
         if blocked_users:
@@ -108,14 +107,14 @@ def run_once() -> dict:
             candidates = slsk.find_candidates(client, artist, title,
                                               blocked_users=blocked_users)
         except slsk.SlskdError as e:
-            # Verbindungs-/API-Fehler (z.B. slskd gerade neu gestartet). Das ist
-            # KEIN "Song nicht findbar" -> keinen Cooldown setzen, Slot nicht
-            # verbrauchen. Da die Verbindung gestoert ist, brechen wir den Lauf
-            # ab (slskd nicht weiter haemmern); der naechste Lauf versucht es neu.
+            # Connection/API error (e.g. slskd just restarted). This is NOT a
+            # "song not findable" -> do not set a cooldown, do not consume a
+            # slot. Since the connection is broken we abort the run (do not keep
+            # hammering slskd); the next run tries again.
             logger.warning(t("download.run.slskd_aborted", error=e))
             processed -= 1
             break
-        # Ein echter Suchlauf (slskd hat geantwortet) ist gelaufen.
+        # A real search (slskd responded) has run.
         searched += 1
         if not candidates:
             empty_results += 1
@@ -126,7 +125,7 @@ def run_once() -> dict:
                 failed_this_run.append((artist, title))
             continue
 
-        # Bester Treffer fuer Dry-Run-Anzeige; die restlichen sind Retry-Fallbacks.
+        # Best hit for the dry-run display; the rest are retry fallbacks.
         best_user, best_file, best_score = candidates[0]
         bitrate = best_file.get("bitRate", 0)
 
@@ -135,13 +134,13 @@ def run_once() -> dict:
                           filename=best_file.get("filename", "?"), bitrate=bitrate,
                           score=best_score, user=best_user))
             planned.append((source, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
-            # Im Dry-Run NICHT als angefragt markieren, damit es beim echten
-            # Lauf erneut betrachtet wird.
+            # In dry-run do NOT mark it as requested, so it is considered again
+            # on the real run.
             continue
 
-        # Retry ueber mehrere Anbieter: Soulseek ist P2P - der beste Treffer kann
-        # von einem Peer stammen, der gerade offline ist / den Upload ablehnt.
-        # Kandidaten der Reihe nach abhaken, bis ein enqueue klappt.
+        # Retry across multiple providers: Soulseek is P2P - the best hit can
+        # come from a peer that is currently offline / rejects the upload. Work
+        # through the candidates in order until an enqueue succeeds.
         chosen = None  # (username, file_dict, bitrate)
         for cand_user, cand_file, _score in candidates:
             if slsk.enqueue(client, cand_user, cand_file):
@@ -154,9 +153,9 @@ def run_once() -> dict:
             fname = file_dict.get("filename", "?")
             logger.info(t("download.song.enqueued", filename=fname, user=username))
             state.mark_requested(st, artist, title, username, fname)
-            state.clear_failed(st, artist, title)  # erfolgreicher Treffer -> Cooldown weg
-            # Saubere Chart-Metadaten fuer charts-import hinterlegen, damit die
-            # Datei korrekt getaggt/einsortiert wird (nicht "Unknown Album").
+            state.clear_failed(st, artist, title)  # successful hit -> drop cooldown
+            # Store clean chart metadata for charts-import so the file is tagged
+            # and filed correctly (not "Unknown Album").
             manifest.record(fname, artist, title, source)
             enqueued.append((source, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
         else:
@@ -166,12 +165,11 @@ def run_once() -> dict:
     if skipped_cooldown:
         logger.info(t("download.run.cooldown_skipped", count=skipped_cooldown))
 
-    # Verdacht "slskd eingeloggt, aber noch nicht suchfaehig": Es wurde gesucht,
-    # ALLE durchsuchten Songs lieferten 0 Treffer UND nichts wurde angestossen.
-    # Das ist fast sicher ein Timing-/Peer-Problem (kurz nach Start), kein echtes
-    # "alle unauffindbar" - die soeben gesetzten Cooldowns zuruecknehmen, damit
-    # der Rueckstand nicht bis zu SEARCH_COOLDOWN_HOURS brachliegt. Der naechste
-    # Lauf versucht es dann regulaer erneut.
+    # Suspicion "slskd logged in but not yet search-ready": a search ran, ALL
+    # searched songs returned 0 hits AND nothing was triggered. That is almost
+    # certainly a timing/peer problem (shortly after start), not a real "all
+    # unfindable" - revert the cooldowns we just set so the backlog does not sit
+    # idle for up to SEARCH_COOLDOWN_HOURS. The next run then retries normally.
     if (not config.DRY_RUN and searched > 0 and empty_results == searched
             and not enqueued):
         for a, song_title in failed_this_run:
@@ -192,11 +190,11 @@ def run_once() -> dict:
 
 def _requeue_failed(client, st: dict) -> int:
     """
-    Prueft den Status der bereits angefragten Downloads. Fehlgeschlagene werden
-    aus dem State entfernt (damit sie neu geladen werden) und in slskd
-    weggeraeumt. Gibt die Anzahl der freigegebenen Songs zurueck.
+    Checks the status of the already-requested downloads. Failed ones are
+    removed from the state (so they are loaded again) and cleaned up in slskd.
+    Returns the number of released songs.
 
-    Im Dry-Run werden nur Erkennung/Logging gemacht, keine Aenderung.
+    In dry-run only detection/logging happens, no changes.
     """
     requested = st.get("requested", {})
     if not requested:
@@ -220,8 +218,8 @@ def _requeue_failed(client, st: dict) -> int:
 
 def _breakdown(items: list[tuple[str, str]]) -> str:
     """
-    Fasst zusammen, wie viele Songs aus welcher Playlist stammen, z.B.
-    "3 aus charts, 2 aus 80er-90er". Reihenfolge nach Menge (haeufigste zuerst).
+    Summarizes how many songs come from which playlist, e.g.
+    "3 aus charts, 2 aus 80er-90er". Ordered by count (most frequent first).
     """
     counts: dict[str, int] = {}
     for label, _ in items:
@@ -234,7 +232,7 @@ def _breakdown(items: list[tuple[str, str]]) -> str:
 def _summary_and_notify(planned: list[tuple[str, str]],
                         enqueued: list[tuple[str, str]],
                         retried: int) -> None:
-    """Loggt eine Zusammenfassung und schickt optional Pushover."""
+    """Logs a summary and optionally sends Pushover."""
     if config.DRY_RUN:
         logger.info(t("download.summary.done_dry_run", count=len(planned)))
         if planned:
@@ -261,14 +259,14 @@ def _summary_and_notify(planned: list[tuple[str, str]],
 
 def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None:
     """
-    Schickt eine Pushover-Meldung mit nach Playlist gruppierten Songs.
-    header = Kopfzeilen (Anzahl + Aufschluesselung). items = (label, text).
-    Format: Header, Leerzeile, dann pro Playlist eine fette Ueberschrift mit den
-    Songs darunter, Leerzeilen zwischen den Gruppen. Gesamt auf 15 Songs
-    begrenzt (Pushover-Nachricht kurz halten).
+    Sends a Pushover message with songs grouped by playlist.
+    header = header lines (count + breakdown). items = (label, text).
+    Format: header, blank line, then one bold heading per playlist with the
+    songs below it, blank lines between the groups. Capped at 15 songs total
+    (keep the Pushover message short).
     """
     lines = list(header)
-    # Nach Label gruppieren (Reihenfolge: groesste Gruppe zuerst).
+    # Group by label (order: largest group first).
     groups: dict[str, list[str]] = {}
     for label, text in items:
         groups.setdefault(label, []).append(text)
@@ -279,7 +277,7 @@ def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None
     for i, (label, texts) in enumerate(ordered):
         if shown >= 15:
             break
-        lines.append("")  # Leerzeile vor jeder Gruppe (auch nach dem Header)
+        lines.append("")  # blank line before each group (also after the header)
         lines.append(f"<b>{label}</b>")
         for text in texts:
             if shown >= 15:
@@ -294,13 +292,13 @@ def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None
 
 
 def _next_run_iso() -> str:
-    """Zeitpunkt des naechsten Laufs als ISO-8601 (fuer das Dashboard)."""
+    """Timestamp of the next run as ISO-8601 (for the dashboard)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z",
                          time.localtime(time.time() + max(1, config.INTERVAL_MINUTES) * 60))
 
 
 def _guarded_run() -> None:
-    """Fuehrt run_once() aus und schreibt den Status (Erfolg/Fehler)."""
+    """Runs run_once() and writes the status (success/error)."""
     status.start()
     try:
         counters = run_once() or {}

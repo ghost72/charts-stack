@@ -1,38 +1,39 @@
 """
-Audio-Qualitaetsanalyse: erkennt upgesampelte / gefaelschte MP3s ueber den
-tatsaechlichen Frequenz-Cutoff, gemessen per FFT (ffmpeg PCM-Decode + numpy).
+Audio quality analysis: detects upsampled / faked MP3s via the actual frequency
+cutoff, measured by FFT (ffmpeg PCM decode + numpy).
 
-Wird von charts-upgrade als Kopie uebernommen (keine Laufzeit-Abhaengigkeit).
-Aenderungen hier mit charts-upgrade abgleichen.
+Taken over by charts-upgrade as a copy (no runtime dependency). Reconcile
+changes here with charts-upgrade.
 
-HINTERGRUND
------------
-Die im Datei-Tag angegebene Bitrate luegt haeufig: Eine 128-kbps-Quelle wird
-auf "320 kbps" hochtranskodiert (Upsampling). Der MP3-Encoder wirft beim
-Kodieren oberhalb einer bitratenabhaengigen Grenze alles weg (Lowpass):
+BACKGROUND
+----------
+The bitrate stated in the file tag often lies: a 128 kbps source is
+transcoded up to "320 kbps" (upsampling). When encoding, the MP3 encoder
+discards everything above a bitrate-dependent limit (lowpass):
     128 kbps -> ~16 kHz, 192 -> ~19 kHz, 256/320 -> ~20 kHz.
-Der hochtranskodierte "320er" behaelt die ~16-kHz-Wand der 128er-Quelle.
+The up-transcoded "320" keeps the ~16 kHz wall of the 128 source.
 
-MESSMETHODE (WICHTIG - korrekt statt spectral_rolloff!)
--------------------------------------------------------
-spectral_rolloff (Energie-Schwerpunkt) ist HIER FALSCH: bei bass-/mittenlastiger
-Musik liegt der Median-Rolloff naturgemaess bei 5-10 kHz, egal ob oben noch
-Inhalt ist. Der ECHTE Cutoff ist die HOECHSTE Frequenz mit nennenswerter
-Energie. Deshalb:
-  1. ffmpeg dekodiert die Datei zu Mono-PCM (f32le).
-  2. In 2-Sekunden-Bloecken FFT (numpy.rfft), Spektrum in dBFS relativ zum Peak.
-  3. Von Nyquist nach UNTEN suchen, bis ein Frequenzband ueber dem Rauschboden
-     (NOISE_FLOOR_DB) auftaucht -> das ist der Cutoff dieses Blocks.
-  4. Ueber alle Bloecke das MAXIMUM nehmen (der lauteste/hoechste Moment zaehlt;
-     leise/bass-lastige Passagen druecken den Wert nicht faelschlich).
+MEASUREMENT METHOD (IMPORTANT - correct, not spectral_rolloff!)
+---------------------------------------------------------------
+spectral_rolloff (energy centroid) is WRONG HERE: for bass/mid-heavy music the
+median rolloff naturally sits at 5-10 kHz, regardless of whether there is still
+content up top. The REAL cutoff is the HIGHEST frequency with significant
+energy. Therefore:
+  1. ffmpeg decodes the file to mono PCM (f32le).
+  2. FFT in 2-second blocks (numpy.rfft), spectrum in dBFS relative to the peak.
+  3. Search DOWN from Nyquist until a frequency band appears above the noise
+     floor (NOISE_FLOOR_DB) -> that is the cutoff of this block.
+  4. Take the MAXIMUM over all blocks (the loudest/highest moment counts;
+     quiet/bass-heavy passages do not wrongly push the value down).
 
-KONSERVATIV BY DESIGN
----------------------
-  - Nicht messbar (ffmpeg/numpy fehlt, Fehler, Stille) -> None -> nie ablehnen.
-  - Nur wenn der gemessene Cutoff DEUTLICH unter der Bitraten-Erwartung liegt
-    (Toleranz), gilt die Datei als upgesampelt.
+CONSERVATIVE BY DESIGN
+----------------------
+  - Not measurable (ffmpeg/numpy missing, error, silence) -> None -> never
+    reject.
+  - Only if the measured cutoff is CLEARLY below the bitrate expectation
+    (tolerance) does the file count as upsampled.
 
-Braucht ffmpeg + numpy im Image.
+Needs ffmpeg + numpy in the image.
 """
 
 import logging
@@ -43,7 +44,7 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# Erwarteter Mindest-Cutoff (kHz) je nach ANGEGEBENER MP3-Bitrate (kbps).
+# Expected minimum cutoff (kHz) depending on the STATED MP3 bitrate (kbps).
 _EXPECTED_CUTOFF_BY_BITRATE = [
     (320, 19.0),
     (256, 18.0),
@@ -53,22 +54,22 @@ _EXPECTED_CUTOFF_BY_BITRATE = [
     (0,   0.0),
 ]
 
-# Rauschboden (dBFS relativ zum Peak): Frequenzen darueber gelten als "Inhalt".
+# Noise floor (dBFS relative to the peak): frequencies above it count as "content".
 _NOISE_FLOOR_DB = -80.0
-# Ein Band gilt als "Inhalt", wenn mind. dieser Anteil seiner Bins ueber dem
-# Rauschboden liegt.
+# A band counts as "content" if at least this fraction of its bins is above the
+# noise floor.
 _BAND_CONTENT_RATIO = 0.5
-# Bandbreite (FFT-Bins) fuer die Cutoff-Suche von oben.
+# Bandwidth (FFT bins) for the cutoff search from the top.
 _BAND_SIZE = 50
-# Analyse-Blockgroesse in Sekunden.
+# Analysis block size in seconds.
 _CHUNK_SECONDS = 2
-# Max. Sekunden Audio, die dekodiert werden (CPU-Schutz: Anfang reicht fuer die
-# Cutoff-Bestimmung; ganze Datei waere Verschwendung).
+# Max seconds of audio that are decoded (CPU protection: the start is enough to
+# determine the cutoff; the whole file would be a waste).
 _MAX_DECODE_SECONDS = 60
 
 
 def available() -> bool:
-    """True, wenn ffmpeg im PATH ist UND numpy importierbar."""
+    """True if ffmpeg is in PATH AND numpy is importable."""
     if shutil.which("ffmpeg") is None:
         return False
     try:
@@ -86,7 +87,7 @@ def _expected_cutoff_khz(bitrate_kbps: int) -> float:
 
 
 def _sample_rate(path: str) -> int | None:
-    """Liest die Sample-Rate via ffprobe (0/None wenn nicht lesbar)."""
+    """Reads the sample rate via ffprobe (0/None if not readable)."""
     try:
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "a:0",
@@ -101,9 +102,9 @@ def _sample_rate(path: str) -> int | None:
 
 def measure_cutoff_khz(path: str, timeout: int = 120) -> float | None:
     """
-    Misst den echten Frequenz-Cutoff (kHz): die hoechste Frequenz mit
-    nennenswerter Energie (FFT, von Nyquist nach unten). None, wenn nicht
-    messbar (ffmpeg/numpy fehlt, Decode-Fehler, Stille).
+    Measures the real frequency cutoff (kHz): the highest frequency with
+    significant energy (FFT, from Nyquist downward). None if not measurable
+    (ffmpeg/numpy missing, decode error, silence).
     """
     if not available():
         return None
@@ -116,7 +117,7 @@ def measure_cutoff_khz(path: str, timeout: int = 120) -> float | None:
     if not sr or sr <= 0:
         return None
 
-    # Datei zu Mono-PCM float32 dekodieren (nur die ersten _MAX_DECODE_SECONDS).
+    # Decode the file to mono PCM float32 (only the first _MAX_DECODE_SECONDS).
     try:
         proc = subprocess.run(
             ["ffmpeg", "-v", "error", "-t", str(_MAX_DECODE_SECONDS),
@@ -134,7 +135,7 @@ def measure_cutoff_khz(path: str, timeout: int = 120) -> float | None:
         return None
 
     chunk_size = sr * _CHUNK_SECONDS
-    bin_res = sr / chunk_size  # Hz pro FFT-Bin
+    bin_res = sr / chunk_size  # Hz per FFT bin
     max_cutoff_hz = 0.0
 
     for i in range(0, len(audio), chunk_size):
@@ -148,7 +149,7 @@ def measure_cutoff_khz(path: str, timeout: int = 120) -> float | None:
             continue
         spectrum_db = 20 * np.log10(spectrum / peak + 1e-12)
 
-        # Von oben (Nyquist) nach unten: erstes Band mit genug Inhalt = Cutoff.
+        # From the top (Nyquist) down: first band with enough content = cutoff.
         n = len(spectrum_db)
         for j in range(n, _BAND_SIZE, -1):
             band = spectrum_db[j - _BAND_SIZE:j]
@@ -167,10 +168,10 @@ def is_upsampled(path: str, claimed_bitrate_kbps: int,
                  tolerance_khz: float = 2.0,
                  min_check_bitrate: int = 192) -> tuple[bool, float | None, float]:
     """
-    Beurteilt, ob eine Datei fuer ihre ANGEGEBENE Bitrate einen zu niedrigen
-    echten Cutoff hat (= wahrscheinlich upgesampelt). Konservativ: nicht messbar
-    -> (False, None, erwartet). Rueckgabe:
-    (ist_upsampled, gemessener_cutoff_khz_oder_None, erwarteter_cutoff_khz).
+    Judges whether a file has too low a real cutoff for its STATED bitrate
+    (= probably upsampled). Conservative: not measurable -> (False, None,
+    expected). Returns:
+    (is_upsampled, measured_cutoff_khz_or_None, expected_cutoff_khz).
     """
     expected = _expected_cutoff_khz(claimed_bitrate_kbps)
     if claimed_bitrate_kbps < min_check_bitrate or expected <= 0:
@@ -186,10 +187,10 @@ def is_upsampled(path: str, claimed_bitrate_kbps: int,
 
 def quality_key(path: str, claimed_bitrate_kbps: int) -> float:
     """
-    Qualitaets-Score fuer den Vergleich "ist Datei B besser als A" (hoeher =
-    besser). Echter Cutoff dominiert (immun gegen gefaelschte Bitrate), Bitrate
-    nur Tie-Breaker. Nicht messbar -> nur Bitrate. Nur fuer Vergleiche desselben
-    Songs gedacht.
+    Quality score for the comparison "is file B better than A" (higher =
+    better). The real cutoff dominates (immune to faked bitrate), bitrate is
+    only a tie-breaker. Not measurable -> only bitrate. Intended only for
+    comparisons of the same song.
     """
     measured = measure_cutoff_khz(path)
     if measured is not None:

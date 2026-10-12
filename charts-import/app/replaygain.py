@@ -1,16 +1,16 @@
 """
-ReplayGain-2.0-Normalisierung (EBU R128) fuer die einheitliche Lautstaerke.
+ReplayGain 2.0 normalization (EBU R128) for uniform loudness.
 
-Misst die Lautheit einer MP3 mit ffmpeg (ebur128-Filter) und schreibt den
-berechneten Track-Gain als ReplayGain-Tags (TXXX:REPLAYGAIN_TRACK_GAIN und
-REPLAYGAIN_TRACK_PEAK) in die Datei. Der Audio-Stream bleibt UNVERAENDERT
-(verlustfrei) - ein ReplayGain-faehiger Player (Navidrome, Symfonium, ...)
-regelt die Wiedergabe-Lautstaerke anhand dieser Tags.
+Measures the loudness of an MP3 with ffmpeg (ebur128 filter) and writes the
+computed track gain as ReplayGain tags (TXXX:REPLAYGAIN_TRACK_GAIN and
+REPLAYGAIN_TRACK_PEAK) into the file. The audio stream stays UNCHANGED
+(lossless) - a ReplayGain-capable player (Navidrome, Symfonium, ...) controls
+the playback loudness based on these tags.
 
-Braucht ffmpeg im Image (siehe Dockerfile). Faellt still aus, wenn ffmpeg
-fehlt oder die Messung scheitert - der Import laeuft dann normal weiter.
+Needs ffmpeg in the image (see Dockerfile). Fails silently if ffmpeg is
+missing or the measurement fails - the import then continues normally.
 
-Zielwert: -18 LUFS (ReplayGain-2.0-Referenz).
+Target value: -18 LUFS (ReplayGain 2.0 reference).
 """
 
 import logging
@@ -26,25 +26,25 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# Zielpegel (LUFS). ReplayGain-2.0-Referenz ist -18; Streaming-Dienste
-# (Spotify/YouTube ~-14) sind lauter. Konfigurierbar ueber REPLAYGAIN_TARGET_LUFS.
+# Target level (LUFS). The ReplayGain 2.0 reference is -18; streaming services
+# (Spotify/YouTube ~-14) are louder. Configurable via REPLAYGAIN_TARGET_LUFS.
 _TARGET_LUFS = float(config.REPLAYGAIN_TARGET_LUFS)
 
-# ffmpeg ebur128 gibt am Ende eine Zusammenfassung mit "I:   -xx.x LUFS"
-# (integrated loudness) und "Peak:  -x.x dBFS" aus.
+# ffmpeg ebur128 prints a summary at the end with "I:   -xx.x LUFS"
+# (integrated loudness) and "Peak:  -x.x dBFS".
 _I_RE = re.compile(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS")
 _PEAK_RE = re.compile(r"Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS")
 
 
 def available() -> bool:
-    """True, wenn ffmpeg im PATH ist."""
+    """True if ffmpeg is in PATH."""
     return shutil.which("ffmpeg") is not None
 
 
 def _measure(path: str) -> tuple[float, float] | None:
     """
-    Misst integrierte Lautheit (LUFS) und True-Peak (dBFS) via ffmpeg.
-    Gibt (loudness_lufs, peak_dbfs) oder None bei Fehler.
+    Measures integrated loudness (LUFS) and true peak (dBFS) via ffmpeg.
+    Returns (loudness_lufs, peak_dbfs) or None on error.
     """
     try:
         proc = subprocess.run(
@@ -56,8 +56,8 @@ def _measure(path: str) -> tuple[float, float] | None:
         logger.debug(t("import.replaygain.measure_failed", path=path, error=e))
         return None
 
-    out = proc.stderr  # ffmpeg schreibt die Zusammenfassung auf stderr
-    # Letzte Vorkommen nehmen (die Summary am Ende).
+    out = proc.stderr  # ffmpeg writes the summary to stderr
+    # Take the last occurrences (the summary at the end).
     i_matches = _I_RE.findall(out)
     peak_matches = _PEAK_RE.findall(out)
     if not i_matches:
@@ -69,7 +69,7 @@ def _measure(path: str) -> tuple[float, float] | None:
 
 
 def _has_replaygain(path: str) -> bool:
-    """True, wenn bereits ein REPLAYGAIN_TRACK_GAIN-Tag vorhanden ist."""
+    """True if a REPLAYGAIN_TRACK_GAIN tag is already present."""
     try:
         tags = ID3(path)
     except (ID3NoHeaderError, Exception):
@@ -82,9 +82,9 @@ def _has_replaygain(path: str) -> bool:
 
 def apply_track_gain(path: str, overwrite: bool = False) -> bool:
     """
-    Berechnet und schreibt ReplayGain-Track-Tags in die MP3.
-    overwrite=False: vorhandene ReplayGain-Tags nicht neu berechnen.
-    Rueckgabe: True, wenn Tags geschrieben wurden.
+    Computes and writes ReplayGain track tags into the MP3.
+    overwrite=False: do not recompute existing ReplayGain tags.
+    Returns: True if tags were written.
     """
     if not path.lower().endswith(".mp3"):
         return False
@@ -97,9 +97,9 @@ def apply_track_gain(path: str, overwrite: bool = False) -> bool:
     if measured is None:
         return False
     loudness, peak_dbfs = measured
-    # Track-Gain = Zielpegel - gemessene Lautheit.
+    # Track gain = target level - measured loudness.
     gain_db = _TARGET_LUFS - loudness
-    # Peak als linearer Faktor (ReplayGain-Konvention: 0..1+).
+    # Peak as a linear factor (ReplayGain convention: 0..1+).
     peak_linear = 10 ** (peak_dbfs / 20.0) if peak_dbfs else 1.0
 
     try:
@@ -107,7 +107,7 @@ def apply_track_gain(path: str, overwrite: bool = False) -> bool:
             tags = ID3(path)
         except ID3NoHeaderError:
             tags = ID3()
-        # Alte ReplayGain-TXXX entfernen, dann neu setzen.
+        # Remove old ReplayGain TXXX, then set anew.
         for k in list(tags.keys()):
             if k.startswith("TXXX:") and "REPLAYGAIN" in k.upper():
                 del tags[k]

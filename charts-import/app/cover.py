@@ -1,20 +1,20 @@
 """
-Cover-Beschaffung ueber iTunes/Apple (primaer) und Deezer (Fallback).
+Cover sourcing via iTunes/Apple (primary) and Deezer (fallback).
 
-charts-import kennt zu jedem (Manifest-)Song den sauberen Kuenstler + Titel.
-Damit sucht es das passende Cover ueber offene Such-APIs (kein API-Key noetig)
-und bettet das Bild in die MP3 ein.
+For every (manifest) song charts-import knows the clean artist + title. With
+that it searches for the matching cover via open search APIs (no API key
+needed) and embeds the image into the MP3.
 
-Quellen-Reihenfolge steuerbar ueber COVER_SOURCES (Default: itunes,deezer).
-iTunes hat den groessten Katalog mit dedizierten Single-Artworks in hoher
-Aufloesung (immer quadratisch); Deezer springt ein, wenn iTunes nichts findet.
+The source order is controllable via COVER_SOURCES (default: itunes,deezer).
+iTunes has the largest catalog with dedicated single artworks in high
+resolution (always square); Deezer steps in when iTunes finds nothing.
 
-Die Trefferauswahl bevorzugt bewusst die echte Single/das Original-Album und
-sortiert Fremd-Versionen (Remix, Sped Up, Slowed, Live, Instrumental, Cover-
-Bands, Compilations) aus, damit nicht das Demo-/Sampler-Cover eingebettet wird.
+Hit selection deliberately prefers the real single/the original album and
+sorts out foreign versions (remix, sped up, slowed, live, instrumental, cover
+bands, compilations) so the demo/sampler cover is not embedded.
 
-Nur MP3 wird unterstuetzt (ID3 APIC-Frame). Fehler sind nicht fatal - der
-Import gelingt auch ohne Cover.
+Only MP3 is supported (ID3 APIC frame). Errors are not fatal - the import
+succeeds even without a cover.
 """
 
 import logging
@@ -32,15 +32,15 @@ logger = logging.getLogger(__name__)
 _DEEZER_SEARCH_URL = "https://api.deezer.com/search"
 _ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 
-# Zusaetze in Titel/Album, die auf eine unerwuenschte Fremd-Version hindeuten.
-# Solche Treffer werden bei der Auswahl abgewertet/aussortiert.
+# Additions in title/album that hint at an unwanted foreign version. Such hits
+# are downgraded/sorted out during selection.
 _BAD_VERSION_MARKERS = (
     "remix", "sped up", "spedup", "slowed", "reverb", "nightcore",
     "instrumental", "karaoke", "piano", "guitar cover", "cover version",
     "live", "acoustic version", "tribute", "8d", "lofi", "demo",
     "rock version", "like a version", "made famous", "in the style of",
 )
-# Album-/Collection-Marker, die auf Sampler/Compilations hindeuten.
+# Album/collection markers that hint at samplers/compilations.
 _COMPILATION_MARKERS = (
     "now that's what i call", "kidz bop", "hits ", "top 100", "top hits",
     "greatest hits of", "the sound of", "party mix", "bravo hits",
@@ -49,25 +49,25 @@ _COMPILATION_MARKERS = (
 
 
 def _norm(s: str) -> str:
-    """Normalisiert einen String fuer den Vergleich (klein, ohne Sonderzeichen)."""
+    """Normalizes a string for comparison (lowercase, no special characters)."""
     s = (s or "").lower().strip()
-    # Klammer-Zusaetze wie (feat. ...), (Radio Edit) fuer den Kern-Vergleich weg.
+    # Remove parenthetical additions like (feat. ...), (Radio Edit) for the core comparison.
     s = re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", s)
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return s.strip()
 
-# Ab welcher Seiten-Abweichung ein Cover als "rechteckig" (korrekturbeduerftig)
-# gilt. 0.15 = eine Seite darf bis 15% laenger sein und zaehlt noch als
-# quadratisch. So bleiben minimal abweichende Album-Cover (z.B. 500x498)
-# unangetastet, waehrend echte CD-Scans (Vorder+Rueckseite, ~2:1) erkannt
-# werden. Konservativ, damit gute Cover nicht unnoetig ersetzt werden.
+# From which side deviation a cover counts as "rectangular" (needs correction).
+# 0.15 = one side may be up to 15% longer and still counts as square. This way
+# minimally deviating album covers (e.g. 500x498) stay untouched, while real CD
+# scans (front+back, ~2:1) are detected. Conservative, so good covers are not
+# replaced unnecessarily.
 _SQUARE_TOLERANCE = 0.15
 
 
 def _is_square(w: int, h: int) -> bool:
-    """True, wenn Breite/Hoehe innerhalb der Toleranz als quadratisch gelten."""
+    """True if width/height count as square within the tolerance."""
     if w <= 0 or h <= 0:
-        return True  # unbekannt -> nicht als fehlerhaft werten
+        return True  # unknown -> do not treat as faulty
     longer, shorter = max(w, h), min(w, h)
     return (longer - shorter) / longer <= _SQUARE_TOLERANCE
 
@@ -76,37 +76,37 @@ def _score_candidate(want_artist: str, want_title: str,
                      cand_artist: str, cand_title: str, cand_album: str,
                      is_single: bool) -> int | None:
     """
-    Bewertet einen Suchtreffer. Hoeher = besser. None = disqualifiziert
-    (falscher Artist/Titel oder klar unerwuenschte Version).
+    Scores a search hit. Higher = better. None = disqualified (wrong
+    artist/title or clearly unwanted version).
     """
     wa, wt = _norm(want_artist), _norm(want_title)
     ca, ct = _norm(cand_artist), _norm(cand_title)
     calbum = (cand_album or "").lower()
     ctitle_raw = (cand_title or "").lower()
 
-    # Artist muss passen (einer im anderen enthalten - deckt "feat." ab).
+    # Artist must match (one contained in the other - covers "feat.").
     if wa and ca and wa not in ca and ca not in wa:
         return None
-    # Titel-Kern muss passen.
+    # Title core must match.
     if wt and ct and wt != ct and wt not in ct and ct not in wt:
         return None
-    # Unerwuenschte Fremd-Versionen (Remix/Sped Up/Piano/Cover ...) raus,
-    # sofern der gesuchte Titel diese Marker nicht selbst enthaelt.
+    # Drop unwanted foreign versions (remix/sped up/piano/cover ...) unless the
+    # searched title itself contains these markers.
     for m in _BAD_VERSION_MARKERS:
         if m in ctitle_raw and m not in wt:
             return None
 
     score = 100
     if ct == wt:
-        score += 30            # exakter Titel
+        score += 30            # exact title
     if is_single:
-        score += 25            # dedizierte Single bevorzugen
+        score += 25            # prefer a dedicated single
     for m in _COMPILATION_MARKERS:
         if m in calbum:
-            score -= 60        # Sampler/Compilation abwerten
+            score -= 60        # downgrade sampler/compilation
             break
     if "demo" in calbum:
-        score -= 40            # Demo-EP abwerten (z.B. Dominic Fike)
+        score -= 40            # downgrade demo EP (e.g. Dominic Fike)
     if "deluxe" in calbum:
         score -= 5
     return score
@@ -114,9 +114,9 @@ def _score_candidate(want_artist: str, want_title: str,
 
 def _itunes_search(artist: str, title: str):
     """
-    Ruft die iTunes-Search-API mit Retry bei Drosselung (HTTP 429/403) auf.
-    Wartet zwischen den Versuchen exponentiell (ITUNES_RETRY_BASE_MS, dann x2).
-    Gibt das JSON-Payload zurueck oder None (endgueltig fehlgeschlagen/gedrosselt).
+    Calls the iTunes search API with retry on throttling (HTTP 429/403).
+    Waits exponentially between attempts (ITUNES_RETRY_BASE_MS, then x2).
+    Returns the JSON payload or None (finally failed/throttled).
     """
     params = {"term": f"{artist} {title}", "entity": "song", "limit": 15}
     attempts = max(1, config.ITUNES_MAX_RETRIES)
@@ -129,7 +129,7 @@ def _itunes_search(artist: str, title: str):
                 logger.debug(t("import.cover.itunes_network_error", artist=artist,
                                title=title, error=e))
                 return None
-            # Drosselung -> warten und erneut versuchen (ausser beim letzten Mal).
+            # Throttling -> wait and retry (except on the last attempt).
             if resp.status_code in (429, 403):
                 if attempt < attempts - 1:
                     wait = config.ITUNES_RETRY_BASE_MS * (2 ** attempt) / 1000.0
@@ -152,7 +152,7 @@ def _itunes_search(artist: str, title: str):
 
 
 def _find_cover_url_itunes(artist: str, title: str) -> str | None:
-    """Sucht das beste Single-/Album-Cover bei iTunes/Apple (mit Retry)."""
+    """Searches the best single/album cover at iTunes/Apple (with retry)."""
     payload = _itunes_search(artist, title)
     results = payload.get("results") if isinstance(payload, dict) else None
     if not results:
@@ -171,7 +171,7 @@ def _find_cover_url_itunes(artist: str, title: str) -> str | None:
         art = r.get("artworkUrl100") or r.get("artworkUrl60") or ""
         if not art:
             continue
-        # Apple liefert die Groesse ueber den Dateinamen; hochskalieren.
+        # Apple delivers the size via the file name; scale it up.
         size = config.ITUNES_COVER_SIZE
         art = re.sub(r"/\d+x\d+bb\.(jpg|png)$", f"/{size}x{size}bb.\\1", art)
         best_url, best_score = art, score
@@ -180,7 +180,7 @@ def _find_cover_url_itunes(artist: str, title: str) -> str | None:
 
 
 def _find_cover_url_deezer(artist: str, title: str) -> str | None:
-    """Sucht das beste Album-Cover bei Deezer (Fallback)."""
+    """Searches the best album cover at Deezer (fallback)."""
     for query in (f'artist:"{artist}" track:"{title}"', f"{artist} {title}"):
         try:
             with httpx.Client(timeout=15.0, follow_redirects=True,
@@ -219,8 +219,8 @@ def _find_cover_url_deezer(artist: str, title: str) -> str | None:
 
 def _find_cover_url(artist: str, title: str) -> str | None:
     """
-    Sucht die beste Cover-URL ueber die konfigurierten Quellen (COVER_SOURCES),
-    in Reihenfolge. Erste Quelle mit Treffer gewinnt.
+    Searches the best cover URL via the configured sources (COVER_SOURCES), in
+    order. The first source with a hit wins.
     """
     for source in config.COVER_SOURCES:
         if source == "itunes":
@@ -238,8 +238,8 @@ def _find_cover_url(artist: str, title: str) -> str | None:
 
 def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
     """
-    Liest Breite/Hoehe eines JPEG aus den Segment-Headern, OHNE Bibliothek.
-    Gibt (width, height) oder None (kein/unlesbares JPEG).
+    Reads width/height of a JPEG from the segment headers, WITHOUT a library.
+    Returns (width, height) or None (not a/unreadable JPEG).
     """
     if not data or data[:2] != b"\xff\xd8":
         return None
@@ -250,14 +250,14 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
             i += 1
             continue
         marker = data[i + 1]
-        # SOF0..SOF15 (ausser DHT=C4, DAC=CC, RSTn) enthalten die Dimensionen.
+        # SOF0..SOF15 (except DHT=C4, DAC=CC, RSTn) contain the dimensions.
         if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
             if i + 9 <= n:
                 height = (data[i + 5] << 8) | data[i + 6]
                 width = (data[i + 7] << 8) | data[i + 8]
                 return width, height
             return None
-        # Segmentlaenge ueberspringen.
+        # Skip the segment length.
         if i + 3 >= n:
             break
         seg_len = (data[i + 2] << 8) | data[i + 3]
@@ -269,19 +269,18 @@ def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
 
 def _make_square(data: bytes) -> bytes:
     """
-    Sorgt dafuer, dass das Cover quadratisch ist.
+    Ensures the cover is square.
 
-    - Ist Pillow verfuegbar: mittig quadratisch zuschneiden (kleinere Kante),
-      als JPEG zurueckgeben. Funktioniert fuer alle Bildformate.
-    - Ohne Pillow: bereits quadratische JPEGs unveraendert zurueckgeben;
-      rechteckige werden abgelehnt (None), damit kein verzerrtes Cover
-      eingebettet wird.
+    - If Pillow is available: crop centered to a square (shorter edge), return
+      as JPEG. Works for all image formats.
+    - Without Pillow: return already-square JPEGs unchanged; rectangular ones
+      are rejected (None) so no distorted cover is embedded.
 
-    Rueckgabe: quadratische Bilddaten (bytes) oder None (rechteckig + kein
-    Pillow -> nicht einbetten).
+    Returns: square image data (bytes) or None (rectangular + no Pillow -> do
+    not embed).
     """
     dims = _jpeg_dimensions(data)
-    # Schon (nahezu) quadratisch? Direkt akzeptieren.
+    # Already (nearly) square? Accept directly.
     if dims and _is_square(dims[0], dims[1]):
         return data
 
@@ -289,10 +288,10 @@ def _make_square(data: bytes) -> bytes:
         import io
         from PIL import Image
     except Exception:
-        # Kein Pillow: rechteckiges Cover ablehnen, quadratisches (dims=None
-        # unklar) vorsichtshalber durchlassen.
+        # No Pillow: reject a rectangular cover, let a square one (dims=None
+        # unclear) through to be safe.
         if dims is None:
-            return data  # unbekannt -> nicht blockieren
+            return data  # unknown -> do not block
         logger.info(t("import.cover.nonsquare_no_pillow", width=dims[0], height=dims[1]))
         return None
 
@@ -311,11 +310,11 @@ def _make_square(data: bytes) -> bytes:
         return out.getvalue()
     except Exception as e:
         logger.debug(t("import.cover.square_failed", error=e))
-        return data  # im Zweifel Original einbetten
+        return data  # when in doubt, embed the original
 
 
 def _download(url: str) -> bytes | None:
-    """Laedt das Cover-Bild herunter (JPEG)."""
+    """Downloads the cover image (JPEG)."""
     try:
         with httpx.Client(timeout=20.0, follow_redirects=True,
                           headers={"User-Agent": "charts-import/1.0"}) as client:
@@ -328,7 +327,7 @@ def _download(url: str) -> bytes | None:
 
 
 def _has_embedded_cover(path: str) -> bool:
-    """True, wenn die MP3 bereits ein eingebettetes Bild (APIC) hat."""
+    """True if the MP3 already has an embedded image (APIC)."""
     try:
         tags = ID3(path)
         return any(k.startswith("APIC") for k in tags.keys())
@@ -339,12 +338,12 @@ def _has_embedded_cover(path: str) -> bool:
 
 
 def has_cover(path: str) -> bool:
-    """Oeffentlich: True, wenn die MP3 bereits ein eingebettetes Cover hat."""
+    """Public: True if the MP3 already has an embedded cover."""
     return _has_embedded_cover(path)
 
 
 def _embedded_cover_bytes(path: str) -> bytes | None:
-    """Liefert die Rohdaten des ersten eingebetteten Covers (APIC) oder None."""
+    """Returns the raw data of the first embedded cover (APIC) or None."""
     try:
         tags = ID3(path)
     except Exception:
@@ -360,18 +359,18 @@ def _embedded_cover_bytes(path: str) -> bytes | None:
 
 def cover_status(path: str) -> str:
     """
-    Klassifiziert das eingebettete Cover einer MP3:
-      "none"      - kein Cover
-      "square"    - quadratisches Cover (in Ordnung)
-      "nonsquare" - rechteckiges Cover (z.B. CD-Scan Vorder+Rueckseite) -> fehlerhaft
-      "unknown"   - Cover vorhanden, Dimensionen nicht lesbar
+    Classifies the embedded cover of an MP3:
+      "none"      - no cover
+      "square"    - square cover (fine)
+      "nonsquare" - rectangular cover (e.g. CD scan front+back) -> faulty
+      "unknown"   - cover present, dimensions not readable
     """
     data = _embedded_cover_bytes(path)
     if not data:
         return "none"
     dims = _jpeg_dimensions(data)
     if dims is None:
-        # Kein JPEG (evtl. PNG) - Dimensionen ueber Pillow versuchen.
+        # Not a JPEG (possibly PNG) - try dimensions via Pillow.
         try:
             import io
             from PIL import Image
@@ -385,9 +384,9 @@ def cover_status(path: str) -> str:
 
 def fetch_and_embed(path: str, artist: str, title: str) -> bool:
     """
-    Sucht das Deezer-Cover fuer artist/title und bettet es in die MP3 ein.
-    Prueft NICHT das EMBED_COVERS-Flag und NICHT, ob schon ein Cover da ist -
-    das entscheidet der Aufrufer. Rueckgabe: True bei Erfolg.
+    Searches the Deezer cover for artist/title and embeds it into the MP3.
+    Does NOT check the EMBED_COVERS flag and NOT whether a cover is already
+    there - the caller decides that. Returns: True on success.
     """
     if not path.lower().endswith(".mp3"):
         return False
@@ -401,8 +400,8 @@ def fetch_and_embed(path: str, artist: str, title: str) -> bool:
     if not data:
         return False
 
-    # Sicherstellen, dass das Cover quadratisch ist (rechteckige sehen beim
-    # Abspielen verzerrt aus). Bei rechteckig + fehlendem Pillow: nicht einbetten.
+    # Ensure the cover is square (rectangular ones look distorted on playback).
+    # If rectangular + Pillow missing: do not embed.
     data = _make_square(data)
     if not data:
         return False
@@ -411,12 +410,12 @@ def fetch_and_embed(path: str, artist: str, title: str) -> bool:
         try:
             tags = ID3(path)
         except ID3Error:
-            tags = ID3()  # noch keine ID3-Tags vorhanden
+            tags = ID3()  # no ID3 tags present yet
         tags.delall("APIC")
         tags.add(APIC(
             encoding=3,          # UTF-8
             mime="image/jpeg",
-            type=3,              # Cover (front)
+            type=3,              # cover (front)
             desc="Cover",
             data=data,
         ))
@@ -429,18 +428,18 @@ def fetch_and_embed(path: str, artist: str, title: str) -> bool:
 
 def embed_cover(path: str, artist: str, title: str, overwrite: bool = False) -> bool:
     """
-    Sucht + bettet ein Deezer-Cover in die MP3 ein (fuer den Import).
-    Beruecksichtigt das EMBED_COVERS-Flag.
+    Searches + embeds a Deezer cover into the MP3 (for the import).
+    Respects the EMBED_COVERS flag.
 
-    overwrite=False: Dateien, die schon ein Cover haben, werden uebersprungen.
-    overwrite=True:  Ein vorhandenes Cover wird ERSETZT. Das ist wichtig fuer
-        Chart-Songs, die aus einer Compilation stammen - deren eingebettetes
-        Bild ist das Sampler-Cover, nicht das der Single. Das Deezer-Cover wird
-        anhand von artist/title gesucht und liefert das ORIGINAL-Album-/Single-
-        Cover. Wird nur ersetzt, wenn Deezer tatsaechlich ein Cover liefert
-        (sonst bleibt das vorhandene erhalten - kein Cover-Verlust).
+    overwrite=False: files that already have a cover are skipped.
+    overwrite=True:  an existing cover is REPLACED. This is important for chart
+        songs that come from a compilation - their embedded image is the
+        sampler cover, not the single's. The Deezer cover is searched via
+        artist/title and returns the ORIGINAL album/single cover. Replaced only
+        if Deezer actually returns a cover (otherwise the existing one is kept -
+        no cover loss).
 
-    Rueckgabe: True, wenn ein Cover eingebettet/ersetzt wurde.
+    Returns: True if a cover was embedded/replaced.
     """
     if not config.EMBED_COVERS:
         return False
@@ -448,7 +447,7 @@ def embed_cover(path: str, artist: str, title: str, overwrite: bool = False) -> 
         return False
     if _has_embedded_cover(path) and not overwrite:
         return False
-    # Bei overwrite: fetch_and_embed setzt nur, wenn Deezer ein Cover liefert
-    # (delall("APIC") passiert erst NACH erfolgreichem Download). Kein Risiko,
-    # ein vorhandenes Cover ersatzlos zu loeschen.
+    # On overwrite: fetch_and_embed only sets it if Deezer returns a cover
+    # (delall("APIC") happens only AFTER a successful download). No risk of
+    # deleting an existing cover without replacement.
     return fetch_and_embed(path, artist, title)

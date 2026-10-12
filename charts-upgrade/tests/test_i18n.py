@@ -1,17 +1,17 @@
 """
-i18n-Tests fuer charts-upgrade (Phase 2).
+i18n tests for charts-upgrade (Phase 2).
 
-Der i18n-Loader (app/i18n.py) ist byte-identisch zu charts-sync; die zentrale
-Key-Set-/Platzhalter-Parity ueber die geteilten lang/*.json-Dateien ist bereits
-in charts-sync/tests/test_i18n.py abgedeckt (und deckt damit auch die neuen
-upgrade.*-Keys mit ab). Dieser Satz ergaenzt den Phase-1-Pilot um einen
-de-Golden-Check: mit CHARTS_LANG=de muss die Ausgabe der neuen upgrade.*-Keys
-byte-identisch zur frueheren Hardcode-Ausgabe sein (Regressions-Anker).
+The i18n loader (app/i18n.py) is byte-identical to charts-sync; the central
+key-set/placeholder parity across the shared lang/*.json files is already
+covered in charts-sync/tests/test_i18n.py (and thereby also covers the new
+upgrade.* keys). This set adds a de golden check to the Phase 1 pilot: with
+CHARTS_LANG=de the output of the new upgrade.* keys must be byte-identical to
+the former hardcoded output (regression anchor).
 
-Zusaetzlich eine lokale Parity-Garantie als zweite Verteidigungslinie, damit
-die drei zentralen Dateien auch beim Erweitern dieses Dienstes synchron bleiben.
+Additionally a local parity guarantee as a second line of defense, so the three
+central files stay in sync even when this service is extended.
 
-Alle Tests laufen OHNE Netzwerk/Docker.
+All tests run WITHOUT network/Docker.
 """
 
 import json
@@ -21,7 +21,7 @@ import string
 from app import i18n
 
 
-# Zentrale, ueber alle Dienste geteilte Sprachdateien:
+# Central language files shared across all services:
 # app -> charts-upgrade -> charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
@@ -37,29 +37,29 @@ def _placeholders(template):
             if name is not None}
 
 
-# --- de-Golden: CHARTS_LANG=de reproduziert die frueheren Hardcodes byte-exakt --
+# --- de golden: CHARTS_LANG=de reproduces the former hardcodes byte-exactly --
 
 def test_de_golden_upgrade_strings():
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
-    # Lauf-Start (frueher: "=== charts-upgrade-Lauf gestartet (DRY_RUN=%s) ===").
+    # Run start (formerly: "=== charts-upgrade-Lauf gestartet (DRY_RUN=%s) ===").
     assert (i18n.t("upgrade.run.start", dry_run="1")
             == "=== charts-upgrade-Lauf gestartet (DRY_RUN=1) ===")
-    # Schlecht-Zeile (frueher: "Schlecht [%s]: %s - %s").
+    # Bad line (formerly: "Schlecht [%s]: %s - %s").
     assert (i18n.t("upgrade.song.bad", reason="niedrige Bitrate (128kbps)",
                    artist="Artist", title="Title")
             == "Schlecht [niedrige Bitrate (128kbps)]: Artist - Title")
-    # Grund "niedrige Bitrate" (frueher: f"niedrige Bitrate ({bitrate}kbps)").
+    # Reason "low bitrate" (formerly: f"niedrige Bitrate ({bitrate}kbps)").
     assert (i18n.t("upgrade.reason.low_bitrate", bitrate=128)
             == "niedrige Bitrate (128kbps)")
-    # Grund "upgesampelt" mit Float-Formatspecs (frueher:
+    # Reason "upsampled" with float format specs (formerly:
     # f"upgesampelt (behauptet {b}kbps, echter Cutoff {m:.1f}kHz, erwartet ab {e:.0f}kHz)").
     assert (i18n.t("upgrade.reason.upsampled", bitrate=320, measured=16.0, expected=19.0)
             == "upgesampelt (behauptet 320kbps, echter Cutoff 16.0kHz, erwartet ab 19kHz)")
-    # Live-Pushover-Titel mit Emoji (frueher: "\u2b06\ufe0f charts-upgrade").
+    # Live Pushover title with emoji (formerly: "\u2b06\ufe0f charts-upgrade").
     assert i18n.t("upgrade.notify.title_live") == "\u2b06\ufe0f charts-upgrade"
 
 
-# --- Lokale Parity-Garantie (zweite Verteidigungslinie) ---------------------
+# --- Local parity guarantee (second line of defense) ------------------------
 
 def test_shipped_key_sets_are_identical():
     key_sets = {c: set(_load_shipped(c)) for c in _SHIPPED}

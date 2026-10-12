@@ -1,18 +1,18 @@
 """
-Persistenter Zustand fuer charts-upgrade.
+Persistent state for charts-upgrade.
 
-Enthaelt:
-  - "seen":  Cache der bereits analysierten Dateien {abspath: "mtime:size"},
-             damit die CPU-teure ffmpeg-Cutoff-Analyse pro Datei nur einmal
-             laeuft (nicht bei jedem Lauf erneut).
-  - "requested": bereits angestossene Upgrades {song_key: {...}} - verhindert,
-             dass derselbe Song mehrfach parallel geladen wird.
-  - "blocked_providers": {song_key: {username: ts}} - Anbieter, die fuer einen
-             Song eine Datei geliefert haben, die NICHT besser war als die
-             vorhandene. Werden bei der naechsten Suche uebersprungen (kein
-             endloses "laden -> nicht besser -> wieder denselben laden").
+Contains:
+  - "seen":  cache of already-analyzed files {abspath: "mtime:size"}, so the
+             CPU-expensive ffmpeg cutoff analysis runs only once per file (not
+             again on every run).
+  - "requested": already-triggered upgrades {song_key: {...}} - prevents the
+             same song from being loaded multiple times in parallel.
+  - "blocked_providers": {song_key: {username: ts}} - providers that delivered
+             a file for a song that was NOT better than the existing one. They
+             are skipped on the next search (no endless "load -> not better ->
+             load the same again").
 
-Gespeichert als JSON. song_key = "normalized_artist|normalized_title".
+Stored as JSON. song_key = "normalized_artist|normalized_title".
 """
 
 import json
@@ -32,7 +32,7 @@ def _key(artist: str, title: str) -> str:
 
 
 def load() -> dict:
-    """Laedt den Zustand. Leere Struktur, wenn keine/ungueltige Datei."""
+    """Loads the state. Empty structure if the file is missing/invalid."""
     try:
         with open(config.STATE_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -47,7 +47,7 @@ def load() -> dict:
 
 
 def save(state: dict) -> None:
-    """Schreibt den Zustand atomar."""
+    """Writes the state atomically."""
     try:
         os.makedirs(os.path.dirname(config.STATE_FILE), exist_ok=True)
         tmp = config.STATE_FILE + ".tmp"
@@ -76,8 +76,8 @@ def mark_requested(state: dict, artist: str, title: str,
 def blocked_providers_for(state: dict, artist: str, title: str,
                           ttl_days: int = 30) -> set[str]:
     """
-    Anbieter, die fuer diesen Song schon eine nicht-bessere Datei geliefert
-    haben. Verfallene Eintraege (aelter als ttl_days) werden lazy entfernt.
+    Providers that already delivered a non-better file for this song. Expired
+    entries (older than ttl_days) are removed lazily.
     """
     key = _key(artist, title)
     song_block = state.get("blocked_providers", {}).get(key)
@@ -94,7 +94,7 @@ def blocked_providers_for(state: dict, artist: str, title: str,
 
 
 def block_provider(state: dict, artist: str, title: str, username: str) -> None:
-    """Merkt einen Anbieter fuer diesen Song als 'nicht besser' vor."""
+    """Flags a provider as 'not better' for this song."""
     key = _key(artist, title)
     state.setdefault("blocked_providers", {}).setdefault(key, {})[username] = int(time.time())
 

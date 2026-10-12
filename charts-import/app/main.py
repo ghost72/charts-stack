@@ -1,21 +1,21 @@
 """
-charts-import – Hauptservice.
+charts-import – main service.
 
-Verbindet die von slskd geladenen Chart-Songs mit der Navidrome-Library:
+Connects the chart songs loaded by slskd with the Navidrome library:
 
-  1. Import: fertige Downloads aus DOWNLOADS_DIR nach
-     MUSIC_DIR/<Artist>/<Album>/<Track> einsortieren (kopieren oder verschieben).
-  2. Cleanup: DOWNLOADS_DIR aufraeumen. Standardmaessig anzahl-basiert
-     (KEEP_LATEST: die N neuesten Downloads behalten), alternativ alter-basiert
-     (RETENTION_DAYS). So bleibt der slskd-Share stabil gefuellt.
-  3. Optional: Pushover-Benachrichtigung, wenn neue Songs importiert wurden.
+  1. Import: file finished downloads from DOWNLOADS_DIR into
+     MUSIC_DIR/<Artist>/<Album>/<Track> (copy or move).
+  2. Cleanup: tidy up DOWNLOADS_DIR. Count-based by default (KEEP_LATEST: keep
+     the N newest downloads), alternatively age-based (RETENTION_DAYS). This
+     keeps the slskd share stably filled.
+  3. Optional: Pushover notification when new songs were imported.
 
-Laeuft als Endlosschleife und wiederholt den Lauf alle INTERVAL_MINUTES Minuten.
+Runs as an endless loop and repeats the run every INTERVAL_MINUTES minutes.
 
-Zusammenspiel mit den Schwester-Diensten:
-  Deezer -> charts-sync (missing.txt) -> slskd (Download) -> charts-import
-  (einsortieren) -> Navidrome sieht den Song -> charts-sync matcht ihn in die
-  Playlist.
+Interplay with the sister services:
+  Deezer -> charts-sync (missing.txt) -> slskd (download) -> charts-import
+  (file in) -> Navidrome sees the song -> charts-sync matches it into the
+  playlist.
 """
 
 import json
@@ -37,8 +37,8 @@ logger = logging.getLogger("charts-import")
 
 def run_once() -> dict:
     """
-    Fuehrt einen einzelnen Import- + Cleanup-Lauf aus.
-    Rueckgabe: Zaehler-Dict fuer das Status-/Dashboard-Modul.
+    Runs a single import + cleanup pass.
+    Returns: counter dict for the status/dashboard module.
     """
     logger.info(t("import.run.start"))
 
@@ -48,8 +48,8 @@ def run_once() -> dict:
     logger.info(t("import.run.done", imported=len(imported),
                   rejected=len(rejected), removed=len(removed)))
 
-    # Abgelehnte Songs im charts-download-State freigeben, damit sie neu
-    # (moeglichst besser) geladen werden.
+    # Release rejected songs in the charts-download state so they are loaded
+    # again (ideally better).
     if rejected:
         _release_rejected(rejected)
 
@@ -70,9 +70,9 @@ def run_once() -> dict:
         "rejected": len(rejected),
         "cleaned": len(removed),
     }
-    # Reject-Gruende fuers Dashboard mitgeben (kompakt, die haeufigsten zuerst).
-    # String-Wert -> wird vom Status-Modul NICHT in 'totals' kumuliert (nur
-    # Zahlen), landet aber in der 'message' (siehe _guarded_run).
+    # Pass the reject reasons for the dashboard (compact, most frequent first).
+    # String value -> NOT accumulated into 'totals' by the status module (only
+    # numbers), but lands in the 'message' (see _guarded_run).
     if rejected:
         reasons: dict[str, int] = {}
         for r in rejected:
@@ -85,9 +85,9 @@ def run_once() -> dict:
 
 def _unmonitor_in_lidarr(imported: "list[tuple[str, str, str, str, str, str]]") -> None:
     """
-    Haelt die neu importierten Chart-Kuenstler in Lidarr auf unmonitored
-    (damit Lidarr keinen Katalog laedt). No-op, wenn Lidarr nicht konfiguriert.
-    Der Kuenstler wird aus dem Zielpfad MUSIC_DIR/<Artist>/<Album>/<Track> gelesen.
+    Keeps the newly imported chart artists unmonitored in Lidarr (so Lidarr
+    does not load a catalog). No-op if Lidarr is not configured.
+    The artist is read from the target path MUSIC_DIR/<Artist>/<Album>/<Track>.
     """
     artists: list[str] = []
     for target, *_rest in imported:
@@ -104,9 +104,9 @@ def _unmonitor_in_lidarr(imported: "list[tuple[str, str, str, str, str, str]]") 
 
 def _request_resync() -> None:
     """
-    Legt die Signal-Datei an, damit charts-sync die Playlist zeitnah
-    aktualisiert (statt erst beim naechsten regulaeren Lauf). Nur relevant,
-    wenn tatsaechlich neue Songs einsortiert wurden.
+    Creates the signal file so charts-sync updates the playlist promptly
+    (instead of only on the next regular run). Only relevant when new songs
+    were actually filed in.
     """
     try:
         with open(config.RESYNC_SIGNAL, "w", encoding="utf-8") as fh:
@@ -118,9 +118,9 @@ def _request_resync() -> None:
 
 def _normalize(text: str) -> str:
     """
-    Normalisierung identisch zu charts-download (matching.normalize), damit der
-    State-Schluessel uebereinstimmt. Nur die fuer den Schluessel noetigen
-    Schritte (Kleinschreibung, Akzente, & -> and, nur alphanumerisch).
+    Normalization identical to charts-download (matching.normalize) so the
+    state key matches. Only the steps needed for the key (lowercase, accents,
+    & -> and, alphanumeric only).
     """
     if not text:
         return ""
@@ -134,9 +134,9 @@ def _normalize(text: str) -> str:
 
 def _release_rejected(rejected: list[dict]) -> None:
     """
-    Entfernt die abgelehnten Songs aus dem charts-download-State, damit sie
-    beim naechsten Lauf erneut gesucht/geladen werden (moeglichst ein anderer,
-    besserer Treffer). Robust: bei fehlender Datei/Schluessel passiert nichts.
+    Removes the rejected songs from the charts-download state so they are
+    searched/loaded again on the next run (ideally a different, better hit).
+    Robust: nothing happens on a missing file/key.
     """
     state_file = config.DOWNLOAD_STATE_FILE
     if not state_file or not os.path.isfile(state_file):
@@ -165,26 +165,26 @@ def _release_rejected(rejected: list[dict]) -> None:
     now = int(time.time())
     for entry in rejected:
         key = f"{_normalize(entry.get('artist', ''))}|{_normalize(entry.get('title', ''))}"
-        # Bevor der Song freigegeben wird: den ANBIETER (Soulseek-User) der
-        # abgelehnten Datei fuer GENAU DIESEN Song vormerken, damit die naechste
-        # Suche in charts-download denselben schlechten Anbieter fuer diesen Song
-        # ueberspringt (verhindert eine Endlosschleife "laden -> ablehnen ->
-        # denselben Muell wieder laden"). Andere Songs des Anbieters bleiben
-        # erlaubt (Blockade ist pro Song, nicht global). Der Quell-User steht im
-        # charts-download-State unter requested[key].username.
+        # Before releasing the song: flag the PROVIDER (Soulseek user) of the
+        # rejected file for EXACTLY THIS song so the next search in
+        # charts-download skips that bad provider for this song (prevents an
+        # endless loop "load -> reject -> load the same junk again"). Other
+        # songs from the provider remain allowed (the block is per song, not
+        # global). The source user is in the charts-download state under
+        # requested[key].username.
         req_entry = requested.get(key)
         if isinstance(req_entry, dict):
             username = req_entry.get("username")
             if username:
                 song_block = blocked.setdefault(key, {})
-                # Nur zaehlen, wenn der Anbieter fuer diesen Song noch nicht
-                # (aktuell) geblockt war.
+                # Only count if the provider was not (currently) blocked for
+                # this song yet.
                 if username not in song_block:
                     blocked_added += 1
-                song_block[username] = now  # Zeitstempel fuer den 30-Tage-Verfall
-        # Aus 'requested' (schon angefragt) UND 'failed' (Cooldown) entfernen,
-        # damit der Song beim naechsten Lauf sofort neu gesucht wird und nicht
-        # im 24h-Cooldown haengt.
+                song_block[username] = now  # timestamp for the 30-day expiry
+        # Remove from 'requested' (already requested) AND 'failed' (cooldown) so
+        # the song is searched again immediately on the next run and does not
+        # hang in the 24h cooldown.
         if key in requested:
             requested.pop(key, None)
             released += 1
@@ -208,16 +208,16 @@ def _release_rejected(rejected: list[dict]) -> None:
 
 
 def _notify_rejected(rejected: list[dict]) -> None:
-    """Pushover-Meldung ueber abgelehnte (aussortierte) Dateien."""
+    """Pushover message about rejected (sorted-out) files."""
     count = len(rejected)
     title = t("import.notify.rejected_title", count=count)
     lines = [t("import.notify.rejected_header", count=count), ""]
     for entry in rejected[:10]:
         base = os.path.basename(entry.get("path", ""))
         reason = entry.get("reason", "?")
-        # Grund mit Gedankenstrich abtrennen (nicht in Klammern), damit
-        # Gruende, die selbst Klammern enthalten (z.B. "zu kurz (24s < 90s)"),
-        # keine doppelten Klammern erzeugen.
+        # Separate the reason with a dash (not in parentheses) so reasons that
+        # themselves contain parentheses (e.g. "zu kurz (24s < 90s)") do not
+        # create double parentheses.
         lines.append(t("import.notify.rejected_entry", base=base, reason=reason))
     if count > 10:
         lines.append("")
@@ -227,11 +227,11 @@ def _notify_rejected(rejected: list[dict]) -> None:
 
 def _notify_flagged_upper(flagged: "list[tuple[str, str]]") -> None:
     """
-    Pushover-Hinweis fuer Songs, die GROSS geschrieben importiert wurden, weil
-    Deezer keine sichere kanonische Schreibweise liefern konnte (Alias-Kuenstler
-    wie OMD, oder von FLASHBACK falsch benannte Titel). Sie sind in der Library
-    (keine Luecke), sollten aber manuell geprueft/umbenannt werden. Sammel-
-    Meldung am Lauf-Ende (kein Spam pro Song).
+    Pushover hint for songs imported in UPPERCASE because Deezer could not
+    provide a safe canonical spelling (alias artists like OMD, or titles
+    misnamed by FLASHBACK). They are in the library (no gap) but should be
+    checked/renamed manually. A batch message at the end of the run (no spam
+    per song).
     """
     count = len(flagged)
     title = t("import.notify.flagged_title", count=count)
@@ -246,16 +246,16 @@ def _notify_flagged_upper(flagged: "list[tuple[str, str]]") -> None:
 
 def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> None:
     """
-    Schickt eine Pushover-SAMMEL-Meldung ueber neu importierte Songs.
-    imported = Liste von (zielpfad, source, artist, title, album,
-    notify_device). "source" ist das Playlist-Label aus dem Manifest (leer,
-    wenn unbekannt).
+    Sends a Pushover BATCH message about newly imported songs.
+    imported = list of (target_path, source, artist, title, album,
+    notify_device). "source" is the playlist label from the manifest (empty if
+    unknown).
     """
     count = len(imported)
     title = t("import.notify.imported_title", count=count)
     lines = [t("import.notify.imported_header", count=count)]
 
-    # Songs nach Playlist gruppieren (Reihenfolge: groesste Gruppe zuerst).
+    # Group songs by playlist (order: largest group first).
     groups: dict[str, list[str]] = {}
     for path, source, _artist, _title, _album, _dev in imported:
         label = source or t("import.notify.unknown_source")
@@ -266,22 +266,22 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
         groups.setdefault(label, []).append(rel)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
-    # Aufschluesselung nach Playlist (z.B. "3 aus 80er-90er, 3 aus charts"),
-    # gefolgt von einer Leerzeile.
+    # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"), followed by
+    # a blank line.
     breakdown = ", ".join(t("import.breakdown.item", count=len(songs), label=label)
                           for label, songs in ordered)
     lines.append(t("import.notify.imported_breakdown", breakdown=breakdown))
     lines.append("")
 
-    # Songs pro Playlist als eigene Gruppe, mit Leerzeile dazwischen. Insgesamt
-    # auf 10 Songs begrenzt (Pushover-Nachricht kurz halten).
+    # Songs per playlist as their own group, with a blank line between them.
+    # Capped at 10 songs total (keep the Pushover message short).
     shown = 0
     remaining = count
     for i, (label, songs) in enumerate(ordered):
         if shown >= 10:
             break
         if i > 0:
-            lines.append("")  # Leerzeile zwischen den Gruppen
+            lines.append("")  # blank line between the groups
         lines.append(t("import.notify.imported_group", label=label))
         for rel in songs:
             if shown >= 10:
@@ -297,19 +297,19 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
 
 def _notify_manual_available(imported: "list[tuple[str, str, str, str, str, str]]") -> None:
     """
-    Schickt fuer jeden MANUELL (via charts-songrequest) angeforderten Song eine
-    eigene Pushover-Meldung an das Geraet des anfordernden Users, sobald der Song
-    in der Library ist. Nur Songs mit gesetztem notify_device loesen eine Meldung
-    aus (das Geraet stammt aus USER_PUSHOVER_DEVICES in charts-songrequest).
+    Sends, for each MANUALLY (via charts-songrequest) requested song, its own
+    Pushover message to the requesting user's device as soon as the song is in
+    the library. Only songs with notify_device set trigger a message (the
+    device comes from USER_PUSHOVER_DEVICES in charts-songrequest).
 
-    WICHTIG: Ohne notify_device wird KEINE Meldung gesendet. notify.send() mit
-    einem konkreten device-Argument sendet NIE device-los an alle (siehe
-    notify.send: leeres/ungueltiges Zielgeraet -> gar nicht senden). Diese
-    Einzelmeldungen kommen ZUSAETZLICH zur unveraenderten Sammelmeldung.
+    IMPORTANT: without notify_device NO message is sent. notify.send() with a
+    concrete device argument NEVER sends device-less to all (see notify.send:
+    empty/invalid target device -> do not send at all). These individual
+    messages come IN ADDITION to the unchanged batch message.
     """
     for _target, source, artist, title, album, notify_device in imported:
         if not notify_device:
-            continue  # kein manueller Request mit Zielgeraet -> keine Meldung
+            continue  # no manual request with a target device -> no message
 
         push_title = t("import.notify.manual_title")
         msg_lines = [t("import.notify.manual_song", artist=artist, title=title), ""]
@@ -320,12 +320,12 @@ def _notify_manual_available(imported: "list[tuple[str, str, str, str, str, str]
         msg_lines.append("")
         msg_lines.append(t("import.notify.manual_ready"))
 
-        # device explizit uebergeben -> notify.send filtert gegen die gueltige
-        # Geraeteliste und sendet NUR an dieses eine Geraet (oder gar nicht, wenn
-        # es ungueltig ist). Nie an alle.
-        # Eigener Ton fuer die manuelle Verfuegbarkeits-Meldung (Default
-        # "magic") - uebersteuert den Dienst-Default "incoming", damit der User
-        # am Ton hoert, dass SEIN angeforderter Song da ist.
+        # device passed explicitly -> notify.send filters against the valid
+        # device list and sends ONLY to this one device (or not at all if it is
+        # invalid). Never to all.
+        # A separate sound for the manual availability message (default "magic")
+        # - overrides the service default "incoming" so the user hears from the
+        # sound that THEIR requested song has arrived.
         notify.send(push_title, "\n".join(msg_lines), device=notify_device,
                     sound=config.PUSHOVER_SOUND_MANUAL)
         logger.info(t("import.notify.manual_sent", device=notify_device,
@@ -333,18 +333,18 @@ def _notify_manual_available(imported: "list[tuple[str, str, str, str, str, str]
 
 
 def _next_run_iso() -> str:
-    """Zeitpunkt des naechsten Laufs als ISO-8601 (fuer das Dashboard)."""
+    """Timestamp of the next run as ISO-8601 (for the dashboard)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z",
                          time.localtime(time.time() + max(1, config.INTERVAL_MINUTES) * 60))
 
 
 def _guarded_run() -> None:
-    """Fuehrt run_once() aus und schreibt den Status (Erfolg/Fehler)."""
+    """Runs run_once() and writes the status (success/error)."""
     status.start()
     try:
         result = run_once() or {}
-        # Reject-Note (String) rausziehen - gehoert in die Message, nicht in die
-        # Zahlen-Zusammenfassung/Counters.
+        # Pull out the reject note (string) - belongs in the message, not in the
+        # numeric summary/counters.
         reject_note = result.pop("_reject_note", "")
         counters = {k: v for k, v in result.items() if isinstance(v, (int, float))}
         parts = [f"{v} {k}" for k, v in counters.items() if v]
@@ -358,11 +358,11 @@ def _guarded_run() -> None:
 
 
 def _maybe_backfill() -> None:
-    """Stoesst den periodischen Metadaten-Backfill an, wenn er faellig ist.
+    """Triggers the periodic metadata backfill when it is due.
 
-    Laeuft bewusst OHNE eigenes Status-Schreiben (der Backfill ist ein stiller
-    Hintergrund-Helfer; der Dienst-Status spiegelt weiter den Import-Lauf).
-    Fehler sind nie fatal fuer den Scheduler-Loop.
+    Runs deliberately WITHOUT writing its own status (the backfill is a quiet
+    background helper; the service status keeps reflecting the import run).
+    Errors are never fatal for the scheduler loop.
     """
     if not backfill.due():
         return
@@ -373,7 +373,7 @@ def _maybe_backfill() -> None:
 
 
 def main() -> None:
-    """Startet den Scheduler-Loop."""
+    """Starts the scheduler loop."""
     status.init("charts-import")
     if config.KEEP_LATEST == -1:
         cleanup_desc = t("import.cleanup_desc.keep_all")
@@ -406,8 +406,8 @@ def main() -> None:
         logger.info(t("import.scheduler.next_run", interval=config.INTERVAL_MINUTES))
         time.sleep(interval_seconds)
         _guarded_run()
-        # Nach dem Import pruefen, ob ein Metadaten-Backfill faellig ist
-        # (eigenes, selteneres Intervall - due() drosselt selbst).
+        # After the import, check whether a metadata backfill is due (own, rarer
+        # interval - due() throttles itself).
         _maybe_backfill()
 
 
