@@ -1,15 +1,15 @@
 """
-slskd-Anbindung: Suche, Ergebnisauswahl und Download-Enqueue.
+slskd integration: search, result selection and download enqueue.
 
-Nutzt die Library `slskd-api` (https://pypi.org/project/slskd-api/), die die
-slskd-REST-API kapselt. Pro fehlendem Song:
-  1. Suche starten (search_text) und auf Abschluss warten.
-  2. Ergebnisse holen (search_responses) und das beste passende MP3 >= MIN_BITRATE
-     auswaehlen (Matching + freier Slot + Geschwindigkeit).
-  3. Download per enqueue anstossen (im Dry-Run nur zurueckliefern, nichts laden).
+Uses the library `slskd-api` (https://pypi.org/project/slskd-api/), which wraps
+the slskd REST API. Per missing song:
+  1. Start the search (search_text) and wait for completion.
+  2. Fetch results (search_responses) and pick the best matching MP3 >= MIN_BITRATE
+     (matching + free slot + speed).
+  3. Trigger the download via enqueue (in dry-run only return it, load nothing).
 
-Die Auswahl beruecksichtigt bewusst NUR MP3 >= MIN_BITRATE (Standard 256).
-Andere Formate (FLAC, m4a, ...) werden ignoriert.
+The selection deliberately considers ONLY MP3 >= MIN_BITRATE (default 256).
+Other formats (FLAC, m4a, ...) are ignored.
 """
 
 import logging
@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 class SlskdError(Exception):
-    """Fehler bei der Kommunikation mit slskd."""
+    """Error while communicating with slskd."""
 
 
 def connect() -> "slskd_api.SlskdClient":
-    """Baut den slskd-Client auf. Wirft SlskdError bei fehlendem Key/Host."""
+    """Builds the slskd client. Raises SlskdError on missing key/host."""
     if not config.SLSKD_API_KEY:
         raise SlskdError(t("songrequest.slsk.no_api_key"))
     try:
@@ -42,14 +42,14 @@ def connect() -> "slskd_api.SlskdClient":
             api_key=config.SLSKD_API_KEY,
             url_base=config.SLSKD_URL_BASE,
         )
-        # Statusabruf als Verbindungstest.
+        # Status call as a connection test.
         client.application.state()
         return client
     except Exception as e:
         raise SlskdError(t("songrequest.slsk.connect_failed", error=e)) from e
 
 
-# Bekannte Nicht-MP3-Audioendungen, die wir NIE laden wollen (nur MP3).
+# Known non-MP3 audio extensions that we NEVER want to download (MP3 only).
 _NON_MP3_EXTENSIONS = {
     "flac", "wav", "aiff", "aif", "alac", "ape", "wv", "dsf", "dff",
     "m4a", "aac", "ogg", "opus", "wma", "mp4", "m4b",
@@ -58,11 +58,11 @@ _NON_MP3_EXTENSIONS = {
 
 def _is_mp3(f: dict) -> bool:
     """
-    True nur, wenn die Datei eindeutig eine MP3 ist. Defensiv:
-    - Endung aus dem Dateinamen hat Vorrang (slskd setzt 'extension' nicht
-      immer zuverlaessig - haeufig leer, obwohl der Name .flac enthaelt).
-    - Jede bekannte Nicht-MP3-Endung wird explizit ausgeschlossen.
-    - Nur wenn die tatsaechliche Endung 'mp3' ist, wird True zurueckgegeben.
+    True only if the file is unambiguously an MP3. Defensive:
+    - The extension from the file name takes precedence (slskd does not always
+      set 'extension' reliably - often empty although the name contains .flac).
+    - Every known non-MP3 extension is explicitly excluded.
+    - Only if the actual extension is 'mp3' is True returned.
     """
     import os
 
@@ -70,7 +70,7 @@ def _is_mp3(f: dict) -> bool:
     name_ext = os.path.splitext(name)[1].lstrip(".")
     field_ext = (f.get("extension") or "").lower().lstrip(".")
 
-    # Tatsaechliche Endung bestimmen: Dateiname zuerst, sonst das Feld.
+    # Determine the actual extension: file name first, otherwise the field.
     ext = name_ext or field_ext
 
     if ext in _NON_MP3_EXTENSIONS:
@@ -80,9 +80,9 @@ def _is_mp3(f: dict) -> bool:
 
 def _run_search(client, query: str) -> str | None:
     """
-    Startet eine Suche und wartet auf Abschluss. Gibt die Such-ID zurueck.
-    Wirft SlskdError bei einem Verbindungs-/API-Fehler (damit der Aufrufer
-    einen echten Nicht-Fund von einer Stoerung unterscheiden kann).
+    Starts a search and waits for completion. Returns the search ID.
+    Raises SlskdError on a connection/API error (so the caller can tell a real
+    non-find apart from a malfunction).
     """
     search_id = str(uuid.uuid1())
     try:
@@ -96,7 +96,7 @@ def _run_search(client, query: str) -> str | None:
         logger.error(t("download.slsk.search_failed", query=query, error=e))
         raise SlskdError(str(e)) from e
 
-    # Auf Abschluss warten (state.isComplete), max. SEARCH_WAIT_SECONDS.
+    # Wait for completion (state.isComplete), max. SEARCH_WAIT_SECONDS.
     deadline = time.time() + config.SEARCH_WAIT_SECONDS
     while time.time() < deadline:
         try:
@@ -111,22 +111,21 @@ def _run_search(client, query: str) -> str | None:
 
 def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str = ""):
     """
-    Bewertet alle Such-Antworten und liefert eine nach Qualitaet sortierte Liste
-    passender MP3-Kandidaten (>= MIN_BITRATE).
+    Scores all search responses and returns a quality-sorted list of matching
+    MP3 candidates (>= MIN_BITRATE).
 
-    Rueckgabe: Liste von (username, file_dict, score), bestes Ergebnis zuerst.
-    Auswahlkriterien (in dieser Reihenfolge gewichtet):
-      - Datei ist MP3 und bitRate >= MIN_BITRATE
-      - Matching-Score gegen "artist title" >= MATCH_THRESHOLD
-      - freier Upload-Slot (falls REQUIRE_FREE_SLOT)
-      - Priorisierung: Singles/Alben VOR Compilations (Compilations werden
-        NICHT verworfen, nur nach hinten sortiert - so bekommt man sie noch,
-        wenn es nichts anderes gibt).
-      - dann: hoechster Score, dann hoechste Bitrate, dann schnellster Upload
+    Return: list of (username, file_dict, score), best result first.
+    Selection criteria (weighted in this order):
+      - file is MP3 and bitRate >= MIN_BITRATE
+      - matching score against "artist title" >= MATCH_THRESHOLD
+      - free upload slot (if REQUIRE_FREE_SLOT)
+      - prioritization: singles/albums BEFORE compilations (compilations are
+        NOT discarded, only sorted to the back - so you still get them when
+        there is nothing else).
+      - then: highest score, then highest bitrate, then fastest upload
 
-    require_artist: Wenn gesetzt (Titel-only-Fallback), MUSS der Kuenstlername
-    im Dateipfad vorkommen. Schuetzt vor Coverversionen, wenn nur nach dem Titel
-    gesucht wurde.
+    require_artist: if set (title-only fallback), the artist name MUST appear in
+    the file path. Protects against cover versions when searching by title only.
     """
     candidates = []
     for resp in responses or []:
@@ -144,17 +143,17 @@ def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str
             if bitrate < config.MIN_BITRATE:
                 continue
             filename = f.get("filename", "")
-            # Unerwuenschte Versionen (Lyrics, Remix, Live, Acapella, ...) hart
-            # verwerfen - wir wollen nur Originalversionen.
+            # Hard-reject unwanted versions (lyrics, remix, live, acapella, ...)
+            # - we only want original versions.
             bad = has_excluded_keyword(filename, config.EXCLUDE_KEYWORDS)
             if bad:
                 logger.debug(t("download.slsk.rejected_keyword", keyword=bad, filename=filename))
                 continue
-            # DJ-Pool-Edit (endet auf BPM-Zahl)? Verwerfen, wir wollen Originale.
+            # DJ-pool edit (ends in BPM number)? Discard, we want originals.
             if looks_like_dj_edit(filename):
                 logger.debug(t("download.slsk.rejected_dj_edit", filename=filename))
                 continue
-            # Titel-only-Fallback: Kuenstler MUSS im Pfad stehen (Coverschutz).
+            # Title-only fallback: artist MUST be in the path (cover protection).
             if require_artist and not artist_in_path(require_artist, filename):
                 logger.debug(t("download.slsk.rejected_artist_not_in_path",
                                artist=require_artist, filename=filename))
@@ -162,11 +161,11 @@ def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str
             score = match_score(query_norm, filename)
             if score < config.MATCH_THRESHOLD:
                 continue
-            # 1 = Single/Album (bevorzugt), 0 = Compilation (nachrangig).
+            # 1 = single/album (preferred), 0 = compilation (lower priority).
             not_compilation = 0 if is_compilation(filename) else 1
-            # Bei REJECT_COMPILATIONS: Compilation-Treffer gar nicht erst als
-            # Kandidat zulassen. Der Song bleibt dann "missing", bis eine echte
-            # Single-/Album-Version auftaucht (keine Sampler-Tracks in der Library).
+            # With REJECT_COMPILATIONS: do not even allow a compilation hit as a
+            # candidate. The song then stays "missing" until a real
+            # single/album version shows up (no sampler tracks in the library).
             if config.REJECT_COMPILATIONS and not not_compilation:
                 logger.debug(t("download.slsk.rejected_compilation", filename=filename))
                 continue
@@ -175,14 +174,14 @@ def _rank_candidates(responses: list[dict], query_norm: str, require_artist: str
     if not candidates:
         return []
 
-    # Reihenfolge: Nicht-Compilation zuerst, dann Score, Bitrate, Upload-Speed.
+    # Order: non-compilation first, then score, bitrate, upload speed.
     candidates.sort(key=lambda c: (c[0], c[1], c[2], c[3]), reverse=True)
     return [(username, f, score) for _nc, score, _br, _sp, username, f in candidates]
 
 
 def _pick_best(responses: list[dict], query_norm: str, require_artist: str = ""):
-    """Bester Einzeltreffer (username, file_dict, score) oder None. Wrapper um
-    _rank_candidates fuer Aufrufer, die nur genau einen Treffer brauchen."""
+    """Best single hit (username, file_dict, score) or None. Wrapper around
+    _rank_candidates for callers that need exactly one hit."""
     ranked = _rank_candidates(responses, query_norm, require_artist)
     if not ranked:
         return None
@@ -193,8 +192,8 @@ def _pick_best(responses: list[dict], query_norm: str, require_artist: str = "")
 
 
 def _search_and_collect(client, query: str) -> list[dict]:
-    """Fuehrt eine Suche aus und liefert die Antworten. Wirft SlskdError."""
-    search_id = _run_search(client, query)  # kann SlskdError werfen
+    """Runs a search and returns the responses. Raises SlskdError."""
+    search_id = _run_search(client, query)  # may raise SlskdError
     if not search_id:
         return []
     try:
@@ -211,33 +210,33 @@ def _search_and_collect(client, query: str) -> list[dict]:
 
 def find_candidates(client, artist: str, title: str) -> list[tuple[str, dict, float]]:
     """
-    Sucht den Song und liefert ALLE passenden Treffer als nach Qualitaet
-    sortierte Liste [(username, file, score), ...] (bestes zuerst) oder [].
+    Searches the song and returns ALL matching hits as a quality-sorted list
+    [(username, file, score), ...] (best first) or [].
 
-    Zweck: Der Aufrufer kann die Kandidaten der Reihe nach zum Download
-    anstossen, falls der beste Anbieter (Soulseek-Peer) gerade offline ist /
-    den Upload ablehnt (Retry ueber mehrere Anbieter).
+    Purpose: the caller can trigger the candidates one after another for
+    download in case the best provider (Soulseek peer) is currently offline /
+    rejects the upload (retry across multiple providers).
 
-    Zweistufig (wie find_download):
-      1. Suche mit "Artist Titel".
-      2. Wenn Stufe 1 nichts bringt: Fallback NUR mit dem Titel (mit striktem
-         Kuenstler-Check, damit keine Coverversion geladen wird).
+    Two-stage (like find_download):
+      1. Search with "artist title".
+      2. If stage 1 yields nothing: fallback with the title ONLY (with a strict
+         artist check so no cover version is downloaded).
 
-    Wirft SlskdError bei einem Verbindungs-/API-Fehler.
+    Raises SlskdError on a connection/API error.
     """
     query = f"{artist} {title}".strip()
     query_norm = normalize(query)
 
-    # Stufe 1: Artist + Titel
+    # Stage 1: artist + title
     responses = _search_and_collect(client, query)
     ranked = _rank_candidates(responses, query_norm)
     if ranked:
         return ranked
 
-    # Stufe 2: Fallback nur mit dem Titel (mit striktem Kuenstler-Check).
+    # Stage 2: fallback with the title only (with a strict artist check).
     title_query = title.strip()
     if normalize(title_query) == query_norm:
-        return []  # Artist war leer/identisch, kein zusaetzlicher Versuch noetig
+        return []  # artist was empty/identical, no extra attempt needed
     logger.info(t("download.slsk.title_only_fallback", title=title_query))
     responses = _search_and_collect(client, title_query)
     return _rank_candidates(responses, query_norm, require_artist=artist)
@@ -245,16 +244,16 @@ def find_candidates(client, artist: str, title: str) -> list[tuple[str, dict, fl
 
 def find_download(client, artist: str, title: str):
     """
-    Sucht den Song und liefert den besten Treffer als (username, file, score)
-    oder None. Duenner Wrapper um find_candidates fuer Aufrufer, die nur genau
-    einen Treffer brauchen.
+    Searches the song and returns the best hit as (username, file, score) or
+    None. Thin wrapper around find_candidates for callers that need exactly one
+    hit.
     """
     ranked = find_candidates(client, artist, title)
     return ranked[0] if ranked else None
 
 
 def enqueue(client, username: str, file_dict: dict) -> bool:
-    """Stoesst den Download an. Gibt True bei Erfolg zurueck."""
+    """Triggers the download. Returns True on success."""
     try:
         return bool(client.transfers.enqueue(username=username, files=[file_dict]))
     except Exception as e:
@@ -263,23 +262,23 @@ def enqueue(client, username: str, file_dict: dict) -> bool:
         return False
 
 
-# slskd-Transfer-States sind zusammengesetzte Strings, z.B.:
-#   "Completed, Succeeded"  -> erfolgreich
-#   "Completed, Errored"    -> Fehler
-#   "Completed, Aborted"    -> abgebrochen
-#   "Completed, TimedOut"   -> Timeout
-#   "Completed, Rejected"   -> abgelehnt
-#   "Completed, Cancelled"  -> abgebrochen
-# Ein Download gilt als fehlgeschlagen, wenn er abgeschlossen ist ("Completed"),
-# aber NICHT "Succeeded". Laufende Downloads (z.B. "InProgress", "Queued") sind
-# weder Erfolg noch Fehlschlag - die lassen wir in Ruhe weiterlaufen.
+# slskd transfer states are composite strings, e.g.:
+#   "Completed, Succeeded"  -> successful
+#   "Completed, Errored"    -> error
+#   "Completed, Aborted"    -> aborted
+#   "Completed, TimedOut"   -> timeout
+#   "Completed, Rejected"   -> rejected
+#   "Completed, Cancelled"  -> cancelled
+# A download counts as failed if it is completed ("Completed") but NOT
+# "Succeeded". Running downloads (e.g. "InProgress", "Queued") are neither
+# success nor failure - we leave them running in peace.
 _FAILED_MARKERS = ("aborted", "errored", "cancelled", "canceled",
                    "timedout", "rejected", "failed")
 
 
 def _classify_state(state_str: str) -> str:
     """
-    Ordnet einen slskd-Transfer-State ein: 'succeeded', 'failed' oder 'pending'.
+    Classifies a slskd transfer state: 'succeeded', 'failed' or 'pending'.
     """
     s = (state_str or "").lower()
     if "succeeded" in s:
@@ -292,7 +291,7 @@ def _classify_state(state_str: str) -> str:
 
 
 def _all_downloads(client) -> list[dict]:
-    """Holt alle Downloads (inkl. entfernter) als flache TransferedFile-Liste."""
+    """Fetches all downloads (incl. removed) as a flat TransferedFile list."""
     files: list[dict] = []
     try:
         transfers = client.transfers.get_all_downloads(includeRemoved=False)
@@ -311,13 +310,13 @@ def _all_downloads(client) -> list[dict]:
 
 def check_download_states(client, requested: dict) -> tuple[list[str], list[tuple[str, dict]]]:
     """
-    Prueft fuer die im State vermerkten Downloads den aktuellen slskd-Status.
+    Checks the current slskd status for the downloads recorded in the state.
 
-    Rueckgabe:
-      - failed_keys: Liste der State-Schluessel, deren Download fehlgeschlagen
-        ist (sollen aus dem State entfernt und neu geladen werden).
-      - to_cleanup: Liste (username, file_dict) der fehlgeschlagenen slskd-
-        Transfers, die in slskd weggeraeumt werden sollten.
+    Return:
+      - failed_keys: list of state keys whose download failed (should be
+        removed from the state and re-downloaded).
+      - to_cleanup: list of (username, file_dict) of the failed slskd transfers
+        that should be cleaned up in slskd.
     """
     downloads = _all_downloads(client)
     if not downloads:
@@ -336,14 +335,14 @@ def check_download_states(client, requested: dict) -> tuple[list[str], list[tupl
 
     for state_key, entry in requested.items():
         if not isinstance(entry, dict):
-            continue  # altes Format ohne username/filename -> nicht pruefbar
+            continue  # old format without username/filename -> not checkable
         username = entry.get("username")
         filename = entry.get("filename")
         if not username or not filename:
             continue
         dl_state = index.get((username, filename))
         if dl_state is None:
-            continue  # Download (mehr) nicht bekannt -> in Ruhe lassen
+            continue  # download no longer known -> leave alone
         if _classify_state(dl_state) == "failed":
             logger.info(t("download.slsk.failed_detected", state=dl_state,
                           artist=entry.get("artist"), title=entry.get("title")))
@@ -354,7 +353,7 @@ def check_download_states(client, requested: dict) -> tuple[list[str], list[tupl
 
 
 def cleanup_failed(client, to_cleanup: list[tuple[str, dict]]) -> None:
-    """Entfernt fehlgeschlagene Downloads in slskd (damit die Liste sauber bleibt)."""
+    """Removes failed downloads in slskd (so the list stays clean)."""
     for username, f in to_cleanup:
         try:
             client.transfers.cancel_download(

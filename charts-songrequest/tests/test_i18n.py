@@ -1,18 +1,18 @@
 """
-i18n-Tests fuer charts-songrequest (Phase 2).
+i18n tests for charts-songrequest (Phase 2).
 
-Der i18n-Loader (app/i18n.py) ist byte-identisch zu charts-sync; die zentrale
-Key-Set-/Platzhalter-Parity ueber die geteilten lang/*.json-Dateien ist bereits
-in charts-sync/tests/test_i18n.py abgedeckt (und deckt damit auch die neuen
-songrequest.*-Keys mit ab). Dieser Satz ergaenzt den Phase-1-Pilot um einen
-de-Golden-Check: mit CHARTS_LANG=de muss die Ausgabe repraesentativer
-songrequest.*-Keys byte-identisch zur frueheren Hardcode-Ausgabe sein
-(Regressions-Anker) - inklusive der Web-UI-Antwortstrings.
+The i18n loader (app/i18n.py) is byte-identical to charts-sync; the central
+key-set/placeholder parity over the shared lang/*.json files is already covered
+in charts-sync/tests/test_i18n.py (and thereby also covers the new
+songrequest.* keys). This set extends the Phase 1 pilot with a de golden check:
+with CHARTS_LANG=de the output of representative songrequest.* keys must be
+byte-identical to the former hardcoded output (regression anchor) - including
+the web UI response strings.
 
-Zusaetzlich eine lokale Parity-Garantie als zweite Verteidigungslinie, damit
-die drei zentralen Dateien auch beim Erweitern dieses Dienstes synchron bleiben.
+In addition a local parity guarantee as a second line of defense, so the three
+central files also stay in sync when this service is extended.
 
-Alle Tests laufen OHNE Netzwerk/Docker.
+All tests run WITHOUT network/Docker.
 """
 
 import importlib
@@ -26,7 +26,7 @@ import pytest
 from app import i18n
 
 
-# Zentrale, ueber alle Dienste geteilte Sprachdateien:
+# Central language files shared across all services:
 # app -> charts-songrequest -> charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
@@ -42,29 +42,29 @@ def _placeholders(template):
             if name is not None}
 
 
-# --- de-Golden: CHARTS_LANG=de reproduziert die frueheren Hardcodes byte-exakt --
+# --- de golden: CHARTS_LANG=de reproduces the former hardcodes byte-exactly --
 
 def test_de_golden_songrequest_strings():
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
-    # Request-Log (frueher: "Request von %s: %s - %s").
+    # Request log (formerly: "Request von %s: %s - %s").
     assert (i18n.t("songrequest.request.received", user="roger",
                    artist="Artist", title="Title")
             == "Request von roger: Artist - Title")
-    # Web-UI "nichts Besseres gefunden" (ehrliche Backend-Meldung, frueher
-    # f-String mit {existing_bitrate}/{MIN_BITRATE}).
+    # Web UI "nothing better found" (honest backend message, formerly an
+    # f-string with {existing_bitrate}/{MIN_BITRATE}).
     assert (i18n.t("songrequest.ui.nothing_better", bitrate=192, min=256)
             == "Vorhanden mit 192 kbps. Aktuell keine bessere Version "
                "(\u2265 256 kbps) im Netz gefunden \u2013 sp\u00e4ter erneut versuchen.")
-    # Download-gestartet UI-Meldung (frueher fester String).
+    # Download-started UI message (formerly a fixed string).
     assert (i18n.t("songrequest.ui.download_started")
             == "Gefunden & Download gestartet. Landet in K\u00fcrze automatisch "
                "in der Library.")
 
 
 def test_de_golden_shared_keys_reused():
-    """Die kopierten Shared-Module (slsk/status/manifest) nutzen die bereits
-    uebersetzten download.*/status.*-Keys - hier als Anker, dass sie unveraendert
-    die frueheren deutschen Hardcodes liefern."""
+    """The copied shared modules (slsk/status/manifest) use the already
+    translated download.*/status.* keys - here as an anchor that they still
+    deliver the former German hardcodes unchanged."""
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
     assert (i18n.t("download.slsk.rejected_dj_edit", filename="x.mp3")
             == "  verworfen (DJ-Edit/BPM-Endung): x.mp3")
@@ -72,7 +72,7 @@ def test_de_golden_shared_keys_reused():
             == "Status konnte nicht geschrieben werden (/p): boom")
 
 
-# --- Lokale Parity-Garantie (zweite Verteidigungslinie) ---------------------
+# --- Local parity guarantee (second line of defense) ------------------------
 
 def test_shipped_key_sets_are_identical():
     key_sets = {c: set(_load_shipped(c)) for c in _SHIPPED}
