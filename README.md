@@ -11,6 +11,8 @@ collection – no subscription, fully local.
 > network. Only download content you are entitled to. You are responsible for
 > complying with copyright law in your country.
 
+![charts-stack dashboard](screenshots/services.png)
+
 ---
 
 ## English
@@ -181,6 +183,10 @@ small `charts-docker-proxy` (read requests only, no container start/stop).
 Dashboard and watchdog therefore run as an unprivileged user, not as root. The
 run stats come from small JSON files each service writes into
 `Charts/.charts-status/`.
+
+| Live connections | Source finder |
+| --- | --- |
+| ![Dashboard connections view](screenshots/connections.png) | ![Dashboard source finder](screenshots/source_finder.png) |
 
 ### Language (logs, Pushover, dashboard)
 
