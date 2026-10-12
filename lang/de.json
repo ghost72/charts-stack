@@ -771,6 +771,7 @@
   "songrequest.slsk.no_api_key": "SLSKD_API_KEY ist nicht gesetzt.",
   "songrequest.slsk.connect_failed": "Verbindung zu slskd fehlgeschlagen: {error}",
   "hitparade.err.zero_songs": "Chart '{chart}' lieferte 0 Songs - Seite evtl. umgebaut/blockiert.",
+  "hitparade.err.unavailable": "{url} nicht abrufbar: {error}",
   "digest.cli.description": "charts-digest - tägliche Zusammenfassung neuer Library-Songs.",
   "digest.cli.help_now": "SOFORT eine Zusammenfassung senden und beenden (manuelle Auslösung, läuft parallel zum Scheduler im Container). Sendet auch bei 0 neuen Songs eine Rückmeldung."
 }

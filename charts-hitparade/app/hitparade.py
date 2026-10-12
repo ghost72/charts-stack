@@ -105,7 +105,8 @@ def _fetch(chart: str, day: date, timeout_s: float, retries: int) -> str:
                              url=url, attempt=attempt, retries=retries, error=e))
     # Transport-/HTTP-Fehler (inkl. 5xx von hitparade.ch) -> voruebergehend
     # nicht erreichbar, NICHT als Scraper-Defekt werten.
-    raise HitparadeUnavailable(f"{url} nicht abrufbar: {last_err}")
+    raise HitparadeUnavailable(t("hitparade.err.unavailable",
+                                 url=url, error=last_err))
 
 
 def fetch_chart(chart: str, day: date, timeout_s: float = 15.0,
