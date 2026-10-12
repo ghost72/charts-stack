@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Song Request</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#7b4397">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Songs">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="topbar"><a href="/logout">Abmelden</a></div>
+  <div class="card">
+    <div class="logo">🎵</div>
+    <h1>Song Request</h1>
+    <div class="subtitle">Song suchen, laden und in die Library holen</div>
+
+    <form id="form">
+      <label for="artist">Künstler</label>
+      <input id="artist" name="artist" type="text" placeholder="z. B. Dermot Kennedy" autocomplete="off" autofocus>
+
+      <label for="title">Titel</label>
+      <input id="title" name="title" type="text" placeholder="z. B. Kiss Me" autocomplete="off">
+
+      <button id="btn" type="submit">Suchen &amp; laden</button>
+    </form>
+
+    <div id="status" class="status"></div>
+
+    <div class="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
+  </div>
+
+<script>
+const form = document.getElementById('form');
+const btn = document.getElementById('btn');
+const status = document.getElementById('status');
+
+function showStatus(cls, iconHtml, html) {
+  status.className = 'status show ' + cls;
+  status.innerHTML = '<span class="ic">' + iconHtml + '</span><span>' + html + '</span>';
+}
+
+function esc(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function sendRequest(artist, title) {
+  btn.disabled = true;
+  btn.textContent = 'Suche läuft …';
+  showStatus('searching', '<span class="spinner"></span>',
+    'Suche in slskd und prüfe die Qualität … das kann einen Moment dauern.');
+
+  try {
+    const resp = await fetch('/api/request', {
+      method: 'POST', body: new URLSearchParams({ artist, title })
+    });
+    const data = await resp.json();
+
+    if (data.ok && data.upgrade) {
+      // Bessere Version gefunden -> wird automatisch geladen.
+      var newBr = data.bitrate > 0 ? (data.bitrate + ' kbps') : ('≥ ' + 256 + ' kbps');
+      showStatus('ok', '⬆️',
+        '<b>Bessere Version wird geladen</b><br>' +
+        esc(data.artist) + ' – ' + esc(data.title) + '<br>' +
+        '<span style="color:rgba(255,255,255,0.55)">' +
+        newBr + ' statt bisher ' + data.old_bitrate + ' kbps – ersetzt die vorhandene, falls wirklich besser.</span>');
+      form.reset();
+      document.getElementById('artist').focus();
+    } else if (data.ok && data.already) {
+      // Vorhanden, nichts (Besseres) geladen. Die genaue Aussage kommt vom
+      // Backend (data.message): entweder "schon in guter Qualität" ODER
+      // ehrlich "vorhanden mit X kbps, nichts Besseres gefunden". NICHT
+      // hart "beste Qualität" anzeigen - das war falsch bei Low-Bitrate-Songs.
+      showStatus('ok', 'ℹ️',
+        esc(data.artist) + ' – ' + esc(data.title) +
+        (data.bitrate ? ' (' + data.bitrate + ' kbps)' : '') + '<br>' +
+        '<span style="color:rgba(255,255,255,0.55)">' +
+        esc(data.message || 'Kein Download nötig.') + '</span>');
+      form.reset();
+      document.getElementById('artist').focus();
+    } else if (data.ok) {
+      // Neuzugang.
+      showStatus('ok', '✅',
+        '<b>Gefunden &amp; Download gestartet</b><br>' +
+        esc(data.artist) + ' – ' + esc(data.title) + ' (' + data.bitrate + ' kbps)<br>' +
+        '<span style="color:rgba(255,255,255,0.55)">Landet in Kürze automatisch in der Library.</span>');
+      form.reset();
+      document.getElementById('artist').focus();
+    } else {
+      showStatus('err', '⚠️', esc(data.error) || 'Unbekannter Fehler.');
+    }
+  } catch (err) {
+    showStatus('err', '⚠️', 'Netzwerkfehler – bitte erneut versuchen.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Suchen & laden';
+  }
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const artist = document.getElementById('artist').value.trim();
+  const title = document.getElementById('title').value.trim();
+  if (!artist || !title) {
+    showStatus('err', '⚠️', 'Bitte Künstler und Titel angeben.');
+    return;
+  }
+  sendRequest(artist, title);
+});
+</script>
+</body>
+</html>

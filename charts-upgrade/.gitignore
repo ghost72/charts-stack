@@ -1,0 +1,6 @@
+# Lokale Konfiguration mit Secrets – niemals committen
+.env
+
+# Python
+__pycache__/
+*.pyc

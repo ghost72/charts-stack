@@ -1,0 +1,145 @@
+{
+  "_comment": "Gemeinsame Fixture fuer die charts-sync-Parser-Tests UND die Doku CHARTS-SOURCES.md / .en.md (FEAT-002 zitiert die 'runnable'-Snippets 1:1). Nur verifizierte, real existierende Deezer-IDs (0 = globale Chart, 1313617925 = Top Switzerland, 658561775 = Swiss Mundart Hits) oder ID-lose Last.fm-Methoden. Jedes 'runnable'-Beispiel laeuft durch config._parse_charts OHNE Validierungs-Warnung/-Fehler.",
+  "runnable": {
+    "minimal": [
+      {
+        "sources": [
+          {"service": "deezer", "type": "chart", "source": "0", "limit": 100, "enabled": true},
+          {"service": "deezer", "type": "playlist", "source": "1313617925", "limit": "all", "enabled": true}
+        ],
+        "name": "charts.m3u",
+        "title": "Aktuelle Hits & Charts \ud83d\udd25\ud83c\udfb6",
+        "missing": "missing.txt"
+      }
+    ],
+    "mundart": [
+      {
+        "sources": [
+          {"service": "deezer", "type": "playlist", "source": "658561775", "limit": "all", "enabled": true}
+        ],
+        "name": "mundart.m3u",
+        "title": "Schweizer Mundart \ud83c\udde8\ud83c\udded",
+        "missing": "missing-mundart.txt",
+        "exclude_artists": ["Nemo", "Trauffer"]
+      }
+    ],
+    "mundart_artists": [
+      {
+        "name": "mundart.m3u",
+        "title": "Schweizer Mundart \ud83c\udde8\ud83c\udded",
+        "missing": "missing-mundart.txt",
+        "sources": [
+          {"service": "deezer", "type": "playlist", "source": "14877041603", "limit": "all", "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "16529", "limit": 50, "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "449929", "limit": 50, "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "71287", "limit": 50, "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "187153", "limit": 50, "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "4459005", "limit": 50, "enabled": true},
+          {"service": "deezer", "type": "artist", "source": "99572", "limit": 50, "enabled": true}
+        ]
+      }
+    ],
+    "country_lastfm": [
+      {
+        "name": "country.m3u",
+        "title": "Country \ud83e\udd20",
+        "sources": [
+          {"service": "lastfm", "method": "tag.getTopTracks", "tag": "country", "limit": 100, "enabled": true},
+          {"service": "lastfm", "method": "tag.getTopTracks", "tag": "classic country", "limit": 100, "enabled": true}
+        ]
+      }
+    ],
+    "pop_lastfm": [
+      {
+        "name": "pop.m3u",
+        "title": "Pop \ud83c\udfa4",
+        "sources": [
+          {"service": "deezer", "type": "chart", "source": "0", "limit": 100, "enabled": true},
+          {"service": "lastfm", "method": "tag.getTopTracks", "tag": "pop", "limit": 100, "enabled": true}
+        ]
+      }
+    ],
+    "with_disabled_source": [
+      {
+        "name": "charts.m3u",
+        "title": "Aktuelle Hits & Charts \ud83d\udd25\ud83c\udfb6",
+        "sources": [
+          {"service": "deezer", "type": "chart", "source": "0", "limit": 100, "enabled": true},
+          {"service": "deezer", "type": "playlist", "source": "1313617925", "limit": "all", "enabled": false}
+        ]
+      }
+    ]
+  },
+  "legacy_no_service": {
+    "mixed": [
+      {
+        "sources": [
+          {"type": "chart", "source": "0", "limit": 100, "enabled": true},
+          {"type": "playlist", "source": "1313617925", "limit": "all", "enabled": true},
+          {"type": "lastfm", "method": "geo.getTopTracks", "country": "Switzerland", "limit": 100, "enabled": true}
+        ],
+        "name": "charts.m3u",
+        "title": "Aktuelle Hits & Charts",
+        "missing": "missing.txt"
+      }
+    ]
+  },
+  "invalid": {
+    "contradiction_service_deezer_type_lastfm": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "deezer", "type": "lastfm", "source": "0"}
+        ]
+      }
+    ],
+    "unknown_service": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "spotify", "type": "chart", "source": "0"}
+        ]
+      }
+    ],
+    "unknown_deezer_type": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "deezer", "type": "album", "source": "123"}
+        ]
+      }
+    ],
+    "unknown_lastfm_method": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "lastfm", "method": "artist.getTopTracks"}
+        ]
+      }
+    ],
+    "lastfm_missing_param": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "lastfm", "method": "geo.getTopTracks"}
+        ]
+      }
+    ],
+    "lastfm_with_deezer_source": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "lastfm", "method": "chart.getTopTracks", "source": "1313617925"}
+        ]
+      }
+    ],
+    "camelcase_method": [
+      {
+        "name": "x.m3u",
+        "sources": [
+          {"service": "lastfm", "method": "geo.getTopTracks", "country": "Switzerland"}
+        ]
+      }
+    ]
+  }
+}

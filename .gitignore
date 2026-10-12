@@ -1,0 +1,18 @@
+# Central configuration with secrets - NEVER commit. Only .env.example (template)
+# is versioned.
+.env
+.env.*
+!.env.example
+
+# Local playlist definition file (optional, CHARTS_FILE). The template
+# charts.json.example stays versioned; charts.json itself is personal config
+# and is not tracked, so your own/private lists are never committed:
+charts-sync/charts.json
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Local workspace files and OS clutter
+.DS_Store

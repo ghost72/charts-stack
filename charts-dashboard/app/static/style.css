@@ -1,0 +1,392 @@
+:root {
+  --bg: #15121c;
+  --card: #221b2e;
+  --tile: #2a2238;
+  --fg: #ece7f3;
+  --muted: #9b90ad;
+  --ok: #3fb67a;
+  --warn: #e0a53b;
+  --err: #e05a5a;
+  --info: #5a8fe0;
+  --accent: #1e5fa8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px;
+  background: linear-gradient(100deg, #1b4e8e 0%, #15406e 60%, #0f3357 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
+  /* Header liegt IMMER ueber den Flow-Kacheln (auch ueber einer aufgeklappten
+     Box mit z-index:10) und bleibt beim Scrollen oben kleben. */
+  position: sticky; top: 0; z-index: 100;
+}
+/* Marke links: Icon-Badge + Titel + Untertitel. */
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-badge {
+  display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 10px; font-size: 1.2rem;
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+.brand-title { font-size: 1.15rem; font-weight: 650; letter-spacing: .01em; color: #fff; }
+.brand-sub { font-size: .72rem; color: #bcd2ef; opacity: .85; margin-top: 1px; }
+
+.meta { display: flex; align-items: center; gap: 16px; font-size: .82rem; }
+/* Live-Indikator: gruener Punkt (pulsierend) + Zeitstempel. Signalisiert, dass
+   die Daten frisch gezogen werden - wie bei einem echten Monitoring-Tool. */
+.live { display: flex; align-items: center; gap: 7px; color: #cfe0ff; opacity: .95; }
+.live #updated { font-variant-numeric: tabular-nums; }
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+  box-shadow: 0 0 0 0 rgba(63, 182, 122, .6); animation: live-pulse 2s infinite;
+}
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(63, 182, 122, .55); }
+  70%  { box-shadow: 0 0 0 7px rgba(63, 182, 122, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 182, 122, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+/* Fehlerzustand (tick() konnte /api/status nicht laden): Punkt rot + statisch,
+   Text rot - der grue­ne Puls wuerde faelschlich "alles frisch" suggerieren. */
+.live.error { color: #f3a6a6; }
+.live.error .live-dot { background: var(--err); animation: none; box-shadow: none; }
+.meta .logout {
+  color: #fff; opacity: .9; text-decoration: none; font-weight: 500;
+  padding: 6px 13px; border-radius: 8px; border: 1px solid rgba(255,255,255,.22);
+  transition: background .15s ease, opacity .15s ease, border-color .15s ease;
+}
+.meta .logout:hover {
+  opacity: 1; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.4);
+}
+main { padding: 16px 20px 40px; max-width: 1100px; margin: 0 auto; }
+section { margin-bottom: 28px; }
+section h2 {
+  font-size: .95rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 0 0 12px;
+}
+.grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.tile {
+  background: var(--tile);
+  border-radius: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--muted);
+}
+/* --tile-accent haelt die Statusfarbe pro Kachel, damit der aufgeklappte
+   Zustand (siehe .flow-cell .tile.open unten) einen passenden farbigen Ring
+   bekommen kann. */
+.tile.ok { border-left-color: var(--ok); --tile-accent: var(--ok); }
+.tile.warn { border-left-color: var(--warn); --tile-accent: var(--warn); }
+.tile.err { border-left-color: var(--err); --tile-accent: var(--err); }
+.tile.info { border-left-color: var(--info); --tile-accent: var(--info); }
+.tile.muted { border-left-color: #5a5168; --tile-accent: #5a5168; opacity: .8; }
+.t-title { font-weight: 600; margin-bottom: 8px; font-size: .98rem; }
+.line { font-size: .85rem; color: var(--fg); margin: 3px 0; line-height: 1.35; }
+.desc { color: var(--muted); font-style: italic; font-size: .78rem; display: block;
+        margin-top: 8px; padding-top: 6px; border-top: 1px solid #37304733; }
+.muted-txt { color: var(--muted); }
+.s-err { color: var(--err); font-weight: 600; }
+.s-run { color: var(--warn); }
+b { font-weight: 600; }
+
+/* Flow-Layout: Dienste entlang des Datenflusses, mit Pfeilen zwischen Stufen. */
+/* ===== Flow-Hub-Layout: slskd zentral, Linien als SVG-Overlay =====
+   Absolute Default-Positionen (wie im Mock) auf einer festen Flow-Flaeche;
+   Zellen sind frei verschiebbar (Drag). Unter 760px faellt alles auf einen
+   gestapelten Fluss zurueck (Handy). */
+.flow-hub {
+  position: relative;
+  height: 820px;            /* genug Platz, Navidrome unten + Abstand zum naechsten Block */
+  margin-bottom: 120px;     /* mehr Abstand unter Navidrome vor dem 'Verbindungen'-Block */
+}
+.flow-cell {
+  position: absolute;
+  width: 23%; min-width: 210px; max-width: 260px;
+  z-index: 1;
+}
+/* Aufgeklappte Box (enthaelt .tile.open) ODER gerade gezogene liegt oben. */
+.flow-cell:has(.tile.open), .flow-cell.dragging { z-index: 10; }
+/* Aufgeklappte Flow-Box bekommt einen feinen Ring in ihrer Statusfarbe plus
+   einen weichen Schatten, damit sie sich bei Ueberlagerung mit einer darunter
+   liegenden Box sauber abgrenzt (border-radius bleibt erhalten, kein Layout-
+   Versatz, da box-shadow statt border). Fallback-Farbe fuer Kacheln ohne
+   Statusklasse ist --muted. */
+.flow-cell .tile.open {
+  box-shadow: 0 0 0 1px var(--tile-accent, var(--muted)),
+              0 8px 24px rgba(0, 0, 0, .45);
+}
+/* Navidrome-Pille nimmt ihre natuerliche Breite (keine Kachel-Breite). */
+.flow-cell[data-cell="navidrome"] { width: auto; min-width: 0; max-width: none; }
+/* Ueberwachungs-Boxen (watchdog/dashboard) kompakter + dezenter. */
+.flow-cell.small { width: 19%; min-width: 180px; }
+.flow-cell.small .tile { padding: 10px 12px; opacity: .9; }
+.flow-cell.small .flow-what { font-size: .76rem; }
+/* Report-Zone: watchdog + dashboard + digest als EIN Flex-Stapel mit fester
+   Luecke -> garantiert gleicher Abstand, unabhaengig von der Kachelhoehe. */
+.flow-cell.report-wrap { width: 19%; min-width: 180px; }
+/* gap 10px == der 'gap' des gestapelten .flow-hub auf dem Handy, damit die
+   Report-Kacheln NICHT weiter auseinander stehen als die anderen Gruppen. */
+.report-stack { display: flex; flex-direction: column; gap: 10px; }
+/* height:auto hebt die generische '.flow-cell .tile { height:100% }'-Regel auf
+   (die sonst jede der drei Kacheln auf volle Hoehe streckt -> gap unsichtbar,
+   Kacheln kleben aneinander). Mit auto nehmen sie ihre natuerliche Hoehe und
+   der gap wird sichtbar. */
+.report-stack .tile { padding: 10px 12px; opacity: .9; height: auto; }
+.report-stack .flow-what { font-size: .76rem; }
+.flow-stage {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); text-align: center; margin-bottom: 2px;
+}
+.flow-stage.abs { position: absolute; text-align: left; margin: 0; }
+/* Zonen-Label IN einer Zelle (wandert beim Drag mit der Box mit). */
+.flow-stage.cell-stage { text-align: left; margin: 0 0 4px 2px; }
+.flow-cell .tile { height: 100%; }
+/* SVG-Overlay fuer die Verbindungslinien - liegt HINTER den Kacheln.
+   overflow: visible, damit Linien beim Verschieben einer Box ueber den
+   Container-Rand hinaus NICHT abgeschnitten werden. */
+.flow-svg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0; overflow: visible;
+}
+/* Nur die Verbindungslinien (direkte Kinder des SVG), NICHT der Marker-Pfad
+   im <defs> - sonst wuerde fill:none die gefuellte Pfeilspitze ueberschreiben. */
+.flow-svg > path {
+  stroke: var(--info); stroke-width: 2.2; fill: none; opacity: .8;
+  stroke-linecap: round;
+}
+.flow-svg marker path { fill: var(--info); stroke: none; opacity: 1; }
+/* slskd-Hub hervorheben. */
+.flow-cell.hub .tile {
+  border: 2px solid var(--info); border-left-width: 4px;
+  background: #223a5e; box-shadow: 0 0 0 4px rgba(90,143,224,.12);
+}
+/* "manuell"-Pill oben in der Kachel (ueber dem Titel, mit Abstand). */
+.svc-manual-tag {
+  display: inline-block; margin-bottom: 14px;
+  font-size: .6rem; letter-spacing: .04em; color: var(--warn);
+  border: 1px solid var(--warn); border-radius: 10px;
+  padding: 2px 9px; font-weight: 700;
+}
+/* Manuelle Kachel: normaler Rand/Status-Farbe wie die anderen - das
+   "MANUELL"-Pill oben kennzeichnet den manuellen Einstieg. */
+/* Navidrome = externes Ziel -> schlanke gruene Pille (keine Stack-Kachel). */
+.flow-target-pill {
+  display: inline-block;
+  background: rgba(63,182,122,.12);
+  border: 1.5px solid var(--ok); border-radius: 20px;
+  color: var(--fg); font-weight: 600; font-size: .9rem;
+  padding: 8px 16px; white-space: nowrap;
+}
+
+/* Drag: Kacheln sind verschiebbar (nur Desktop). touch-action: manipulation
+   erlaubt natives Scrollen + Tap (verhindert nur die 300ms-Doppeltipp-Zoom-
+   Verzoegerung) - WICHTIG fuer iPhone-Safari, wo 'none' jedes Scrollen auf
+   einer Kachel blockierte. Das eigentliche Drag ist per JS ohnehin auf
+   Viewports > 760px beschraenkt. */
+.flow-cell { cursor: grab; touch-action: manipulation; }
+.flow-cell.dragging { cursor: grabbing; z-index: 5; }
+.flow-cell.dragging .tile { box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.flow-side-label {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 24px 0 10px;
+}
+.flow-side { margin-top: 0; }
+/* Dezenter Bedienhinweis unter dem Flow (wie im Mock). */
+.flow-hint {
+  margin-top: 8px; color: var(--muted);
+  font-size: .78rem; font-style: italic;
+}
+
+/* Dienste-Kachel: kompakt + aufklappbarer Detailbereich. */
+.tile.svc { cursor: pointer; }
+.t-title { position: relative; }
+.svc-amp {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; position: absolute; right: 0; top: 4px; opacity: .9;
+}
+.tile.svc.ok   .svc-amp { background: var(--ok); }
+.tile.svc.warn .svc-amp { background: var(--warn); }
+.tile.svc.err  .svc-amp { background: var(--err); }
+/* idle/deaktiviert: grauer Punkt (gleicher Ton wie der .tile.muted-Akzent). */
+.tile.svc.muted .svc-amp { background: #5a5168; }
+.flow-what { color: var(--muted); font-size: .82rem; }
+.svc-when { color: #c9bfe0; font-size: .82rem; }
+.svc-detail {
+  display: none; margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid #37304755;
+}
+.tile.svc.open .svc-detail { display: block; }
+.scan-bar.compact { margin: 8px 0 0; }
+
+/* Handy / schmal (<760px): absolute Positionierung aufheben, alles vertikal
+   stapeln. Inline-styles (left/top/transform) werden ueberschrieben. Die
+   SVG-Linien folgen automatisch (drawFlowLines misst die echten Positionen). */
+@media (max-width: 760px) {
+  .flow-hub { height: auto; display: flex; flex-direction: column; gap: 10px; }
+  .flow-cell {
+    position: static !important; left: auto !important; top: auto !important;
+    transform: none !important;
+    width: 100%; max-width: none; min-width: 0;
+  }
+  .flow-stage.abs { display: none; } /* Labels im Stapel weglassen (Reihenfolge spricht fuer sich) */
+  /* Kein Drag auf dem Handy; natives Scrollen voll freigeben (sonst haengt das
+     UI auf iPhone-Safari, weil der Touch auf einer Kachel landet). */
+  .flow-cell { cursor: default; touch-action: auto; }
+  /* Header auf schmalen Viewports kompakter: Untertitel weg, Padding kleiner. */
+  header { padding: 12px 16px; }
+  .brand-sub { display: none; }
+  .brand-badge { width: 34px; height: 34px; }
+}
+
+/* Scan-Fortschritt (charts-upgrade): schmale Leiste + Text darunter. */
+.scan-prog { margin: 6px 0 2px; }
+.scan-bar {
+  height: 6px; border-radius: 4px; background: #1b1626;
+  overflow: hidden; margin-bottom: 4px;
+}
+.scan-fill {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--info));
+  transition: width .4s ease;
+}
+.scan-txt { font-size: .78rem; color: var(--muted); }
+
+/* Login */
+body.login {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+}
+.card {
+  background: var(--card); border-radius: 16px; padding: 32px;
+  width: 100%; max-width: 360px; text-align: center;
+}
+.card h1 { margin: 0 0 4px; }
+.card .sub { color: var(--muted); margin-bottom: 20px; font-size: .9rem; }
+.card label {
+  display: block; text-align: left; font-size: .8rem;
+  color: var(--muted); margin: 12px 0 4px;
+}
+.card input {
+  width: 100%; padding: 11px 13px; border-radius: 9px;
+  border: 1px solid #3a3048; background: #1b1626; color: var(--fg);
+  font-size: 1rem;
+}
+.card button {
+  width: 100%; margin-top: 20px; padding: 12px;
+  border: 0; border-radius: 9px; background: var(--accent); color: #fff;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+}
+.card button:hover { filter: brightness(1.1); }
+.banner { margin-top: 16px; padding: 10px; border-radius: 8px; font-size: .85rem; }
+.banner.err { background: rgba(224,90,90,.18); color: #ffb4b4; }
+
+/* --- Quellen-Finder (eigenes Panel unten; unabhängig vom Flow-Diagramm) --- */
+.finder-hint { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+.finder-hint code { font-size: .8rem; }
+/* Max. ZWEI Spalten statt drei+: breitere Boxen geben dem JSON-Snippet mehr
+   Platz. minmax(0, 1fr) (nicht 280px) laesst die Spalten unter min-width 0
+   schrumpfen -> sauberer Umbruch auf 1 Spalte bei schmalem Viewport, ohne dass
+   der Snippet-Inhalt die Box sprengt. */
+.finder {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 720px) {
+  .finder { grid-template-columns: 1fr; }
+}
+.finder-box {
+  background: var(--tile);
+  border-radius: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--muted);
+}
+.finder-box h3 { margin: 0 0 10px; font-size: .95rem; }
+.finder-box.muted { opacity: .55; }
+.finder-box.muted input, .finder-box.muted button { pointer-events: none; }
+.finder-box form { display: flex; gap: 8px; margin: 0 0 10px; }
+.finder-box form input {
+  flex: 1; min-width: 0; padding: 7px 9px;
+  border: 1px solid #3a3350; border-radius: 7px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+}
+.finder-box form button {
+  border: 0; border-radius: 7px; background: var(--accent); color: #fff;
+  padding: 7px 12px; font-size: .82rem; cursor: pointer; white-space: nowrap;
+}
+.finder-box form button:hover { filter: brightness(1.1); }
+/* Kleiner Sekundär-Button (Copy). */
+.btn-sm {
+  border: 1px solid #3a3350; border-radius: 6px;
+  background: #332b45; color: var(--fg);
+  padding: 4px 8px; font-size: .75rem; cursor: pointer;
+}
+.btn-sm:hover { filter: brightness(1.15); }
+/* Chips (Tag-Vorschläge). */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+.chip {
+  border: 1px solid #3a3350; border-radius: 999px;
+  background: #2f2742; color: var(--fg);
+  padding: 3px 10px; font-size: .78rem; cursor: pointer;
+}
+.chip:hover { filter: brightness(1.15); }
+/* Finder-Tabellen schlicht + Zebra. */
+.finder-table, #dz-genres {
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+  table-layout: fixed;
+}
+.finder-table th, .finder-table td, #dz-genres th, #dz-genres td {
+  text-align: left; padding: 5px 8px; vertical-align: top;
+  overflow: hidden;
+}
+/* Titel/Tracks (bzw. Kuenstler/Fans) kompakt halten, die Snippet-Spalte
+   bekommt den Rest - ihr Inhalt scrollt horizontal statt umzubrechen. */
+.finder-table th:nth-child(1), .finder-table td:nth-child(1) { width: 42%; overflow-wrap: anywhere; }
+.finder-table th:nth-child(2), .finder-table td:nth-child(2) { width: 4.5em; }
+.finder-table th:nth-child(3), .finder-table td:nth-child(3) { width: auto; }
+.finder-table thead th, #dz-genres thead th {
+  color: var(--muted); font-weight: 600; border-bottom: 1px solid #37304755;
+}
+.finder-table tbody tr:nth-child(even), #dz-genres tbody tr:nth-child(even) {
+  background: #2f2742;
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Snippet-Zelle: markierbares <code> + Copy-Button, umbruchsicher. */
+/* Das Snippet wird NICHT umgebrochen - sonst zerfaellt der lange JSON-String
+   in der schmalen Finder-Spalte zu einer senkrechten Buchstaben-Saeule.
+   Stattdessen einzeilig mit horizontalem Scroll; gelesen werden muss es nicht,
+   der Copy-Button kopiert es vollstaendig. */
+.snip { display: flex; gap: 6px; align-items: center; max-width: 100%; min-width: 0; }
+.snip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .74rem; background: var(--bg); color: #c9bfe0;
+  padding: 4px 6px; border-radius: 6px; flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow-x: auto; overflow-y: hidden;
+}
+.snip-copy { flex: 0 0 auto; }
+.lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
+.lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
+
+/* Discreet donate footer (toggled by DASHBOARD_DONATE). Muted, unobtrusive. */
+.site-footer {
+  margin: 28px auto 14px; padding: 10px 16px; text-align: center;
+  color: var(--muted); font-size: .8rem;
+}
+.site-footer .donate { display: inline-flex; gap: 10px; align-items: center;
+  flex-wrap: wrap; justify-content: center; }
+.site-footer .donate-label { color: var(--muted); }
+.site-footer a {
+  color: var(--accent); text-decoration: none; font-weight: 600;
+  border-bottom: 1px dotted #5a8fe055;
+}
+.site-footer a:hover { color: var(--fg); }

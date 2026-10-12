@@ -1,0 +1,708 @@
+# charts-stack – EIN Projekt, alle Dienste zusammen.
+#
+# Alle 7 Dienste (slskd + die 6 charts-Dienste) in EINER compose.yml, mit EINER
+# gemeinsamen .env im selben Ordner. So einfach wie moeglich:
+#
+#   1. cp .env.example .env   und die .env ausfuellen (eine einzige Datei!)
+#   2. Im Synology Container Manager ein Projekt auf diesen Ordner anlegen
+#      ODER per CLI:  docker compose up -d --build
+#
+# Die Dienste reden ueber das automatisch angelegte Projekt-Netz miteinander
+# (z.B. charts-download -> http://slskd:5030). Kein manuelles Netz noetig.
+#
+# Alle Werte haben sinnvolle Defaults (${VAR:-default}); in der .env setzt du nur
+# deine eigenen/Pflicht-Werte. Pflicht sind: SLSKD_API_KEY, SONGREQUEST_USERS
+# und MUSIC_ROOT. charts-recommend ist optional: RECOMMEND_LISTENBRAINZ_USERS
+# ist eine Liste oeffentlicher ListenBrainz-Usernamen (kein Secret), der Token
+# ist nur fuers Rate-Limit (kein Passwort), und es werden keine Playlists mehr
+# geschrieben.
+
+services:
+
+  # ── charts-docker-proxy ─ read-only Zugriff auf den Docker-Socket ────────
+  # Sicherheits-Schicht fuer charts-watchdog + charts-dashboard: NUR dieser
+  # kleine Dienst beruehrt den Docker-Socket (als root). Er laesst ausschliess-
+  # lich LESENDE Abfragen durch (CONTAINERS, EVENTS, PING, VERSION) - POST ist
+  # per Default blockiert, also KEIN Container-Start/-Stop/-exec moeglich.
+  # watchdog + dashboard laufen dadurch als unprivilegierter User (youruser) und
+  # reden nur ueber tcp://charts-docker-proxy:2375 - kein eigener Socket-Mount,
+  # kein root. Minimale Angriffsflaeche (keine App-Logik im Proxy).
+  charts-docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: charts-docker-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1        # Container auflisten/inspizieren (nur GET)
+      - EVENTS=1            # Default an
+      - PING=1             # Default an
+      - VERSION=1          # Default an
+      - POST=0             # KEINE schreibenden Aktionen (read-only)
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # ── slskd ─ Soulseek-Client / Download-Engine ────────────────────────────
+  slskd:
+    image: slskd/slskd:0.26.0
+    container_name: slskd
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - TZ=${TZ:-Europe/Zurich}
+      - SLSKD_SLSK_LISTEN_PORT=50300
+      # API-Key auch dem slskd-Container selbst bekannt machen, damit der
+      # Healthcheck unten /api/v0/server abfragen kann (braucht X-API-Key).
+      # Reine Env-Variable (kein env_file) -> kein PUID/user-Konflikt.
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+    ports:
+      - "5030:5030"
+      - "50300:50300"
+    volumes:
+      - ${SLSKD_CONFIG_DIR:-./slskd/slskd-config}:/app
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/downloads
+      - ${MUSIC_ROOT:-/volume2/music}/SeedShare:/seedmusic
+    # Healthcheck auf den ECHTEN Soulseek-Verbindungsstatus (/api/v0/server),
+    # NICHT nur /health. Grund: /health meldet lediglich "Webserver lebt" und
+    # blieb "healthy", obwohl slskd vom Soulseek-Server getrennt war
+    # ("Disconnecting") - dann scheitern alle Suchen/Downloads still (409),
+    # bis jemand manuell neu startet. Mit diesem Check wird slskd bei einem
+    # Disconnect "unhealthy" und durch "restart: unless-stopped" neu gestartet,
+    # wodurch es sich sauber neu einloggt. /api/v0/server liefert u.a.
+    # {"isLoggedIn":true,...}; wir pruefen genau darauf.
+    # Das slskd-Image (Ubuntu 24.04) hat wget, aber kein jq -> grep auf das Flag.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O - --header="X-API-Key: $${SLSKD_API_KEY}"
+          http://localhost:5030/api/v0/server
+          | grep -q '"isLoggedIn":true' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Grosszuegig: nach (Neu-)Start braucht der Login zum Soulseek-Server
+      # ein paar Sekunden. In diesem Fenster zaehlen Fehlschlaege nicht gegen
+      # "unhealthy", damit der Container nicht in einer Restart-Schleife landet.
+      start_period: 90s
+    # KEIN env_file hier: das slskd-Image meckert, wenn PUID/PGID als Env
+    # gesetzt sind UND gleichzeitig "user:" verwendet wird. Wir nutzen "user:"
+    # (oben). ${MUSIC_ROOT}/${PUID}/${PGID}/${SLSKD_API_KEY} werden trotzdem aus
+    # der Root-.env interpoliert - dafuer braucht es kein env_file.
+
+  # ── charts-sync ─ Charts holen, matchen, Playlists schreiben ─────────────
+  charts-sync:
+    build: ./charts-sync
+    image: charts-sync:latest
+    container_name: charts-sync
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - CHART_LIMIT=${CHART_LIMIT:-all}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - GENRE_FILTER=${GENRE_FILTER:-0}
+      - EXCLUDE_TAGS=${EXCLUDE_TAGS:-}
+      - EXCLUDE_TAG_TOP_N=${EXCLUDE_TAG_TOP_N:-3}
+      - EXCLUDE_TAG_MIN_COUNT=${EXCLUDE_TAG_MIN_COUNT:-60}
+      - GENRE_FILTER_SLEEP_MS=${GENRE_FILTER_SLEEP_MS:-200}
+      - MUSIC_DIR=/music/Music
+      - PLAYLIST_DIR=/music/Music
+      - CHARTS_DIR=/music/Charts
+      - PLAYLIST_ORDER=${PLAYLIST_ORDER:-chart}
+      - SYNC_INTERVAL_HOURS=${SYNC_INTERVAL_HOURS:-12}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - RESYNC_CHECK_SECONDS=${RESYNC_CHECK_SECONDS:-60}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
+      - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
+      - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      - STATUS_DIR=/music/Charts/.charts-status
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_SYNC:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_SYNC_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      - NOTIFY_ONLY_ON_CHANGE=${NOTIFY_ONLY_ON_CHANGE:-1}
+      - NOTIFY_MISSING_LIMIT=${NOTIFY_MISSING_LIMIT:-40}
+      - TZ=${TZ:-Europe/Zurich}
+      # CHARTS (JSON) wird aus der .env gelesen (zu gross fuer hier).
+      - CHARTS=${CHARTS:-}
+      # ODER (admin-freundlich): die Playlist-Definition aus einer lesbaren,
+      # mehrzeiligen Datei laden. Prioritaet CHARTS_FILE > CHARTS > Default.
+      # Die Datei wird read-only unter /config/charts.json gemountet (siehe
+      # volumes). Zum Aktivieren CHARTS_FILE=/config/charts.json in der .env
+      # setzen UND charts-sync/charts.json anlegen (Vorlage: charts.json.example).
+      - CHARTS_FILE=${CHARTS_FILE:-}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      # Phase 1: wirkt bislang nur fuer charts-sync.
+      - CHARTS_LANG=${CHARTS_LANG:-}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}:/music
+      # Optionale Playlist-Definitionsdatei (nur genutzt, wenn CHARTS_FILE
+      # gesetzt ist). Fehlt die Datei, ist der Mount wirkungslos/greift der
+      # CHARTS-Env-Fallback. Lege charts-sync/charts.json an (oder kopiere
+      # charts.json.example) und setze CHARTS_FILE=/config/charts.json.
+      - ./charts-sync/charts.json:/config/charts.json:ro
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      # Texte aendern = Datei editieren + Container-Restart (kein Rebuild).
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-hitparade ─ offizielle Schweizer Hitparade (woechentlich) ─────
+  # Holt sonntags die Schweizer Single-Top-100 von hitparade.ch (reiner HTTP-
+  # Abruf, kein Headless-Browser), matcht gegen die Library und schreibt
+  # hitparade.m3u + missing-hitparade.txt. Faellt die Quelle aus (0 Songs/
+  # nicht erreichbar), meldet der Dienst status=error -> Dashboard + Pushover.
+  charts-hitparade:
+    build: ./charts-hitparade
+    image: charts-hitparade:latest
+    container_name: charts-hitparade
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      # An/Aus-Schalter (true/false, Default true). false = Dienst pausieren
+      # (Container bleibt, kein Fehler, Status idle).
+      - HITPARADE_ENABLED=${HITPARADE_ENABLED:-true}
+      - MUSIC_DIR=/music/Music
+      - PLAYLIST_DIR=/music/Music
+      - CHARTS_DIR=/music/Charts
+      - STATUS_DIR=/music/Charts/.charts-status
+      # Welche hitparade.ch-Charts: "singles" (Top-100, funktioniert).
+      # "singles-ch" NICHT per Default - laedt per AJAX, liefert im HTML 0 Songs.
+      - HITPARADE_CHARTS=${HITPARADE_CHARTS:-singles}
+      # Woechentlicher Lauf: Sonntag (Wochentag 6) um 20:00 Uhr.
+      - HITPARADE_WEEKDAY=${HITPARADE_WEEKDAY:-6}
+      - HITPARADE_HOUR=${HITPARADE_HOUR:-20}
+      - HITPARADE_MINUTE=${HITPARADE_MINUTE:-0}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
+      - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
+      - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      - NOTIFY_MISSING_LIMIT=${NOTIFY_MISSING_LIMIT:-40}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_HITPARADE:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_HITPARADE_ENABLED:-1}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}:/music
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-download ─ fehlende Songs via slskd laden ─────────────────────
+  charts-download:
+    build: ./charts-download
+    image: charts-download:latest
+    container_name: charts-download
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    # Erst starten, wenn slskd wirklich bereit ist (sonst "slskd nicht erreichbar").
+    depends_on:
+      slskd:
+        condition: service_healthy
+    environment:
+      - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+      - SLSKD_URL_BASE=${SLSKD_URL_BASE:-/}
+      - MISSING_FILES=${MISSING_FILES:-/charts/missing.txt}
+      - MIN_BITRATE=${MIN_BITRATE:-256}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-80}
+      - REQUIRE_FREE_SLOT=${REQUIRE_FREE_SLOT:-1}
+      - REJECT_COMPILATIONS=${REJECT_COMPILATIONS:-1}
+      - EXCLUDE_KEYWORDS=${EXCLUDE_KEYWORDS:-}
+      - EXCLUDE_ARTISTS=${EXCLUDE_ARTISTS:-}
+      - MAX_PER_RUN=${MAX_PER_RUN:-10}
+      - DRY_RUN=${DRY_RUN:-0}
+      - SEARCH_TIMEOUT_MS=${SEARCH_TIMEOUT_MS:-15000}
+      - SEARCH_WAIT_SECONDS=${SEARCH_WAIT_SECONDS:-25}
+      - SEARCH_COOLDOWN_HOURS=${SEARCH_COOLDOWN_HOURS:-6}
+      - INTERVAL_MINUTES=${DOWNLOAD_INTERVAL_MINUTES:-60}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - STATUS_DIR=/charts/.charts-status
+      - STATE_FILE=${DOWNLOAD_STATE_FILE:-/charts/.charts-download-state.json}
+      # Fest auf den /charts-Mount dieses Dienstes (NICHT die globale
+      # ${MANIFEST_FILE}): alle Manifest-Schreiber/-Leser muessen physisch
+      # dieselbe Datei treffen. download/upgrade/songrequest mounten /charts,
+      # charts-import mountet /music/Charts - deshalb keine geteilte Variable.
+      - MANIFEST_FILE=/charts/.charts-manifest.json
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_DOWNLOAD:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_DOWNLOAD_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-import ─ Downloads in die Library einsortieren ────────────────
+  charts-import:
+    build: ./charts-import
+    image: charts-import:latest
+    container_name: charts-import
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - DOWNLOADS_DIR=/music/Charts
+      - MUSIC_DIR=/music/Music
+      - STATUS_DIR=/music/Charts/.charts-status
+      - COPY_MODE=${COPY_MODE:-1}
+      - REQUIRE_MANIFEST=${REQUIRE_MANIFEST:-1}
+      - KEEP_LATEST=${KEEP_LATEST:-500}
+      - RETENTION_DAYS=${RETENTION_DAYS:-0}
+      - TRASH_RETENTION_DAYS=${TRASH_RETENTION_DAYS:-30}
+      - REJECTED_RETENTION_DAYS=${REJECTED_RETENTION_DAYS:-14}
+      - MIN_AGE_SECONDS=${MIN_AGE_SECONDS:-120}
+      - INTERVAL_MINUTES=${IMPORT_INTERVAL_MINUTES:-30}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - REJECT_ENABLED=${REJECT_ENABLED:-1}
+      - REJECT_UNKNOWN_ARTIST=${REJECT_UNKNOWN_ARTIST:-1}
+      - REJECT_KEYWORDS=${REJECT_KEYWORDS:-}
+      - MIN_DURATION_SECONDS=${MIN_DURATION_SECONDS:-90}
+      - REPLAYGAIN=${REPLAYGAIN:-1}
+      - REPLAYGAIN_TARGET_LUFS=${REPLAYGAIN_TARGET_LUFS:--14}
+      - EMBED_COVERS=${EMBED_COVERS:-1}
+      - COVER_SOURCES=${COVER_SOURCES:-itunes,deezer}
+      - ITUNES_COVER_SIZE=${ITUNES_COVER_SIZE:-1000}
+      - ITUNES_MAX_RETRIES=${ITUNES_MAX_RETRIES:-3}
+      - ITUNES_RETRY_BASE_MS=${ITUNES_RETRY_BASE_MS:-800}
+      - OVERWRITE_COVER=${OVERWRITE_COVER:-1}
+      # Metadaten-Backfill: holt fehlende Cover/ReplayGain periodisch nach,
+      # wenn beim Import eine Quelle kurz nicht erreichbar war. 0 = aus.
+      - BACKFILL_INTERVAL_HOURS=${BACKFILL_INTERVAL_HOURS:-24}
+      - BACKFILL_SLEEP_MS=${BACKFILL_SLEEP_MS:-400}
+      - BACKFILL_LIMIT=${BACKFILL_LIMIT:-0}
+      - BACKFILL_RECANON=${BACKFILL_RECANON:-1}
+      # WICHTIG: charts-import mountet den Charts-Ordner als /music/Charts
+      # (Volume .../Music:/music), NICHT als /charts wie download/songrequest.
+      # Das Manifest MUSS daher hier auf /music/Charts zeigen - sonst liest
+      # import eine andere (leere) Datei als die, in die download/songrequest
+      # schreiben, und ueberspringt jeden Song mangels Manifest-Eintrag.
+      # Deshalb NICHT die globale ${MANIFEST_FILE} (= /charts/...) erben.
+      - MANIFEST_FILE=/music/Charts/.charts-manifest.json
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_IMPORT:-incoming}
+      - PUSHOVER_ENABLED=${PUSHOVER_IMPORT_ENABLED:-1}
+      - PUSHOVER_SOUND_MANUAL=${PUSHOVER_SOUND_MANUAL:-magic}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      - LIDARR_URL=${LIDARR_URL:-}
+      - LIDARR_API_KEY=${LIDARR_API_KEY:-}
+      - LIDARR_UNMONITOR=${LIDARR_UNMONITOR:-1}
+      - LIDARR_ADD_MISSING=${LIDARR_ADD_MISSING:-1}
+      - LIDARR_QUALITY_PROFILE_ID=${LIDARR_QUALITY_PROFILE_ID:-4}
+      - LIDARR_METADATA_PROFILE_ID=${LIDARR_METADATA_PROFILE_ID:-1}
+      - LIDARR_ROOT_FOLDER=${LIDARR_ROOT_FOLDER:-/music/Music}
+      - TZ=${TZ:-Europe/Zurich}
+      - CHARTS_LANG=${CHARTS_LANG:-}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}:/music
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-recommend ─ Nachladen aus mehreren ListenBrainz-Usern ─────────
+  charts-recommend:
+    build: ./charts-recommend
+    image: charts-recommend:latest
+    container_name: charts-recommend
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - LISTENBRAINZ_ENABLED=${LISTENBRAINZ_ENABLED:-1}
+      # Liste oeffentlicher ListenBrainz-Usernamen (kein Secret), deren
+      # Hoergeschmack die gemeinsame Library mitwachsen laesst. Leer = Quelle
+      # aus (der Dienst laeuft dann einfach leer, kein Fehler).
+      - RECOMMEND_LISTENBRAINZ_USERS=${RECOMMEND_LISTENBRAINZ_USERS:-}
+      # Welche Datenquellen: stats (meistgehoerte Songs) + createdfor (Weekly
+      # Jams/Exploration). Default beide.
+      - RECOMMEND_SOURCES=${RECOMMEND_SOURCES:-stats,createdfor}
+      # Zeitraum fuer die stats-Quelle (week|month|quarter|half_yearly|year|all_time).
+      - RECOMMEND_STATS_RANGE=${RECOMMEND_STATS_RANGE:-month}
+      # Optional, nur noch Fallback, wenn RECOMMEND_LISTENBRAINZ_USERS leer ist.
+      - LISTENBRAINZ_USER=${LISTENBRAINZ_USER:-}
+      # Optional, nur zum Anheben des Rate-Limits beim Lesen der Profile - KEIN Passwort.
+      - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
+      - LISTENBRAINZ_KINDS=${LISTENBRAINZ_KINDS:-jams,exploration}
+      - LASTFM_ENABLED=${LASTFM_ENABLED:-0}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - LASTFM_MODE=${LASTFM_MODE:-similar}
+      - LASTFM_USER=${LASTFM_USER:-}
+      - LASTFM_SEEDS=${LASTFM_SEEDS:-}
+      - RECOMMEND_LIMIT=${RECOMMEND_LIMIT:-100}
+      - HTTP_TIMEOUT=${RECOMMEND_HTTP_TIMEOUT:-30}
+      - HTTP_RETRIES=${RECOMMEND_HTTP_RETRIES:-3}
+      - NOTIFY_ONLY_ON_CHANGE=${RECOMMEND_NOTIFY_ONLY_ON_CHANGE:-1}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
+      - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
+      - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      - WRITE_MISSING=${WRITE_MISSING:-1}
+      - INTERVAL_HOURS=${RECOMMEND_INTERVAL_HOURS:-24}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - MUSIC_DIR=/music/Music
+      - CHARTS_DIR=/charts
+      - STATUS_DIR=/charts/.charts-status
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_RECOMMEND:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_RECOMMEND_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      # Music nur noch gescannte Quelle (read-only) - der Dienst schreibt keine
+      # Playlists mehr, nur die Missing-Liste nach /charts.
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      # Texte aendern = Datei editieren + Container-Restart (kein Rebuild).
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-digest ─ taegliche Zusammenfassung neuer Songs ────────────────
+  # Schickt einmal taeglich (Default 09:00) eine Pushover-Zusammenfassung der am
+  # Vortag neu in die Library einsortierten Songs, gruppiert nach Quelle.
+  # Datengrundlage: das von charts-import gefuehrte Import-Log (.charts-imported-
+  # log.jsonl im Charts-Ordner) - vertrauenswuerdig, keine mtime-Heuristik.
+  # Manuell jederzeit ausloesbar: docker exec charts-digest python -m app.main --now
+  charts-digest:
+    build: ./charts-digest
+    image: charts-digest:latest
+    container_name: charts-digest
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - DIGEST_HOUR=${DIGEST_HOUR:-9}
+      - DIGEST_MINUTE=${DIGEST_MINUTE:-0}
+      - DIGEST_WINDOW_HOURS=${DIGEST_WINDOW_HOURS:-24}
+      - MAX_PER_SOURCE=${DIGEST_MAX_PER_SOURCE:-100}
+      - NOTIFY_WHEN_EMPTY=${DIGEST_NOTIFY_WHEN_EMPTY:-0}
+      - LOG_RETENTION_DAYS=${DIGEST_LOG_RETENTION_DAYS:-7}
+      - RUN_ON_START=${DIGEST_RUN_ON_START:-0}
+      - CHARTS_DIR=/charts
+      - STATUS_DIR=/charts/.charts-status
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_DIGEST:-magic}
+      - PUSHOVER_ENABLED=${PUSHOVER_DIGEST_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      # Nur der Charts-Ordner (Import-Log + Status). Kein Music-Mount noetig.
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-flashback ─ Rotation von FLASHBACK FM nachladen ───────────────
+  # Download-only (keine Playlists): liest die "zuletzt gespielt"-Rotation der
+  # FLASHBACK-FM-Dekaden-Channels (GraphQL, oeffentlich) und laesst die
+  # gemeinsame Library mitwachsen. Dekaden-Anzeige via Navidrome Smart Playlists.
+  charts-flashback:
+    build: ./charts-flashback
+    image: charts-flashback:latest
+    container_name: charts-flashback
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      # An/Aus-Schalter (true/false, Default true). false = Dienst pausieren
+      # (Container bleibt, kein Fehler, Status idle). Bei true zusaetzlich
+      # FLASHBACK_HASH noetig - sonst bleibt der Dienst ebenfalls idle.
+      - FLASHBACK_ENABLED=${FLASHBACK_ENABLED:-true}
+      # Persisted-Query-Hash der LastPlayed-Query (oeffentlich, kein Secret).
+      # Kann sich aendern, wenn FLASHBACK FM seine App neu baut -> dann aus dem
+      # Browser-Netzwerktab neu holen. Leer = Dienst laeuft leer (kein Fehler).
+      - FLASHBACK_HASH=${FLASHBACK_HASH:-}
+      # Streams (streamName). Nur der Hauptstream flashbackfm.ffm fuehrt eine
+      # played-Historie (ueber alle Dekaden gemischt).
+      - FLASHBACK_CHANNELS=${FLASHBACK_CHANNELS:-flashbackfm.ffm}
+      - FLASHBACK_PLAYED_LIMIT=${FLASHBACK_PLAYED_LIMIT:-50}
+      - FLASHBACK_LIMIT=${FLASHBACK_LIMIT:-50}
+      - INTERVAL_HOURS=${FLASHBACK_INTERVAL_HOURS:-2}
+      # MusicBrainz-Jahr-Aufloesung (Hybrid; Fallback = Channel-Dekade).
+      - MB_ENABLED=${MB_ENABLED:-1}
+      - MB_USER_AGENT=${MB_USER_AGENT:-charts-flashback/1.0 (self-hosted)}
+      - MB_RATE_SLEEP=${MB_RATE_SLEEP:-1.1}
+      - MB_SCORE_MIN=${MB_SCORE_MIN:-90}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
+      - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
+      - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      - WRITE_MISSING=${WRITE_MISSING:-1}
+      - HTTP_TIMEOUT=${FLASHBACK_HTTP_TIMEOUT:-30}
+      - HTTP_RETRIES=${FLASHBACK_HTTP_RETRIES:-3}
+      - NOTIFY_ONLY_ON_CHANGE=${FLASHBACK_NOTIFY_ONLY_ON_CHANGE:-1}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - MUSIC_DIR=/music/Music
+      - CHARTS_DIR=/charts
+      - STATUS_DIR=/charts/.charts-status
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_FLASHBACK:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_FLASHBACK_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-upgrade ─ Low-Bitrate-Songs durch bessere ersetzen ────────────
+  charts-upgrade:
+    build: ./charts-upgrade
+    image: charts-upgrade:latest
+    container_name: charts-upgrade
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    # Erst starten, wenn slskd wirklich bereit ist.
+    depends_on:
+      slskd:
+        condition: service_healthy
+    environment:
+      - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+      - SLSKD_URL_BASE=${SLSKD_URL_BASE:-/}
+      - MUSIC_DIR=/music/Music
+      - BAD_BITRATE=${BAD_BITRATE:-256}
+      - CHECK_UPSAMPLED=${CHECK_UPSAMPLED:-1}
+      - REJECT_UPSAMPLED_MIN_BITRATE=${REJECT_UPSAMPLED_MIN_BITRATE:-256}
+      - CUTOFF_TOLERANCE_KHZ=${CUTOFF_TOLERANCE_KHZ:-2.0}
+      - MIN_BITRATE=${MIN_BITRATE:-256}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-80}
+      - REQUIRE_FREE_SLOT=${REQUIRE_FREE_SLOT:-1}
+      - REJECT_COMPILATIONS=${REJECT_COMPILATIONS:-1}
+      - EXCLUDE_KEYWORDS=${EXCLUDE_KEYWORDS:-}
+      - SKIP_COMPILATIONS=${SKIP_COMPILATIONS:-1}
+      - MAX_PER_RUN=${MAX_PER_RUN:-10}
+      - MAX_SCAN_PER_RUN=${MAX_SCAN_PER_RUN:-200}
+      - DRY_RUN=${UPGRADE_DRY_RUN:-1}
+      - SEARCH_TIMEOUT_MS=${SEARCH_TIMEOUT_MS:-15000}
+      - SEARCH_WAIT_SECONDS=${SEARCH_WAIT_SECONDS:-25}
+      - INTERVAL_MINUTES=${UPGRADE_INTERVAL_MINUTES:-1440}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - STATE_FILE=${UPGRADE_STATE_FILE:-/charts/.charts-upgrade-state.json}
+      # Fest auf den /charts-Mount dieses Dienstes (siehe charts-download).
+      - MANIFEST_FILE=/charts/.charts-manifest.json
+      - STATUS_DIR=/charts/.charts-status
+      - SOURCE_LABEL=${UPGRADE_SOURCE_LABEL:-upgrade}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_UPGRADE:-cosmic}
+      - PUSHOVER_ENABLED=${PUSHOVER_UPGRADE_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-songrequest ─ Web-UI zum manuellen Anfordern ──────────────────
+  charts-songrequest:
+    build: ./charts-songrequest
+    image: charts-songrequest:latest
+    container_name: charts-songrequest
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    # Erst starten, wenn slskd wirklich bereit ist.
+    depends_on:
+      slskd:
+        condition: service_healthy
+    environment:
+      - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+      - SLSKD_URL_BASE=${SLSKD_URL_BASE:-/}
+      - MIN_BITRATE=${MIN_BITRATE:-256}
+      - MATCH_THRESHOLD=${SONGREQUEST_MATCH_THRESHOLD:-80}
+      - REQUIRE_FREE_SLOT=${REQUIRE_FREE_SLOT:-1}
+      - EXCLUDE_KEYWORDS=${EXCLUDE_KEYWORDS:-}
+      - REJECT_COMPILATIONS=${REJECT_COMPILATIONS:-1}
+      - SEARCH_TIMEOUT_MS=${SEARCH_TIMEOUT_MS:-15000}
+      - SEARCH_WAIT_SECONDS=${SEARCH_WAIT_SECONDS:-25}
+      - MUSIC_DIR=/music/Music
+      # Fest auf den /charts-Mount dieses Dienstes (siehe charts-download).
+      - MANIFEST_FILE=/charts/.charts-manifest.json
+      - STATUS_DIR=/charts/.charts-status
+      - MANUAL_SOURCE_LABEL=${MANUAL_SOURCE_LABEL:-manuell}
+      # Mehrbenutzer-Login: SONGREQUEST_USERS (user1:pass1,user2:pass2).
+      - SONGREQUEST_USERS=${SONGREQUEST_USERS:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_SONGREQUEST:-magic}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Pushover-Geraet pro User (user1:Geraet1,user2:Geraet2). Matcht auf den
+      # Login-Benutzernamen. Nur gelistete User bekommen beim Import ihres
+      # manuell angeforderten Songs eine Verfuegbarkeits-Meldung an ihr Geraet.
+      # Nicht gelistet / leer -> keine Meldung.
+      - USER_PUSHOVER_DEVICES=${USER_PUSHOVER_DEVICES:-}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    ports:
+      - "${SONGREQUEST_PORT:-5056}:5056"
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
+  # ── charts-watchdog ─ Zustands-Monitoring + Pushover-Alarm ───────────────
+  # Ueberwacht ALLE Container des Stacks ueber die Docker-Engine und schickt
+  # eine Pushover-Meldung, wenn einer unhealthy wird, in einer Neustart-
+  # Schleife haengt oder unerwartet stoppt (und wenn er sich erholt). Braucht
+  # nur den Docker-Socket (read-only) - kein eigenes Image/Build.
+  charts-watchdog:
+    image: docker:28-cli
+    container_name: charts-watchdog
+    restart: unless-stopped
+    # Laeuft als unprivilegierter User (youruser) - KEIN Socket-Mount, KEIN root.
+    # Der Zugriff auf die Docker-Engine geht ausschliesslich read-only ueber
+    # den charts-docker-proxy (DOCKER_HOST). Der Watchdog liest nur Zustaende.
+    user: "${PUID:-1027}:${PGID:-100}"
+    depends_on:
+      - charts-docker-proxy
+    environment:
+      - DOCKER_HOST=tcp://charts-docker-proxy:2375
+      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
+      - WATCH_INTERVAL_SECONDS=${WATCH_INTERVAL_SECONDS:-30}
+      # Entprellung/Erholung/Cooldown - MUESSEN hier durchgereicht werden
+      # (watch.sh liest sie, aber der Dienst hat bewusst kein env_file: .env).
+      - WATCH_DEBOUNCE_POLLS=${WATCH_DEBOUNCE_POLLS:-2}
+      - WATCH_RECOVER_POLLS=${WATCH_RECOVER_POLLS:-3}
+      - WATCH_COOLDOWN_SECONDS=${WATCH_COOLDOWN_SECONDS:-1800}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_WATCHDOG:-siren}
+      - PUSHOVER_ENABLED=${PUSHOVER_WATCHDOG_ENABLED:-1}
+      - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
+      # Erreichbarkeits-Checks der externen/abhaengigen Dienste (gleiche
+      # Kriterien wie das Dashboard). SLSKD_API_KEY wie im restlichen Stack mit
+      # :?-Guard (slskd ist Pflichtbestandteil); Lidarr/Last.fm optional (leer
+      # -> nicht ueberwacht). WATCH_EXTERNAL_DEBOUNCE_SECONDS Default 600 = 10min.
+      - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+      - LIDARR_URL=${LIDARR_URL:-}
+      - LIDARR_API_KEY=${LIDARR_API_KEY:-}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - WATCH_EXTERNAL_DEBOUNCE_SECONDS=${WATCH_EXTERNAL_DEBOUNCE_SECONDS:-600}
+      - TZ=${TZ:-Europe/Zurich}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+    volumes:
+      # Nur das Monitoring-Skript read-only einhaengen (kein Build noetig).
+      - ./charts-watchdog/watch.sh:/watch.sh:ro
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; t() liest sie dort.
+      - ./lang:/lang:ro
+    entrypoint: ["/bin/sh", "/watch.sh"]
+    # KEIN env_file: das docker:cli-Image braucht nur die paar Variablen oben;
+    # ein env_file mit MUSIC_ROOT etc. wuerde hier nur unnoetig Werte einziehen.
+
+  # ── charts-dashboard ─ Status-UI (Web) ───────────────────────────────────
+  # Zeigt auf einen Blick: laufen alle Container, sind slskd/Lidarr/Pushover
+  # gesund, was wurde zuletzt verarbeitet (exakte Lauf-Statistik aus den
+  # .charts-status/-JSONs) und wie voll sind Charts-Share/Quarantaene.
+  # Passwortgeschuetzt (eigener Login). Liest Container-Zustaende NUR read-only
+  # ueber den charts-docker-proxy (kein eigener Socket-Mount, kein root).
+  charts-dashboard:
+    build: ./charts-dashboard
+    image: charts-dashboard:latest
+    container_name: charts-dashboard
+    restart: unless-stopped
+    # Unprivilegiert (youruser). Docker-Zugriff ausschliesslich read-only ueber
+    # den Proxy (DOCKER_HOST). Die Python-docker-SDK nutzt DOCKER_HOST
+    # automatisch - kein Socket-Mount noetig.
+    user: "${PUID:-1027}:${PGID:-100}"
+    depends_on:
+      - charts-docker-proxy
+    environment:
+      - DOCKER_HOST=tcp://charts-docker-proxy:2375
+      - STATUS_DIR=/charts/.charts-status
+      - CHARTS_DIR=/charts
+      - MUSIC_DIR=/music/Music
+      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
+      - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
+      - LIDARR_URL=${LIDARR_URL:-}
+      - LIDARR_API_KEY=${LIDARR_API_KEY:-}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      # Fuer den Last.fm-Live-Check (optional; leer -> Last.fm-Kachel muted).
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      # Fuer den FLASHBACK-FM-Live-Check (toter Hash -> rote Kachel).
+      - FLASHBACK_HASH=${FLASHBACK_HASH:-}
+      - DASHBOARD_REFRESH_SECONDS=${DASHBOARD_REFRESH_SECONDS:-15}
+      - DASHBOARD_STATS_TTL=${DASHBOARD_STATS_TTL:-300}
+      - DASHBOARD_LIBRARY_TTL=${DASHBOARD_LIBRARY_TTL:-86400}
+      # Cache-TTL der Deezer-Genre-Tabelle im Quellen-Finder (Sekunden).
+      # Refresh beim ersten Aufruf nach Ablauf (kein Cronjob). Default 24 h.
+      - DASHBOARD_GENRE_CACHE_TTL=${DASHBOARD_GENRE_CACHE_TTL:-86400}
+      # Cache-TTL der externen Live-Erreichbarkeits-Checks (Sekunden), ent-
+      # koppelt vom 15s-Poll (sonst 5 WAN-Requests + Pushover-Auth je Refresh).
+      - DASHBOARD_EXTERNAL_TTL=${DASHBOARD_EXTERNAL_TTL:-120}
+      # Eigener Dashboard-Login: Benutzer admin + DASHBOARD_PASSWORD. Ist
+      # DASHBOARD_PASSWORD leer, faellt es auf APP_USERS/APP_PASSWORD zurueck.
+      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
+      - APP_USERS=${APP_USERS:-}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - APP_PASSWORD_USERNAME=${APP_PASSWORD_USERNAME:-youruser}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # Sprache fuer UI/Logs (leer = Englisch, de/fr verfuegbar). Ein Schalter
+      # fuer den ganzen Stack, kein eigener UI-Umschalter.
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      # Dezenter Spenden-Footer (PayPal/Revolut). Default an; mit 0 abschaltbar.
+      - DASHBOARD_DONATE=${DASHBOARD_DONATE:-1}
+      - TZ=${TZ:-Europe/Zurich}
+    ports:
+      - "${DASHBOARD_PORT:-5057}:5057"
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env

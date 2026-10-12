@@ -1,0 +1,13 @@
+{
+  "name": "Song Request",
+  "short_name": "Songs",
+  "description": "Songs suchen, laden und in die Library holen",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d18",
+  "theme_color": "#7b4397",
+  "icons": [
+    { "src": "/static/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

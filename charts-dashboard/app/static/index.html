@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="title">charts-dashboard</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css?v=flow22">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="brand-badge">📊</span>
+    <span class="brand-text">
+      <span class="brand-title">charts-dashboard</span>
+      <span class="brand-sub" data-i18n="brand.subtitle">Charts-Automatik · Status &amp; Verbindungen</span>
+    </span>
+  </div>
+  <div class="meta">
+    <span class="live"><span class="live-dot"></span><span id="updated" data-i18n="updated.loading">lädt…</span></span>
+    <a class="logout" href="/logout" data-i18n="logout">⎋ Abmelden</a>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2 data-i18n="section.services">⚙️ Dienste</h2>
+    <div id="services"></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="section.connections">🔌 Verbindungen</h2>
+    <div id="connections" class="grid"></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="section.storage">💾 Speicher &amp; Bestand</h2>
+    <div id="storage" class="grid"></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="section.finder">🔎 Quellen-Finder (für charts-sync)</h2>
+    <div class="finder-hint" data-i18n-html="finder.hint">Treffer liefern ein fertiges Snippet. Füge es in die
+      <code>sources</code>-Liste der gewünschten Playlist ein – entweder in die
+      <code>charts.json</code> (falls <code>CHARTS_FILE</code> genutzt wird) oder
+      in die <code>CHARTS</code>-Variable der <code>.env</code>. Details in
+      CHARTS-SOURCES.md.</div>
+    <div class="finder">
+      <!-- Deezer-Playlist-Suche -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_playlist">Deezer-Playlist suchen</h3>
+        <form id="dz-pl-form">
+          <input id="dz-pl-q" data-i18n-ph="finder.ph.deezer_playlist" placeholder="z.B. pop, country, schweiz">
+          <button type="submit" data-i18n="finder.btn.search">Suchen</button>
+        </form>
+        <div id="dz-pl-results"></div>
+      </div>
+      <!-- Deezer-Kuenstler-Suche (fuer type:artist) -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_artist">Deezer-Künstler suchen</h3>
+        <form id="dz-ar-form">
+          <input id="dz-ar-q" data-i18n-ph="finder.ph.deezer_artist" placeholder="z.B. Gölä, Polo Hofer, Bligg">
+          <button type="submit" data-i18n="finder.btn.search">Suchen</button>
+        </form>
+        <div id="dz-ar-results"></div>
+      </div>
+      <!-- Last.fm-Tag-Suche (nur wenn Key gesetzt, sonst ausgegraut) -->
+      <div class="finder-box" id="lf-tag-box">
+        <h3 data-i18n="finder.box.lastfm_tag">Last.fm-Tag prüfen</h3>
+        <div id="lf-chips" class="chips"></div>
+        <form id="lf-tag-form">
+          <input id="lf-tag-q" data-i18n-ph="finder.ph.lastfm_tag" placeholder="z.B. pop, 80s, country">
+          <button type="submit" data-i18n="finder.btn.check">Prüfen</button>
+        </form>
+        <div id="lf-tag-results"></div>
+      </div>
+      <!-- Deezer-Genre-Tabelle (live, täglich; Fallback statisch) -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_genres">Deezer-Genres</h3>
+        <table id="dz-genres">
+          <thead><tr><th data-i18n="finder.col.id">ID</th><th data-i18n="finder.col.genre">Genre</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+{{DONATE}}
+<script>
+const REFRESH = {{REFRESH}};
+// Injected i18n subset (dashboard.ui.* re-based) + client translator. Mirrors
+// the Python loader's {name} substitution (split/join, not regex) and its
+// missing-key -> key-name fallback. English fallback is already merged in by
+// the server before injection.
+const I18N = {{I18N}};
+function t(key, params) {
+  let s = I18N[key];
+  if (s === undefined) return key;
+  if (params) for (const k in params)
+    s = s.split("{" + k + "}").join(String(params[k]));
+  return s;
+}
+// One-shot static-markup sweep: textContent for [data-i18n], placeholder for
+// [data-i18n-ph], innerHTML for [data-i18n-html] (nodes carrying inert markup
+// like the finder hint's <code> and the donate label). Runs once at the end of
+// this script, independent of the first /api/status poll.
+function applyStaticI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.placeholder = t(el.dataset.i18nPh);
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+}
+
+function fmtBytes(b) {
+  if (b == null) return "–";
+  const u = ["B","KB","MB","GB","TB"];
+  let i = 0, n = b;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 10 || i === 0 ? 0 : 1) + " " + u[i];
+}
+
+function ago(iso) {
+  if (!iso) return t("time.never");
+  const ts = Date.parse(iso);
+  if (isNaN(ts)) return iso;
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return s + t("time.unit.s");
+  if (s < 3600) return Math.floor(s/60) + t("time.unit.min");
+  if (s < 86400) return Math.floor(s/3600) + t("time.unit.h");
+  return Math.floor(s/86400) + t("time.unit.d");
+}
+
+function tile(cls, title, lines) {
+  const body = lines.map(l => `<div class="line">${l}</div>`).join("");
+  return `<div class="tile ${cls}"><div class="t-title">${title}</div>${body}</div>`;
+}
+
+// Zeichnet die Flow-Verbindungen als SVG-Pfade zwischen den ECHTEN Kachel-
+// Positionen (getBoundingClientRect). Dadurch stimmen die Linien in jedem
+// Layout - Desktop, iPad, Handy - und werden bei resize/orientation neu
+// gezeichnet. Kanten: jede Quelle + manuell -> jeder Beschaffer; jeder
+// Beschaffer -> slskd; slskd -> import; import -> navidrome.
+function drawFlowLines() {
+  const hub = document.querySelector(".flow-hub");
+  const svg = hub && hub.querySelector(".flow-svg");
+  if (!hub || !svg) return;
+  const box = hub.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+  svg.setAttribute("width", box.width);
+  svg.setAttribute("height", box.height);
+
+  const cellRect = (name) => {
+    const el = hub.querySelector(`[data-cell="${name}"] .tile`) ||
+               hub.querySelector(`[data-cell="${name}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x - box.x, y: r.y - box.y, w: r.width, h: r.height };
+  };
+  // Verbindet zwei Kacheln mit der jeweils NAECHSTEN Kantenpaarung (nicht
+  // immer rechts->links): so laufen die Linien kurz und sauber, egal wohin
+  // eine Kachel gezogen wurde. Pfeilspitze am Ziel (marker).
+  // fanIndex/fanTotal: muenden mehrere Pfeile in dieselbe Box, werden ihre
+  // Eintrittspunkte entlang der Zielkante verteilt (nebeneinander, nicht
+  // uebereinander). offset = Position in [-1..1] um die Kantenmitte.
+  const edge = (fromName, toName, fanIndex, fanTotal) => {
+    const a = cellRect(fromName), b = cellRect(toName);
+    if (!a || !b) return "";
+    const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+    const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const dx = bc.x - ac.x, dy = bc.y - ac.y;
+    // Faecherung: -1..1 (ein Pfeil -> 0).
+    const spread = (fanTotal && fanTotal > 1)
+      ? ((fanIndex - (fanTotal - 1) / 2) / ((fanTotal - 1) / 2)) : 0;
+    let x1, y1, x2, y2, horiz;
+    if (Math.abs(dx) >= Math.abs(dy)) {   // ueberwiegend horizontal
+      horiz = true;
+      x1 = dx >= 0 ? a.x + a.w : a.x; y1 = ac.y;
+      x2 = dx >= 0 ? b.x : b.x + b.w;
+      y2 = bc.y + spread * (b.h * 0.33);   // Eintritt entlang der vertikalen Kante verteilen
+    } else {                               // ueberwiegend vertikal
+      horiz = false;
+      x1 = ac.x; y1 = dy >= 0 ? a.y + a.h : a.y;
+      x2 = bc.x + spread * (b.w * 0.33);   // Eintritt entlang der horizontalen Kante verteilen
+      y2 = dy >= 0 ? b.y : b.y + b.h;
+    }
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const c = horiz ? `C ${mx} ${y1}, ${mx} ${y2},` : `C ${x1} ${my}, ${x2} ${my},`;
+    return `<path d="M ${x1} ${y1} ${c} ${x2} ${y2}" marker-end="url(#flow-ah)"/>`;
+  };
+
+  const sources = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-recommend", "charts-songrequest"];
+  const getters = ["charts-download", "charts-upgrade"];
+  // Pfeilspitze: klein, gefuellt, in der Linienfarbe (dezent).
+  let paths = `<defs><marker id="flow-ah" viewBox="0 0 10 10" refX="8" refY="5" ` +
+    `markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">` +
+    `<path d="M0,0 L10,5 L0,10 z" fill="#5a8fe0"/></marker></defs>`;
+  // Quellen -> Beschaffer (download). Eintrittspunkte auffaechern, damit die
+  // Pfeile nebeneinander in download muenden statt uebereinander.
+  const activeSources = sources.filter(cellRect);
+  activeSources.forEach((s, i) => { paths += edge(s, "charts-download", i, activeSources.length); });
+  // Beschaffer -> slskd (zwei Pfeile -> auffaechern).
+  const activeGetters = getters.filter(cellRect);
+  activeGetters.forEach((g, i) => { paths += edge(g, "slskd", i, activeGetters.length); });
+  // slskd -> import -> navidrome (je einzeln).
+  paths += edge("slskd", "charts-import");
+  paths += edge("charts-import", "navidrome");
+
+  svg.innerHTML = paths;
+}
+window.addEventListener("resize", () => requestAnimationFrame(drawFlowLines));
+window.addEventListener("orientationchange", () => requestAnimationFrame(drawFlowLines));
+
+// Merkt sich die manuell verschobenen Positionen pro Kachel (nur fuer diese
+// Session - ein Reload setzt zurueck). Key = data-cell-Name.
+const _dragPos = {};
+
+// Aufgeklappt-Zustand pro Kachel, damit die 15s-Aktualisierung (render baut die
+// Kacheln neu) eine offene Box NICHT wieder zuklappt. Key = data-cell-Name.
+const _openState = {};
+// Wie lange eine aufgeklappte Box offen bleibt, bevor sie automatisch schliesst
+// (nur wenn die Maus NICHT drueber ist). Auf dem Handy (kein Hover) immer nach
+// dieser Zeit.
+const AUTO_CLOSE_MS = 8000;
+
+// Macht die Flow-Kacheln mit der Maus/Touch verschiebbar. Verschiebung ueber
+// CSS-transform (das Grundlayout bleibt erhalten), nach jedem Move werden die
+// Verbindungslinien neu gezeichnet, damit sie an den Kacheln kleben. Eine
+// kleine Bewegung gilt als Klick (Aufklappen), eine groessere als Drag.
+function enableDrag() {
+  const hub = document.querySelector(".flow-hub");
+  if (!hub) return;
+  // Gemerkte Positionen nach einem Re-Render wieder anwenden.
+  hub.querySelectorAll(".flow-cell").forEach(cell => {
+    const name = cell.getAttribute("data-cell");
+    const p = name && _dragPos[name];
+    if (p) cell.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  });
+
+  const isNarrow = () => window.matchMedia("(max-width: 760px)").matches;
+
+  hub.querySelectorAll(".flow-cell").forEach(cell => {
+    if (cell._dragBound) return;      // nur einmal binden
+    cell._dragBound = true;
+    const name = cell.getAttribute("data-cell");
+
+    // --- Aufklappen + Auto-Close ------------------------------------------
+    // Beim Aufklappen offen lassen und erst nach AUTO_CLOSE_MS automatisch
+    // schliessen - aber NUR, wenn die Maus nicht ueber der Kachel ist. Solange
+    // der Cursor drueber liegt, bleibt sie offen; verlaesst er sie, startet der
+    // Timer (neu). Auf dem Handy (kein Hover) schliesst sie nach der Zeit.
+    // Eine Zelle kann MEHRERE Kacheln enthalten (Report-Zone: watchdog/
+    // dashboard/digest in EINER flow-cell). Deshalb arbeiten Auf-/Zuklappen,
+    // Hover und Auto-Close pro KACHEL (data-svc), nicht pro Zelle - sonst
+    // klappt ein Klick auf eine der gestapelten Kacheln immer die erste auf.
+    const tiles = Array.from(cell.querySelectorAll(".tile.svc"));
+    if (tiles.length) {
+      const svcName = (t) => t.getAttribute("data-svc") || name;
+      const scheduleClose = (t) => {
+        clearTimeout(t._closeTimer);
+        // slskd ist der zentrale Hub: bleibt offen, bis der User SELBST klickt -
+        // KEIN Auto-Close (auch nicht nach Hover/mouseleave).
+        if (svcName(t) === "slskd") return;
+        // Nicht schliessen, solange die Maus drueber ist (Desktop).
+        if (t._hover) return;
+        t._closeTimer = setTimeout(() => {
+          if (!t._hover) closeTile(t);
+        }, AUTO_CLOSE_MS);
+      };
+      const openTile = (t) => {
+        t.classList.add("open");
+        _openState[svcName(t)] = true;    // ueber Re-Render hinweg merken
+        scheduleClose(t);
+        requestAnimationFrame(drawFlowLines);
+      };
+      const closeTile = (t) => {
+        t.classList.remove("open");
+        _openState[svcName(t)] = false;
+        clearTimeout(t._closeTimer);
+        requestAnimationFrame(drawFlowLines);
+      };
+      // Fuer die Drag-/Klick-Logik: die konkret angeklickte Kachel ermitteln.
+      cell._toggleTile = (target) => {
+        const t = target && target.closest(".tile.svc");
+        if (!t || !cell.contains(t)) return;
+        if (t.classList.contains("open")) closeTile(t);
+        else openTile(t);
+      };
+
+      tiles.forEach((tile) => {
+        // Hover haelt offen (Desktop); Verlassen startet den Close-Timer neu.
+        tile.addEventListener("mouseenter", () => {
+          tile._hover = true;
+          clearTimeout(tile._closeTimer);
+        });
+        tile.addEventListener("mouseleave", () => {
+          tile._hover = false;
+          if (tile.classList.contains("open")) scheduleClose(tile);
+        });
+
+        // War die Box schon offen (aus _openState via Re-Render), den Auto-
+        // Close-Timer scharf machen. Fuer slskd ist scheduleClose ein No-op
+        // (Hub bleibt offen, bis der User selbst klickt) - siehe oben.
+        if (tile.classList.contains("open")) scheduleClose(tile);
+      });
+    }
+
+    // --- Handy: nur Tap zum Auf-/Zuklappen, KEIN Drag (natives Scrollen frei).
+    if (isNarrow()) {
+      if (tiles.length) {
+        cell.addEventListener("click", (e) => {
+          if (e.target.closest("a, button")) return;
+          cell._toggleTile(e.target);
+        });
+      }
+      return;
+    }
+
+    // --- Desktop: Drag + Klick-Aufklappen ---------------------------------
+    cell.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;        // nur primaere Taste
+      if (e.pointerType !== "mouse") return; // Touch/Pen: kein Drag (nur click)
+      const downTarget = e.target;       // welche Kachel wurde angeklickt
+      const start = { x: e.clientX, y: e.clientY };
+      const base = _dragPos[name] ? { ..._dragPos[name] } : { x: 0, y: 0 };
+      let moved = false;
+      cell.setPointerCapture(e.pointerId);
+      cell.classList.add("dragging");
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 5) return; // Klick-Schwelle
+        moved = true;
+        const nx = base.x + dx, ny = base.y + dy;
+        _dragPos[name] = { x: nx, y: ny };
+        cell.style.transform = `translate(${nx}px, ${ny}px)`;
+        requestAnimationFrame(drawFlowLines);
+      };
+      const onUp = () => {
+        cell.releasePointerCapture(e.pointerId);
+        cell.classList.remove("dragging");
+        cell.removeEventListener("pointermove", onMove);
+        cell.removeEventListener("pointerup", onUp);
+        // KEINE Bewegung = Klick -> die ANGEKLICKTE Kachel auf/zuklappen
+        // (Pointer-Capture wuerde ein normales click-Event verschlucken, darum
+        // hier selbst togglen). downTarget zeigt auf die konkrete Kachel - so
+        // trifft es im Report-Stapel die richtige, nicht immer die erste.
+        if (!moved && cell._toggleTile) cell._toggleTile(downTarget);
+        requestAnimationFrame(drawFlowLines);
+      };
+      cell.addEventListener("pointermove", onMove);
+      cell.addEventListener("pointerup", onUp);
+    });
+  });
+}
+
+function render(d) {
+  document.getElementById("updated").textContent =
+    t("updated.refreshed", {time: new Date().toLocaleTimeString()});
+
+  // --- Verbindungen (EINHEITLICHE Uebersicht aller externen/abhaengigen
+  //     Dienste mit konsistenter Farbsemantik) ---
+  // Farbsemantik ueber die vorhandenen tile(cls)-Klassen:
+  //   ok    (gruen)  = erreichbar / gueltig
+  //   err   (rot)    = konfiguriert, aber nicht erreichbar / ungueltig
+  //   muted (grau)   = nicht konfiguriert
+  //   warn  (gelb)   = erreichbar, aber eingeschraenkt (z.B. iTunes gedrosselt)
+  // So sieht man auf einen Blick ALLE moeglichen Verbindungen UND ihren Zustand.
+  const ext = d.external || {};
+  const c = [];
+
+  // slskd (LAN, eigener Live-Check d.slskd).
+  const sl = d.slskd || {};
+  c.push(tile(sl.ok ? "ok" : "err", t("tile.title.slskd"), [
+    sl.ok ? t("tile.slskd.connected") : t("tile.slskd.disconnected"),
+    t("tile.slskd.status", {state: sl.state || "?"}),
+    sl.downloads_active != null ? t("tile.slskd.active_downloads", {n: sl.downloads_active}) : "",
+    sl.detail || "",
+  ].filter(Boolean)));
+
+  // Lidarr (LAN, eigener Live-Check d.lidarr; optional -> muted ohne Config).
+  const li = d.lidarr || {};
+  c.push(tile(!li.configured ? "muted" : (li.ok ? "ok" : "err"), t("tile.title.lidarr"), [
+    !li.configured ? t("tile.not_configured") : (li.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    li.detail || "",
+  ].filter(Boolean)));
+
+  // ListenBrainz (WAN, Live-Ping). Heilt charts-recommend-Rot -> Gelb.
+  const lb = ext.listenbrainz || {};
+  c.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
+    lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    lb.detail || "",
+  ].filter(Boolean)));
+
+  // Deezer (WAN, Live-Ping). Heilt charts-sync-Rot -> Gelb.
+  const dz = ext.deezer || {};
+  c.push(tile(dz.ok ? "ok" : "err", t("tile.title.deezer"), [
+    dz.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    dz.detail || "",
+  ].filter(Boolean)));
+
+  // FLASHBACK FM (WAN, GraphQL-Live-Check). Heilt charts-flashback-Rot -> Gelb;
+  // ein toter persisted-query-Hash -> rot (dann FLASHBACK_HASH neu holen).
+  const fb = ext.flashback || {};
+  c.push(tile(!fb.configured ? "muted" : (fb.ok ? "ok" : "err"), t("tile.title.flashback"), [
+    !fb.configured ? t("tile.flashback.no_hash") : (fb.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    fb.detail || "",
+  ].filter(Boolean)));
+
+  // Last.fm (WAN, Live-Ping; braucht API-Key). Ohne Key -> muted, nie rot.
+  const lf = ext.lastfm || {};
+  c.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [
+    !lf.configured ? t("tile.lastfm.no_api_key") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    lf.detail || "",
+  ].filter(Boolean)));
+
+  // iTunes (WAN, Live-Ping; nur Info fuer Cover). NIE err: erreichbar -> ok,
+  // gedrosselt (429/403) aber erreichbar -> warn, nicht erreichbar -> muted.
+  const it = ext.itunes || {};
+  let itCls = "muted";
+  if (it.ok) itCls = it.throttled ? "warn" : "ok";
+  c.push(tile(itCls, t("tile.title.itunes"), [
+    it.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    it.detail || "",
+  ].filter(Boolean)));
+
+  // Pushover (WAN, echter validate-Call d.external.pushover statt nur Config-
+  // Flag). ok=gruen (gueltig), err=rot (ungueltig), muted=grau (nicht konf.).
+  const pu = ext.pushover || {};
+  // pu.detail is intentionally DROPPED here: the client already renders the
+  // verdict (valid/invalid), so showing the server detail too would double the
+  // sentence in the tile (see collector.py comment).
+  c.push(tile(!pu.configured ? "muted" : (pu.ok ? "ok" : "err"), t("tile.title.pushover"), [
+    !pu.configured ? t("tile.pushover.not_configured")
+                   : (pu.ok ? t("tile.pushover.valid") : t("tile.pushover.invalid")),
+  ].filter(Boolean)));
+
+  document.getElementById("connections").innerHTML = c.join("");
+
+  // Dienst -> externe Quelle(n): welche Live-Checks einen gespeicherten
+  // "error" eines Dienstes heilen duerfen. charts-recommend zieht aus
+  // ListenBrainz (+ Last.fm, falls genutzt), charts-sync aus Deezer + Last.fm.
+  // Dienste ohne Zuordnung behalten die alte harte Rot-Regel. iTunes + Pushover
+  // stehen bewusst NICHT hier -> heilen KEIN Dienste-Rot (iTunes = best-effort
+  // Cover, Pushover = Benachrichtigungs-Senke).
+  const EXT_SOURCES = {
+    "charts-recommend": ["listenbrainz", "lastfm"],
+    "charts-sync": ["deezer", "lastfm"],
+    "charts-flashback": ["flashback"],
+  };
+
+  // --- Dienste (Container-Status + Lauf-Statistik) ---
+  const svcEl = document.getElementById("services");
+  // Feste Reihenfolge entlang der Verarbeitungskette (nicht alphabetisch),
+  // damit die Dienste so gelistet sind, wie die Daten durchlaufen.
+  const ORDER = ["slskd", "charts-sync", "charts-hitparade", "charts-flashback",
+                 "charts-download",
+                 "charts-import", "charts-upgrade", "charts-recommend",
+                 "charts-songrequest", "charts-digest", "charts-watchdog",
+                 "charts-dashboard"];
+  // Kurzbeschreibung je Dienst (ein Satz, was er tut).
+  // Kurzbeschreibung je Dienst, uebersetzt (desc.* keys). Der Service-Name
+  // (mit Bindestrichen) wird fuer den Key auf Unterstriche gemappt.
+  const DESC = {
+    "slskd": t("desc.slskd"),
+    "charts-sync": t("desc.charts_sync"),
+    "charts-hitparade": t("desc.charts_hitparade"),
+    "charts-download": t("desc.charts_download"),
+    "charts-import": t("desc.charts_import"),
+    "charts-upgrade": t("desc.charts_upgrade"),
+    "charts-flashback": t("desc.charts_flashback"),
+    "charts-recommend": t("desc.charts_recommend"),
+    "charts-songrequest": t("desc.charts_songrequest"),
+    "charts-digest": t("desc.charts_digest"),
+    "charts-watchdog": t("desc.charts_watchdog"),
+    "charts-dashboard": t("desc.charts_dashboard"),
+  };
+  // Emoji je Dienst - dieselben wie in den Pushover-Titeln, damit Dashboard
+  // und Push konsistent sind. Dienste ohne Eintrag bekommen ein neutrales 🎵.
+  const ICON = {
+    "slskd": "🔽",
+    "charts-sync": "🎵",
+    "charts-hitparade": "🇨🇭",
+    "charts-download": "⬇️",
+    "charts-import": "📥",
+    "charts-upgrade": "⬆️",
+    "charts-flashback": "📻",
+    "charts-recommend": "🎧",
+    "charts-songrequest": "🙋",
+    "charts-digest": "📨",
+    "charts-watchdog": "🐕",
+    "charts-dashboard": "📊",
+  };
+  // Deutsche Labels fuer die kumulativen "gesamt"-Zaehler.
+  const TOTAL_LABEL = {
+    imported: t("total.imported"), enqueued: t("total.enqueued"),
+    upgraded: t("total.upgraded"), rejected: t("total.rejected"),
+    cleaned: t("total.cleaned"), retried: t("total.retried"),
+    requests: t("total.requests"), digests: t("total.digests"),
+  };
+  // Baut die HTML-Kachel fuer EINEN Dienst (Status + Statistik). Ausgelagert,
+  // damit die Dienste als Flow (mit Pfeilen/Stufen) angeordnet werden koennen,
+  // statt als flaches Grid. Gibt "" zurueck, wenn der Dienst gar nicht bekannt
+  // ist (kein Container + kein Status).
+  // Kurzes "was -> wohin"-Label je Dienst (immer sichtbar in der Kachel).
+  const FLOW_LABEL = {
+    "charts-sync": t("flow.charts_sync"),
+    "charts-hitparade": t("flow.charts_hitparade"),
+    "charts-flashback": t("flow.charts_flashback"),
+    "charts-recommend": t("flow.charts_recommend"),
+    "charts-songrequest": t("flow.charts_songrequest"),
+    "charts-download": t("flow.charts_download"),
+    "charts-upgrade": t("flow.charts_upgrade"),
+    "slskd": t("flow.slskd"),
+    "charts-import": t("flow.charts_import"),
+    "charts-digest": t("flow.charts_digest"),
+    "charts-watchdog": t("flow.charts_watchdog"),
+    "charts-dashboard": t("flow.charts_dashboard"),
+  };
+
+  // Baut die Dienste-Kachel: KOMPAKT (Ampel + was→wohin + zuletzt/naechster,
+  // immer sichtbar) + ein aufklappbarer DETAIL-Block (Container-Zustand, letzter
+  // Lauf, message, Gesamtzahlen, Scan-Fortschritt), der per Klick/Tap erscheint.
+  // Gibt "" zurueck, wenn der Dienst gar nicht bekannt ist.
+  function svcTile(name) {
+    const ct = (d.containers || {})[name] || {};
+    const st = (d.services || {})[name] || null;
+    if (!(name in (d.containers || {})) && !st) return "";
+    const isManual = name === "charts-songrequest"; // manueller Einstieg
+
+    // Ampel-/Kachelfarbe. Lauf-Fehler NICHT hart rot, wenn eine zugeordnete,
+    // konfigurierte externe Quelle gerade erreichbar ist (-> gelb "laeuft wieder").
+    let cls = ct.ok ? "ok" : (ct.state === "restarting" ? "warn" : "err");
+    let healLine = "";
+    if (st && st.status === "error") {
+      const sources = EXT_SOURCES[name];
+      if (sources) {
+        const liveOk = sources.some(s => {
+          const chk = ext[s];
+          if (!chk || chk.configured === false) return false;
+          return chk.ok === true;
+        });
+        if (liveOk) {
+          cls = "warn";
+          healLine = `<span class="s-run">${t("svc.heal_recovered")}</span>`;
+        } else {
+          cls = "err";
+          healLine = `<span class="s-err">${t("svc.heal_unreachable")}</span>`;
+        }
+      } else {
+        cls = "err";
+      }
+    }
+    // Deaktiviert/leerer Hash: idle -> grau (muted), NIE rot. Steht bewusst
+    // NACH dem error/Heal-Block, damit kein nachgelagerter Zweig cls wieder
+    // ueberschreibt (ein idle-Dienst durchlaeuft den error-Block ohnehin nicht).
+    if (st && st.status === "idle") cls = "muted";
+
+    // --- KOMPAKT-Zeilen (immer sichtbar) ---
+    const label = (ICON[name] ? ICON[name] + " " : "") + name;
+    const flowLabel = FLOW_LABEL[name] || (DESC[name] || "");
+    // "zuletzt · naechster"-Zeile.
+    let whenLine = "";
+    if (st) {
+      if (st.status === "running") {
+        const since = st.last_run_start ? ago(st.last_run_start) : "";
+        const runTxt = since ? t("svc.running_since", {since}) : t("svc.running");
+        whenLine = `<span class="s-run">${runTxt}</span>`;
+      } else {
+        const parts = [];
+        if (st.last_run_end) parts.push(t("svc.last_run_ago", {ago: ago(st.last_run_end)}));
+        if (st.next_run) parts.push(t("svc.next", {label: nextRunLabel(st.next_run)}));
+        whenLine = parts.join(" · ");
+      }
+    }
+
+    // --- DETAIL-Zeilen (aufklappbar) ---
+    const det = [];
+    let state = ct.state;
+    if (ct.health && ct.health !== "none") state += " / " + ct.health;
+    det.push(t("svc.container", {state}));
+    if (st) {
+      const runCls = st.status === "ok" ? "" : (st.status === "error" ? "s-err" : "s-run");
+      if (st.status !== "running" && st.last_run_end) {
+        det.push(`<span class="${runCls}">` +
+                 t("svc.last_run_line", {ago: ago(st.last_run_end),
+                                         status: st.status ? ` (${st.status})` : ""}) +
+                 "</span>");
+      } else if (st.status !== "running") {
+        det.push(`<span class="muted-txt">${t("svc.no_run_yet")}</span>`);
+      }
+      if (healLine) det.push(healLine);
+      if (st.status === "idle") det.push(`<span class="muted-txt">${t("svc.idle", {message: st.message || t("svc.deactivated")})}</span>`);
+      else if (st.message) det.push(t("svc.message", {message: st.message}));
+      if (st.next_run && st.status !== "running") det.push(t("svc.next_prefix", {label: nextRunLabel(st.next_run)}));
+      if (st.totals) {
+        const tot = Object.entries(st.totals)
+          .filter(([k, v]) => typeof v === "number" && v > 0)
+          .map(([k, v]) => `${v} ${TOTAL_LABEL[k] || k}`)
+          .join(", ");
+        if (tot) det.push(`<span class="muted-txt">${t("svc.totals_prefix", {items: tot})}</span>`);
+      }
+      // charts-upgrade: Scan-Fortschritt (geprueft / gesamt MP3).
+      const cnt = st.counters || {};
+      if (typeof cnt.scan_total === "number" && cnt.scan_total > 0) {
+        const seen = cnt.scan_seen || 0, tot = cnt.scan_total;
+        const pct = Math.min(100, Math.round((seen / tot) * 100));
+        const nf = (n) => n.toLocaleString("de-CH");
+        det.push(
+          `<div class="scan-prog">` +
+          `<div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>` +
+          `<span class="scan-txt">${t("svc.scan_progress", {seen: nf(seen), total: nf(tot), pct})}</span>` +
+          `</div>`);
+      }
+    } else {
+      det.push(`<span class="muted-txt">${t("svc.no_stats")}</span>`);
+    }
+    if (DESC[name]) det.push(`<span class="desc">${DESC[name]}</span>`);
+
+    // charts-upgrade: Mini-Scan-Balken auch in der KOMPAKT-Ansicht.
+    let compactExtra = "";
+    if (st && st.counters && typeof st.counters.scan_total === "number" && st.counters.scan_total > 0) {
+      const pct = Math.min(100, Math.round(((st.counters.scan_seen || 0) / st.counters.scan_total) * 100));
+      compactExtra = `<div class="scan-bar compact"><div class="scan-fill" style="width:${pct}%"></div></div>`;
+    }
+
+    // Report-Zone-Dienste (digest/watchdog/dashboard) im KOMPAKT-Zustand ohne
+    // die "zuletzt · naechster"-Zeile zeigen, damit alle drei Kacheln gleich
+    // hoch sind (sonst macht digests Lauf-Zeile die Box hoeher -> ungleicher
+    // Abstand in der Report-Zone). Die volle Lauf-Info bleibt beim Aufklappen.
+    const REPORT_ZONE = ["charts-digest", "charts-watchdog", "charts-dashboard"];
+    if (REPORT_ZONE.includes(name)) whenLine = "";
+
+    const detailHtml = det.map(l => `<div class="line">${l}</div>`).join("");
+    // "manuell"-Pill oben in der Kachel ueber dem Titel (kompakt, mit Abstand).
+    const manualTag = isManual ? `<div class="svc-manual-tag">${t("svc.manual_tag")}</div>` : "";
+    // data-svc: Anker fuer das SVG-Linien-Overlay (Positionsbestimmung).
+    // Aufklappen wird in enableDrag() gesteuert (Klick ohne Bewegung), damit
+    // Drag und Klick sich nicht in die Quere kommen.
+    // Aufgeklappt-Zustand kommt aus _openState (ueber die 15s-Aktualisierung
+    // hinweg stabil). slskd ist initial offen (zentrale Komponente), aber nur
+    // einmalig als Default - danach gewinnt die User-Interaktion. Hat der User
+    // slskd zugeklappt, bleibt es zu (kein Zwangs-Aufklappen beim Re-Render).
+    if (name === "slskd" && _openState[name] === undefined) _openState[name] = true;
+    const openByDefault = _openState[name] ? " open" : "";
+    return `<div class="tile svc ${cls}${isManual ? ' manual' : ''}${openByDefault}" data-svc="${name}">` +
+      manualTag +
+      `<div class="t-title">${label}<span class="svc-amp"></span></div>` +
+      (flowLabel ? `<div class="line flow-what">${flowLabel}</div>` : "") +
+      (whenLine ? `<div class="line svc-when">${whenLine}</div>` : "") +
+      compactExtra +
+      `<div class="svc-detail">${detailHtml}</div>` +
+      `</div>`;
+  }
+
+  // --- Hub-Layout: slskd ist die ZENTRALE Komponente, durch die alle
+  //     Downloads laufen. Die Dienste werden in Zonen angeordnet (CSS-Grid):
+  //       Quellen -> Beschaffer -> [slskd Hub] -> Import -> Navidrome
+  //     charts-songrequest = manueller Einstieg (gestrichelt markiert).
+  //     watchdog + dashboard stehen als Ueberwachung quer darunter.
+  //     Die Verbindungslinien werden NACH dem Rendern als SVG-Overlay
+  //     gezeichnet (drawFlowLines), damit sie sich an die echten Kachel-
+  //     Positionen anpassen (responsive: Resize/Orientation zeichnet neu).
+  const SOURCES = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-recommend"];
+  const MANUAL = ["charts-songrequest"];
+  const GETTERS = ["charts-download", "charts-upgrade"];
+  const known = (n) => (n in (d.containers || {})) || (d.services || {})[n];
+
+  // Absolute Default-Positionen (wie im Mock), in % der Flow-Flaeche. x/y =
+  // linke obere Ecke der Kachel. Werden beim Rendern per Inline-style gesetzt;
+  // unter 760px (Handy) ueberschreibt das CSS sie und stapelt alles vertikal.
+  const LAYOUT = {
+    "charts-sync":        { x: 1,  y: 3  },
+    "charts-hitparade":   { x: 1,  y: 27 },
+    "charts-flashback":   { x: 1,  y: 51 },
+    "charts-recommend":   { x: 1,  y: 75 },
+    "charts-songrequest": { x: 40, y: 2  },
+    "charts-download":    { x: 40, y: 31 },
+    "charts-upgrade":     { x: 40, y: 50 },
+    "slskd":              { x: 70, y: 32 },
+    "charts-import":      { x: 40, y: 80 },
+    "navidrome":          { x: 42, y: 103 },
+    "report-zone":        { x: 70, y: 72 },
+  };
+  // Zonen-Label je ANFUEHRER-Box -> kommt IN die Zelle, wandert beim Drag mit.
+  // Die jeweils oberste Box einer Zone traegt das Label.
+  const CELL_STAGE = {
+    "charts-sync": t("stage.sources"),
+    "charts-songrequest": t("stage.manual"),
+    "charts-download": t("stage.getters"),
+    "slskd": t("stage.downloader"),
+    "charts-import": t("stage.import"),
+  };
+  const STAGE_LABELS = [];  // keine freien Labels mehr
+
+  // Navidrome ist NICHT Teil des Stacks (externes Ziel) -> schlanke gruene
+  // Pille statt voller Kachel, damit es sich als Endstation abhebt.
+  const navidromeTile =
+    `<div class="flow-target-pill" data-svc="navidrome">${t("flow.navidrome_pill")}</div>`;
+
+  // Eine positionierte Zelle bauen (absolute Default-Pos aus LAYOUT). Traegt
+  // die Box ein eigenes Zonen-Label (CELL_STAGE), wird es oben eingehaengt und
+  // wandert beim Verschieben mit.
+  const posCell = (name, inner, extraCls) => {
+    const p = LAYOUT[name] || { x: 0, y: 0 };
+    const cls = "flow-cell" + (extraCls ? " " + extraCls : "");
+    const stage = CELL_STAGE[name]
+      ? `<div class="flow-stage cell-stage">${CELL_STAGE[name]}</div>` : "";
+    return `<div class="${cls}" data-cell="${name}" ` +
+      `style="left:${p.x}%;top:${p.y}%">${stage}${inner}</div>`;
+  };
+  const cell = (name, extraCls) => known(name) ? posCell(name, svcTile(name), extraCls) : "";
+
+  const stageHtml = STAGE_LABELS.map(s =>
+    `<div class="flow-stage abs" style="left:${s.x}%;top:${s.y}%">${s.t}</div>`
+  ).join("");
+
+  // Ueberwachung & Report: watchdog + dashboard + digest als EIN Flex-Stapel
+  // (feste Luecke per CSS gap -> garantiert gleicher Abstand, unabhaengig von
+  // der Kachelhoehe). Das Zonen-Label sitzt IM Stapel als Ueberschrift. Der
+  // Wrapper ist EINE flow-cell (per Drag verschiebbar); die inneren Kacheln
+  // sind normale svcTile ohne eigene Positionierung.
+  // Abstand kommt allein aus dem Flex-'gap' des .report-stack (siehe style.css).
+  // Die frueher noetige Inline-margin-Kruecke (gegen '.flow-cell .tile{height:
+  // 100%}') ist weg: '.report-stack .tile{height:auto}' hebt das Strecken schon
+  // auf. Kein Wrapper-<div> mehr, damit das Flex-Child die Kachel SELBST ist und
+  // der gap sauber (einfach) greift - sonst addierten sich gap + margin zu einem
+  // zu grossen Abstand (auf dem iPhone sichtbar groesser als die anderen Gruppen).
+  const reportBox = (name) => (known(name) ? svcTile(name) : "");
+  const reportInner =
+    `<div class="flow-stage cell-stage">${t("stage.report")}</div>` +
+    `<div class="report-stack">` +
+      reportBox("charts-watchdog") +
+      reportBox("charts-dashboard") +
+      reportBox("charts-digest") +
+    `</div>`;
+  const reportZone = posCell("report-zone", reportInner, "report-wrap");
+
+  const allCells =
+    cell("charts-sync") + cell("charts-hitparade") + cell("charts-flashback") + cell("charts-recommend") +
+    cell("charts-songrequest") + cell("charts-download") + cell("charts-upgrade") +
+    cell("slskd", "hub") + cell("charts-import") +
+    posCell("navidrome", navidromeTile) +
+    reportZone;
+
+  svcEl.innerHTML =
+    `<div class="flow-hub">` +
+      `<svg class="flow-svg" aria-hidden="true"></svg>` +
+      stageHtml + allCells +
+    `</div>` +
+    `<div class="flow-hint">${t("svc.flow_hint")}</div>`;
+
+  // Verbindungslinien zeichnen (nach dem DOM-Update) + Drag aktivieren.
+  requestAnimationFrame(() => { enableDrag(); drawFlowLines(); });
+
+  // --- Speicher ---
+  const s = d.storage || {};
+  const lib = s.library || {};
+  document.getElementById("storage").innerHTML = [
+    tile("info", t("storage.library"),
+      lib.artists == null
+        ? [t("storage.counting")]
+        : [t("storage.artists", {n: lib.artists.toLocaleString("de-CH")}),
+           t("storage.albums", {n: (lib.albums ?? 0).toLocaleString("de-CH")})]),
+    tile("info", t("storage.charts_share"), [
+      t("storage.files", {n: (s.charts_files ?? "–")}),
+      fmtBytes(s.charts_bytes),
+    ]),
+    // Quarantaene ist normal (wird eh automatisch nach 14 Tagen geleert) -
+    // nur warnen, wenn sie ungewoehnlich gross wird (> 2 GB).
+    tile((s.rejected_bytes ?? 0) > 2e9 ? "warn" : "info", t("storage.quarantine"), [
+      t("storage.files", {n: (s.rejected_files ?? "–")}),
+      fmtBytes(s.rejected_bytes),
+    ]),
+  ].join("");
+
+  // --- Quellen-Finder: einmalig initialisieren (beim ersten erfolgreichen
+  //     /api/status). Nutzt external.lastfm.configured, um den Last.fm-Teil
+  //     ggf. auszugrauen. Das Flow-Diagramm bleibt davon unberührt. ---
+  initFinder((d.external || {}).lastfm || {});
+}
+
+// ===========================================================================
+// Quellen-Finder (eigenständiges Panel unten; KEINE Berührung mit
+// drawFlowLines/.flow-hub/LAYOUT/SVG). Baut Deezer-Playlist-Suche,
+// Last.fm-Tag-Prüfung und die Deezer-Genre-Tabelle auf.
+// ===========================================================================
+
+// Statische Fallback-Genre-Tabelle (Momentaufnahme stabiler Deezer-Genre-IDs),
+// falls der Live-Call /api/sources/deezer/genres fehlschlägt (fail-open).
+const STATIC_GENRES = [
+  ["0","All"],["132","Pop"],["116","Rap/Hip Hop"],["152","Rock"],
+  ["113","Dance"],["165","R&B"],["85","Alternative"],["106","Electro"],
+  ["466","Folk"],["153","Blues"],["98","Classical"],["84","Country"],
+  ["129","Jazz"],["173","Films/Games"],["464","Metal"],["169","Soul & Funk"],
+  ["2","African Music"],["12","Brazilian Music"],["16","Indian Music"],
+];
+// Statische Vorschlags-Tags (gängige, erfahrungsgemäß gut gefüllte Last.fm-Tags).
+const STATIC_TAGS = ["pop","rock","hip-hop","electronic","dance","country",
+  "metal","jazz","80s","90s","2000s","indie","r&b","soul","folk","classical",
+  "swiss"];
+
+let _finderDone = false;
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Kopiert einen Snippet-String in die Zwischenablage. navigator.clipboard
+// gibt es nur im sicheren Kontext (HTTPS) - sonst Fallback über ein
+// temporäres readonly-Feld + execCommand.
+function copySnippet(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const old = btn.textContent;
+    btn.textContent = t("finder.copied");
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.position = "absolute"; ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* egal */ }
+  document.body.removeChild(ta);
+  if (done) done();
+}
+
+// Baut eine Snippet-Zelle: readonly-<code> (markierbar) + Copy-Button.
+function snippetCell(snippet) {
+  return `<div class="snip"><code>${esc(snippet)}</code>` +
+    `<button type="button" class="btn-sm snip-copy" data-snip="${esc(snippet)}">${t("finder.copy")}</button></div>`;
+}
+
+function renderGenres(rows) {
+  const tb = document.querySelector("#dz-genres tbody");
+  if (!tb) return;
+  tb.innerHTML = rows.map(([id, name]) =>
+    `<tr><td class="mono">${esc(id)}</td><td>${esc(name)}</td></tr>`).join("");
+}
+
+async function loadGenres() {
+  try {
+    const r = await fetch("/api/sources/deezer/genres", {cache: "no-store"});
+    const d = await r.json();
+    if (d && d.ok && Array.isArray(d.genres) && d.genres.length) {
+      renderGenres(d.genres.map(g => [g.id, g.name]));
+      return;
+    }
+  } catch (e) { /* fail-open */ }
+  renderGenres(STATIC_GENRES);   // Fallback: statische Liste
+}
+
+async function searchDeezerPlaylists(q) {
+  const box = document.getElementById("dz-pl-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.searching")}</div>`;
+  try {
+    const r = await fetch("/api/sources/deezer/playlists?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (!d || !d.ok) {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+      return;
+    }
+    if (!d.results.length) {
+      box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
+      return;
+    }
+    const rows = d.results.map(p =>
+      `<tr><td>${esc(p.title)}</td><td class="mono">${esc(p.nb_tracks)}</td>` +
+      `<td>${snippetCell(p.snippet)}</td></tr>`).join("");
+    box.innerHTML =
+      `<table class="finder-table"><thead><tr><th>${t("finder.col.title")}</th><th>${t("finder.col.tracks")}</th>` +
+      `<th>${t("finder.col.snippet")}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+async function searchDeezerArtists(q) {
+  const box = document.getElementById("dz-ar-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.searching")}</div>`;
+  try {
+    const r = await fetch("/api/sources/deezer/artists?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (!d || !d.ok) {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+      return;
+    }
+    if (!d.results.length) {
+      box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
+      return;
+    }
+    const rows = d.results.map(a =>
+      `<tr><td>${esc(a.name)}</td><td class="mono">${esc(a.nb_fan)}</td>` +
+      `<td>${snippetCell(a.snippet)}</td></tr>`).join("");
+    box.innerHTML =
+      `<table class="finder-table"><thead><tr><th>${t("finder.col.artist")}</th><th>${t("finder.col.fans")}</th>` +
+      `<th>${t("finder.col.snippet")}</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+async function checkLastfmTag(q) {
+  const box = document.getElementById("lf-tag-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.checking")}</div>`;
+  try {
+    const r = await fetch("/api/sources/lastfm/tag?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (d && d.ok) {
+      const samples = (d.sample || []).map(s => `<li>${esc(s)}</li>`).join("");
+      box.innerHTML =
+        `<div class="lf-hit">${t("finder.lastfm.hit", {tag: esc(d.tag), count: d.sample_count ? ` (${esc(d.sample_count)})` : ""})}</div>` +
+        (samples ? `<ul class="lf-samples">${samples}</ul>` : "") +
+        snippetCell(d.snippet);
+    } else {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+function initFinder(lastfm) {
+  // Last.fm-Teil ausgrauen, wenn kein API-Key konfiguriert ist. Das kann sich
+  // nicht zur Laufzeit ändern, aber wir setzen es idempotent bei jedem render.
+  const lfBox = document.getElementById("lf-tag-box");
+  if (lfBox) {
+    if (lastfm.configured === false) {
+      lfBox.classList.add("muted");
+      if (!lfBox.querySelector(".lf-nokey")) {
+        const hint = document.createElement("div");
+        hint.className = "lf-nokey muted-txt";
+        hint.textContent = t("finder.lastfm.needs_key");
+        lfBox.appendChild(hint);
+      }
+    } else {
+      lfBox.classList.remove("muted");
+      const hint = lfBox.querySelector(".lf-nokey");
+      if (hint) hint.remove();
+    }
+  }
+
+  if (_finderDone) return;      // Rest nur EINMAL verdrahten
+  _finderDone = true;
+
+  // Genre-Tabelle einmalig füllen.
+  loadGenres();
+
+  // Chips bauen.
+  const chipsEl = document.getElementById("lf-chips");
+  if (chipsEl) {
+    chipsEl.innerHTML = STATIC_TAGS.map(t =>
+      `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("");
+    chipsEl.addEventListener("click", (e) => {
+      const b = e.target.closest(".chip");
+      if (!b) return;
+      const tag = b.getAttribute("data-tag");
+      const inp = document.getElementById("lf-tag-q");
+      if (inp) inp.value = tag;
+      checkLastfmTag(tag);
+    });
+  }
+
+  // Formular-Submits.
+  const dzForm = document.getElementById("dz-pl-form");
+  if (dzForm) {
+    dzForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("dz-pl-q").value || "").trim();
+      if (q) searchDeezerPlaylists(q);
+    });
+  }
+  const dzArForm = document.getElementById("dz-ar-form");
+  if (dzArForm) {
+    dzArForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("dz-ar-q").value || "").trim();
+      if (q) searchDeezerArtists(q);
+    });
+  }
+  const lfForm = document.getElementById("lf-tag-form");
+  if (lfForm) {
+    lfForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("lf-tag-q").value || "").trim();
+      if (q) checkLastfmTag(q);
+    });
+  }
+
+  // Copy-Buttons (Delegation über die ganze Finder-Sektion).
+  const finder = document.querySelector(".finder");
+  if (finder) {
+    finder.addEventListener("click", (e) => {
+      const b = e.target.closest(".snip-copy");
+      if (!b) return;
+      copySnippet(b.getAttribute("data-snip"), b);
+    });
+  }
+}
+
+function ago2future(iso) {
+  const ts = Date.parse(iso);
+  if (isNaN(ts)) return iso;
+  const s = Math.floor((ts - Date.now()) / 1000);
+  if (s <= 0) return t("time.soon");
+  if (s < 60) return s + t("time.unit.s");
+  if (s < 3600) return Math.floor(s/60) + t("time.unit.min");
+  if (s < 86400) return Math.floor(s/3600) + t("time.unit.h");
+  return Math.floor(s/86400) + t("time.unit.d");
+}
+
+// Beschriftung fuer den naechsten geplanten Lauf. Nahe Termine relativ
+// ("in 3 h"), weit entfernte (> 24 h, z.B. Wochendienst charts-hitparade)
+// als absolutes Datum ("So, 05.10. 20:00") - das ist bei seltenen Laeufen
+// klarer als "in 6 d". Liegt der Zeitpunkt in der Vergangenheit (haengender/
+// ueberfaelliger Lauf), ehrlich "ueberfaellig" statt irrefuehrendem "bald".
+function nextRunLabel(iso) {
+  const ts = Date.parse(iso);
+  if (isNaN(ts)) return iso;
+  const s = Math.floor((ts - Date.now()) / 1000);
+  if (s <= -60) return t("time.overdue");
+  if (s < 3600) return t("time.in_prefix") + ago2future(iso); // < 1 h: relativ (min)
+  if (s < 86400) {
+    // 1-24 h: Stunden UND Minuten, damit z.B. 1h50 nicht als "1 h" erscheint
+    // (sonst Widerspruch zum tatsaechlichen Intervall). Volle Stunde: nur "h".
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return m ? t("time.in_h_m", {h, m}) : t("time.in_h", {h});
+  }
+  // >= 24 h: absolutes Datum (Wochentag, Tag.Monat, Uhrzeit)
+  const d = new Date(ts);
+  const wd = t("time.weekday." + d.getDay());
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${wd}, ${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function tick() {
+  const live = document.querySelector(".live");
+  try {
+    const r = await fetch("/api/status", {cache: "no-store"});
+    if (r.status === 401) { location.href = "/login"; return; }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+    // Erfolg -> Live-Dot gruen (pulsierend). render() setzt den Zeitstempel.
+    if (live) live.classList.remove("error");
+  } catch (e) {
+    document.getElementById("updated").textContent = t("updated.error");
+    // Fehler -> Live-Dot rot (nicht mehr pulsierend). Signalisiert, dass die
+    // Daten NICHT frisch sind.
+    if (live) live.classList.add("error");
+  }
+}
+
+applyStaticI18n();   // populate the static head/body markup once on load
+tick();
+setInterval(tick, REFRESH * 1000);
+</script>
+</body>
+</html>
