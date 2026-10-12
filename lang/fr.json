@@ -771,6 +771,7 @@
   "songrequest.slsk.no_api_key": "SLSKD_API_KEY n'est pas défini.",
   "songrequest.slsk.connect_failed": "La connexion à slskd a échoué : {error}",
   "hitparade.err.zero_songs": "Le classement « {chart} » a renvoyé 0 chanson - page peut-être reconstruite/bloquée.",
+  "hitparade.err.unavailable": "{url} injoignable : {error}",
   "digest.cli.description": "charts-digest - résumé quotidien des nouveaux morceaux de la bibliothèque.",
   "digest.cli.help_now": "Envoyer IMMÉDIATEMENT un résumé et quitter (déclenchement manuel, s'exécute en parallèle du planificateur dans le conteneur). Envoie aussi une réponse même avec 0 nouveau morceau."
 }
