@@ -26,10 +26,11 @@ project with **one** central `.env`.
 
 The stack feeds a **Navidrome** music server (required) – that is where the
 playlists and the library live. To enjoy the result like a streaming service you
-point any **Subsonic-compatible app** at Navidrome: free ones are e.g.
-**Substreamer** or **Amperfy** on iPhone, and **Substreamer** or **Ultrasonic**
-on Android. Which one is a matter of taste. Navidrome speaks the Subsonic API, so
-practically any Subsonic client works, on any platform.
+point any **Subsonic-compatible app** at Navidrome: on iPhone e.g.
+**Substreamer** (free), **Amperfy** (free) or **play:Sub** (paid), on Android
+e.g. **Substreamer** (free), **Ultrasonic** (free) or **Symfonium** (paid).
+Which one is a matter of taste. Navidrome speaks the Subsonic API, so practically
+any Subsonic client works, on any platform.
 
 | Service | Job | Interval |
 | --- | --- | --- |
@@ -249,10 +250,11 @@ Charts-Ordner) – kein Dienst ruft einen anderen direkt auf. Der ganze Stack is
 Der Stack füttert einen **Navidrome**-Musikserver (vorausgesetzt) – dort liegen
 die Playlists und die Library. Um das Ganze wie einen Streaming-Dienst zu
 geniessen, richtest du eine beliebige **Subsonic-kompatible App** auf Navidrome:
-kostenlose sind z. B. **Substreamer** oder **Amperfy** auf dem iPhone und
-**Substreamer** oder **Ultrasonic** auf Android. Welche davon ist Geschmackssache.
-Navidrome spricht die Subsonic-API, deshalb funktioniert praktisch jeder
-Subsonic-Client auf jeder Plattform.
+auf dem iPhone z. B. **Substreamer** (gratis), **Amperfy** (gratis) oder
+**play:Sub** (kostenpflichtig), auf Android z. B. **Substreamer** (gratis),
+**Ultrasonic** (gratis) oder **Symfonium** (kostenpflichtig). Welche davon ist
+Geschmackssache. Navidrome spricht die Subsonic-API, deshalb funktioniert
+praktisch jeder Subsonic-Client auf jeder Plattform.
 
 | Dienst | Aufgabe | Intervall |
 | --- | --- | --- |
