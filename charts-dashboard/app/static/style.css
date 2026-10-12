@@ -360,6 +360,15 @@ body.login {
 .finder-table tbody tr:nth-child(even), #dz-genres tbody tr:nth-child(even) {
   background: #2f2742;
 }
+/* Clickable sort headers: pointer cursor + subtle hover; the arrow glyph is
+   appended inline by the renderer so no extra element is needed. */
+.finder-table thead th.sortable {
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.finder-table thead th.sortable:hover { color: var(--fg); }
+.finder-table thead th.sortable:focus-visible {
+  outline: 1px solid #8a7bd8; outline-offset: -1px;
+}
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 /* Snippet-Zelle: markierbares <code> + Copy-Button, umbruchsicher. */
 /* Das Snippet wird NICHT umgebrochen - sonst zerfaellt der lange JSON-String

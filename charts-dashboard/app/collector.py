@@ -473,7 +473,7 @@ def lastfm_tag_check(q: str) -> dict:
         r = httpx.get("https://ws.audioscrobbler.com/2.0/", follow_redirects=True,
                       params={"method": "tag.gettoptracks", "tag": q,
                               "api_key": config.LASTFM_API_KEY,
-                              "format": "json", "limit": 5}, timeout=8)
+                              "format": "json", "limit": 20}, timeout=8)
         payload = r.json() if r.status_code == 200 else {}
         if r.status_code != 200 or not isinstance(payload, dict) or \
                 "error" in payload:
@@ -487,8 +487,17 @@ def lastfm_tag_check(q: str) -> dict:
         if not tracks:
             return {"ok": False, "configured": True,
                     "detail": i18n.t("dashboard.finder.lastfm.no_tracks")}
+        # The REAL playlist pull uses limit:100; expose the tag's actual total
+        # track count (not the small probe size) so the UI is not misleading.
+        total = None
+        raw_total = ((payload.get("tracks") or {}).get("@attr") or {}).get(
+            "total")
+        try:
+            total = int(raw_total)
+        except (TypeError, ValueError):
+            total = None
         sample = []
-        for t in tracks[:3]:
+        for t in tracks[:10]:
             artist = ((t.get("artist") or {}).get("name") or "").strip()
             title = (t.get("name") or "").strip()
             if artist or title:
@@ -497,7 +506,7 @@ def lastfm_tag_check(q: str) -> dict:
             '{"service":"lastfm","method":"tag.getTopTracks","tag":"'
             + q + '","limit":100,"enabled":true}')
         return {"ok": True, "configured": True, "tag": q,
-                "sample_count": len(tracks), "sample": sample,
+                "total": total, "sample": sample,
                 "snippet": snippet}
     except Exception as e:
         return {"ok": False, "configured": True,
