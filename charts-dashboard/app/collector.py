@@ -31,7 +31,7 @@ try:
     import docker  # type: ignore
     _docker_client = docker.from_env()
 except Exception as e:  # pragma: no cover
-    logger.warning("Docker-SDK nicht verfügbar: %s", e)
+    logger.warning(i18n.t("dashboard.log.docker_sdk_unavailable", error=e))
     _docker_client = None
 
 
