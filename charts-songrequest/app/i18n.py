@@ -172,6 +172,26 @@ def t(key: str, **kwargs) -> str:
         return raw
 
 
+# --- Additive public readers (charts-dashboard only) -----------------------
+# These two accessors are the ONLY additions to the otherwise byte-identical
+# shared loader. They let main.py build the frontend {{I18N}} subset and set
+# <html lang> without reaching into the module's private state.
+
+def active_lang() -> str:
+    """Return the currently active language code (e.g. 'de', 'en', 'fr')."""
+    return _lang
+
+
+def ui_table(prefix: str) -> dict:
+    """Return {FULL_KEY: value} for every active-table key starting with prefix.
+
+    English fallback is already merged into _messages, so missing <lang> keys
+    transparently carry the English text. Returns FULL dotted keys; re-basing
+    to the short client-facing form happens in main._ui_strings.
+    """
+    return {k: v for k, v in _messages.items() if k.startswith(prefix)}
+
+
 # Import-time auto-setup: the first ``from .i18n import t`` populates the tables
 # using CHARTS_LANG + app/lang/. Tests re-invoke setup(...) with explicit args.
 setup()

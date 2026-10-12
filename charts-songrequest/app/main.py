@@ -13,6 +13,7 @@ Einfacher Passwortschutz (ein Passwort aus der .env) via Session-Cookie, damit
 die von aussen (Reverse Proxy) erreichbare Seite nicht offen ist.
 """
 
+import json
 import logging
 import secrets
 
@@ -21,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import os
 
-from . import config, library, manifest, slsk, status
+from . import config, i18n, library, manifest, slsk, status
 from .i18n import t
 
 logging.basicConfig(
@@ -62,6 +63,22 @@ app = FastAPI(title="charts-songrequest", docs_url=None, redoc_url=None)
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+# --- Frontend i18n handoff -------------------------------------------------
+# The browser receives a SUBSET of the central lang table (the songrequest.ui.*
+# keys), re-based to short keys, injected into static/index.html as
+# `const I18N = {...}`. Mirrors the charts-dashboard mechanism.
+_UI_PREFIX = "songrequest.ui."
+
+
+def _ui_strings() -> dict[str, str]:
+    # i18n.ui_table(prefix) returns {FULL_KEY: value} for every key starting
+    # with the prefix (English fallback already merged in). Re-base here so the
+    # client calls t("subtitle"), not the full dotted path. The guard
+    # (len(k) > len(_UI_PREFIX)) skips any stray prefix-only key defensively.
+    return {k[len(_UI_PREFIX):]: v
+            for k, v in i18n.ui_table(_UI_PREFIX).items()
+            if len(k) > len(_UI_PREFIX)}
+
 
 def _current_user(request: Request) -> str | None:
     """Benutzername der aktuellen Session, oder None wenn nicht angemeldet."""
@@ -91,25 +108,25 @@ def _check_login(username: str, password: str) -> bool:
 async def login_page(error: str = ""):
     msg = ('<div class="status err"><span class="ic">⚠️</span><span>'
            + t("songrequest.ui.login_failed") + '</span></div>') if error else ""
-    return f"""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Login · Song Request</title>
+    return f"""<!DOCTYPE html><html lang="{i18n.active_lang()}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{t("songrequest.ui.login_doc_title")}</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#7b4397">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Songs">
+<meta name="apple-mobile-web-app-title" content="{t("songrequest.ui.apple_title")}">
 <link rel="stylesheet" href="/static/style.css"></head>
-<body><div class="card"><div class="logo">🎵</div><h1>Song Request</h1>
-<div class="subtitle">Bitte anmelden</div>
+<body><div class="card"><div class="logo">🎵</div><h1>{t("songrequest.ui.heading")}</h1>
+<div class="subtitle">{t("songrequest.ui.login_subtitle")}</div>
 <form method="post" action="/login">
-<label for="usr">Benutzer</label>
-<input id="usr" name="username" type="text" autofocus placeholder="Benutzername"
+<label for="usr">{t("songrequest.ui.login_user")}</label>
+<input id="usr" name="username" type="text" autofocus placeholder="{t("songrequest.ui.login_user_ph")}"
        autocomplete="username">
-<label for="pw">Passwort</label>
-<input id="pw" name="password" type="password" placeholder="Passwort"
+<label for="pw">{t("songrequest.ui.login_password")}</label>
+<input id="pw" name="password" type="password" placeholder="{t("songrequest.ui.login_password")}"
        autocomplete="current-password">
-<button type="submit">Anmelden</button>
+<button type="submit">{t("songrequest.ui.login_submit")}</button>
 </form>{msg}</div></body></html>"""
 
 
@@ -144,7 +161,10 @@ async def index(request: Request):
     if not _is_authed(request):
         return RedirectResponse(url="/login", status_code=303)
     with open(os.path.join(_STATIC_DIR, "index.html"), encoding="utf-8") as fh:
-        return HTMLResponse(fh.read())
+        html = (fh.read()
+                .replace("{{LANG}}", i18n.active_lang())
+                .replace("{{I18N}}", json.dumps(_ui_strings(), ensure_ascii=True)))
+    return HTMLResponse(html)
 
 
 # --- API: Song anfordern ---
