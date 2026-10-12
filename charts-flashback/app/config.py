@@ -1,12 +1,11 @@
 """
-Konfiguration fuer den charts-flashback-Service.
-Alle Werte aus Umgebungsvariablen (siehe .env.example).
+Configuration for the charts-flashback service.
+All values from environment variables (see .env.example).
 
-charts-flashback ist ein Download-only-Dienst: er liest die "zuletzt
-gespielt"-Rotation von FLASHBACK FM (GraphQL, oeffentlich) pro Dekaden-Channel
-und laesst die GEMEINSAME Library mitwachsen. Er schreibt KEINE Playlists - die
-Dekaden-Anzeige uebernehmen die Navidrome Smart Playlists (NSP), die nach Jahr
-filtern.
+charts-flashback is a download-only service: it reads the "last played"
+rotation of FLASHBACK FM (GraphQL, public) per decade channel and lets the
+SHARED library grow along. It writes NO playlists - the decade display is
+handled by the Navidrome Smart Playlists (NSP), which filter by year.
 """
 
 import logging
@@ -30,10 +29,10 @@ def _get_bool(name: str, default: bool) -> bool:
 
 def _get_enabled(name: str, default: bool = True) -> bool:
     """
-    Toleranter An/Aus-Schalter: akzeptiert true/1/yes/on (case-insensitiv) als
-    "an", leer -> default. Ein nicht-leerer, nicht erkannter Wert gilt als "aus"
-    (Konfigurationsfehler soll sichtbar sein) und loggt einmalig eine Warnung.
-    Zusaetzlich zu _get_bool (ersetzt es nicht), damit true/false sicher greift.
+    Tolerant on/off switch: accepts true/1/yes/on (case-insensitive) as "on",
+    empty -> default. A non-empty, unrecognized value counts as "off" (a config
+    error should be visible) and logs a warning once. In addition to _get_bool
+    (does not replace it) so that true/false works reliably.
     """
     raw = os.environ.get(name, "").strip().lower()
     if raw == "":
@@ -53,93 +52,93 @@ def _get_float(name: str, default: float) -> float:
         return default
 
 
-# --- Pfade (wie charts-sync/charts-recommend) ---
+# --- Paths (like charts-sync/charts-recommend) ---
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music/Music")
 CHARTS_DIR = os.environ.get("CHARTS_DIR", "/charts")
 
-# --- An/Aus-Schalter (Default an; Container bleibt immer laufen) ---
-# false = Dienst pausieren (loggt "deaktiviert", tut nichts, Status idle - KEIN
-# Fehler). Toleranter Parser: true/1/yes/on bzw. false/0/no/off. Bei true ist
-# zusaetzlich ein FLASHBACK_HASH noetig - sonst bleibt der Dienst ebenfalls idle.
+# --- On/off switch (default on; the container always keeps running) ---
+# false = pause the service (logs "disabled", does nothing, status idle - NO
+# error). Tolerant parser: true/1/yes/on or false/0/no/off. With true a
+# FLASHBACK_HASH is additionally needed - otherwise the service also stays idle.
 FLASHBACK_ENABLED = _get_enabled("FLASHBACK_ENABLED", True)
 
-# --- FLASHBACK FM (GraphQL-Quelle) ---
-# Persisted-Query-Hash der LastPlayed-Query. Oeffentlich, KEIN Secret - aber er
-# kann sich aendern, wenn FLASHBACK FM seine App neu baut. Dann aus dem Browser-
-# Netzwerktab neu holen (Request "played", URL endet auf .../LastPlayed/<HASH>?).
-# Leer = Dienst laeuft leer (kein Fehler).
+# --- FLASHBACK FM (GraphQL source) ---
+# Persisted-query hash of the LastPlayed query. Public, NOT a secret - but it
+# can change when FLASHBACK FM rebuilds its app. Then re-fetch it from the
+# browser network tab (request "played", URL ends in .../LastPlayed/<HASH>?).
+# Empty = the service runs empty (no error).
 FLASHBACK_HASH = os.environ.get("FLASHBACK_HASH", "").strip()
 
-# Welche Streams (streamName) abgefragt werden. Komma-getrennt.
-# WICHTIG: Nur der LIVE-HAUPTSTREAM "flashbackfm.ffm" fuehrt eine
-# played-Historie (ueber alle Dekaden gemischt). Die thematischen Dekaden-/
-# Kuenstler-Channels liefern played=null und sind hier NICHT sinnvoll.
-# Default = Hauptstream.
+# Which streams (streamName) are queried. Comma-separated.
+# IMPORTANT: only the LIVE MAIN STREAM "flashbackfm.ffm" keeps a played history
+# (mixed across all decades). The thematic decade/artist channels return
+# played=null and do NOT make sense here. Default = main stream.
 FLASHBACK_CHANNELS = [
     c.strip() for c in
     os.environ.get("FLASHBACK_CHANNELS", "flashbackfm.ffm").split(",")
     if c.strip()
 ]
 
-# Wie viele "zuletzt gespielt"-Eintraege pro Channel abgefragt werden (limitTo).
+# How many "last played" entries are queried per channel (limitTo).
 FLASHBACK_PLAYED_LIMIT = _get_int("FLASHBACK_PLAYED_LIMIT", 50)
-# Deckel: max. so viele NEUE Songs pro Lauf verarbeiten (gegen Ueberlauf, falls
-# viele Channels konfiguriert sind).
+# Cap: process at most this many NEW songs per run (against overflow when many
+# channels are configured).
 FLASHBACK_LIMIT = _get_int("FLASHBACK_LIMIT", 50)
 
-# State-Datei: schon gesehene (artist|title)-Keys, damit die Radio-Rotation
-# nicht bei jedem Lauf dieselben Songs erneut verarbeitet.
+# State file: already seen (artist|title) keys so the radio rotation does not
+# reprocess the same songs on every run.
 STATE_FILE = os.path.join(CHARTS_DIR, ".charts-flashback-state.json")
 
-# Ziel-Fehlliste (charts-download laedt sie nach, wenn sie in dessen
-# MISSING_FILES steht). Sauberes "artist - title"-Format wie charts-sync,
-# OHNE Jahr im Namen.
+# Target missing list (charts-download backfills it if it is in its
+# MISSING_FILES). Clean "artist - title" format like charts-sync, WITHOUT a
+# year in the name.
 MISSING_FILE = os.environ.get("FLASHBACK_MISSING_FILE", "missing-flashback.txt")
 
-# Jahr-Map (artist|title -> jahr), die charts-import beim Taggen liest, um das
-# date/originaldate-Tag zu setzen - OHNE das Jahr je in Datei-/Ordnernamen zu
-# schreiben. Liegt im geteilten Charts-Ordner, damit charts-import drankommt.
+# Year map (artist|title -> year) that charts-import reads when tagging to set
+# the date/originaldate tag - WITHOUT ever writing the year into file/folder
+# names. Lives in the shared Charts folder so charts-import can reach it.
 YEAR_MAP_FILE = os.path.join(CHARTS_DIR, ".charts-flashback-years.json")
 
-# --- MusicBrainz (Jahr-Aufloesung, Hybrid) ---
-# Genaues Erscheinungsjahr via MusicBrainz; wenn nicht plausibel/leer -> der
-# Aufrufer faellt auf die Channel-Dekaden-Mitte zurueck (year.py).
+# --- MusicBrainz (year resolution, hybrid) ---
+# Exact release year via MusicBrainz; if not plausible/empty -> the caller
+# falls back to the channel decade midpoint (year.py).
 MB_ENABLED = _get_bool("MB_ENABLED", True)
-# MusicBrainz verlangt einen aussagekraeftigen User-Agent.
+# MusicBrainz requires a meaningful User-Agent.
 MB_USER_AGENT = os.environ.get("MB_USER_AGENT", "charts-flashback/1.0 (self-hosted)")
-# Rate-Limit: MusicBrainz erlaubt ~1 Request/Sekunde. 1.1s Puffer.
+# Rate limit: MusicBrainz allows ~1 request/second. 1.1s buffer.
 MB_RATE_SLEEP = _get_float("MB_RATE_SLEEP", 1.1)
-# Mindest-Score eines Recording-Treffers, damit er beruecksichtigt wird.
+# Minimum score of a recording hit for it to be considered.
 MB_SCORE_MIN = _get_int("MB_SCORE_MIN", 90)
-# Cache (Artist|Title -> Jahr oder ""), damit wiederkehrende Songs die API
-# nicht erneut belasten. Auch Misses werden gecacht.
+# Cache (Artist|Title -> year or "") so recurring songs do not hit the API
+# again. Misses are cached too.
 MB_CACHE_FILE = os.path.join(CHARTS_DIR, ".charts-flashback-mbcache.json")
 
-# --- Deezer-Casing (kanonische Schreibweise von Artist/Titel) ---
-# FLASHBACK FM liefert Artist/Titel in GROSSBUCHSTABEN. Vor dem Schreiben in die
-# missing-Liste (-> Ordner-/Dateiname) wird die kanonische Schreibweise ueber die
-# offene Deezer-Such-API aufgeloest (kein API-Key), konsistent zu charts-sync.
+# --- Deezer casing (canonical spelling of artist/title) ---
+# FLASHBACK FM delivers artist/title in UPPERCASE. Before writing into the
+# missing list (-> folder/file name) the canonical spelling is resolved via the
+# open Deezer search API (no API key), consistent with charts-sync.
 DEEZER_CANONICAL_ENABLED = _get_bool("DEEZER_CANONICAL_ENABLED", True)
-# Prozess-weiter Cache (Artist|Title -> [artist, title]), auch Misses (Rohwert)
-# werden gecacht. Liegt im geteilten Charts-Ordner, analog MB_CACHE_FILE.
+# Process-wide cache (Artist|Title -> [artist, title]), misses (raw value) are
+# cached too. Lives in the shared Charts folder, analogous to MB_CACHE_FILE.
 DEEZER_CACHE_FILE = os.path.join(CHARTS_DIR, ".charts-flashback-deezer-cache.json")
-# Mindest-Aehnlichkeit (artist UND title, 0-100) eines Deezer-Treffers, damit er
-# als kanonische Quelle gilt. Etwas unter MATCH_THRESHOLD, da normalize() ohnehin
-# lowercased (Casing egal) - der Schwellwert faengt nur echte Fehltreffer ab.
+# Minimum similarity (artist AND title, 0-100) of a Deezer hit for it to count
+# as the canonical source. A bit below MATCH_THRESHOLD, since normalize()
+# lowercases anyway (casing irrelevant) - the threshold only catches real false
+# hits.
 DEEZER_MATCH_MIN = _get_int("DEEZER_MATCH_MIN", 80)
-# Asymmetrische Validierung fuer reale Faelle, an denen die reine UND-Schwelle
-# (beide >= MATCH_MIN) scheitert, obwohl es derselbe Song ist:
-#   - Alias-Kuenstler (FLASHBACK "OMD" vs. Deezer "Orchestral Manoeuvres In The
-#     Dark"): Titel 100, Artist niedrig.
-#   - Titel mit Klammer-Zusatz (Deezer "There Must Be an Angel (Playing With My
-#     Heart)"): Artist 100, Titel durch den Zusatz gedrueckt.
-# Regel: Ist EIN Feld sehr sicher (>= STRONG), reicht beim anderen RELAX. Sonst
-# gilt weiter die strikte UND-Schwelle MATCH_MIN. STRONG hoch (fast exakt),
-# RELAX moderat, damit die Lockerung keine Fehltreffer durchlaesst.
+# Asymmetric validation for real cases where the plain AND threshold (both >=
+# MATCH_MIN) fails although it is the same song:
+#   - alias artists (FLASHBACK "OMD" vs. Deezer "Orchestral Manoeuvres In The
+#     Dark"): title 100, artist low.
+#   - title with a parenthesized addition (Deezer "There Must Be an Angel
+#     (Playing With My Heart)"): artist 100, title depressed by the addition.
+# Rule: if ONE field is very confident (>= STRONG), RELAX is enough for the
+# other. Otherwise the strict AND threshold MATCH_MIN still applies. STRONG high
+# (near exact), RELAX moderate so the relaxation lets no false hits through.
 DEEZER_MATCH_STRONG = _get_int("DEEZER_MATCH_STRONG", 97)
 DEEZER_MATCH_RELAX = _get_int("DEEZER_MATCH_RELAX", 75)
 
-# --- Matching (identisch zu charts-sync/charts-recommend) ---
+# --- Matching (identical to charts-sync/charts-recommend) ---
 MATCH_THRESHOLD = _get_int("MATCH_THRESHOLD", 87)
 ARTIST_MIN_SCORE = _get_int("ARTIST_MIN_SCORE", 60)
 IGNORE_COMPILATIONS = _get_bool("IGNORE_COMPILATIONS", True)
@@ -147,10 +146,10 @@ AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".wav", ".alac",
 }
 
-# --- Nachladen (Verzahnung mit charts-download) ---
+# --- Backfill (interlock with charts-download) ---
 WRITE_MISSING = _get_bool("WRITE_MISSING", True)
 
-# --- HTTP-Robustheit (FLASHBACK FM GraphQL) ---
+# --- HTTP robustness (FLASHBACK FM GraphQL) ---
 HTTP_TIMEOUT = _get_int("HTTP_TIMEOUT", 30)
 HTTP_RETRIES = _get_int("HTTP_RETRIES", 3)
 
@@ -161,11 +160,11 @@ RUN_ON_START = _get_bool("RUN_ON_START", True)
 # --- Pushover (optional) ---
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
-# Pushover fuer diesen Dienst global stummschalten (ohne Token/User zu loeschen).
+# Globally mute Pushover for this service (without deleting token/user).
 PUSHOVER_ENABLED = os.environ.get("PUSHOVER_ENABLED", "1") == "1"
 PUSHOVER_DEVICE = os.environ.get("PUSHOVER_DEVICE", "").strip()
 PUSHOVER_DEVICES_TTL = _get_int("PUSHOVER_DEVICES_TTL", 3600)
-# Pushover-Benachrichtigungston. Leer = Account-Default (kein sound-Feld im
-# Request). Default fuer charts-flashback: "falling".
+# Pushover notification sound. Empty = account default (no sound field in the
+# request). Default for charts-flashback: "falling".
 PUSHOVER_SOUND = os.environ.get("PUSHOVER_SOUND", "falling").strip()
 NOTIFY_ONLY_ON_CHANGE = _get_bool("NOTIFY_ONLY_ON_CHANGE", True)

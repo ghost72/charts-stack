@@ -1,23 +1,23 @@
 """
-Hybrid-Jahr-Aufloesung fuer charts-flashback.
+Hybrid year resolution for charts-flashback.
 
-Ziel: jedem Song ein moeglichst korrektes Erscheinungsjahr geben, damit er in
-der richtigen Dekaden-Smart-Playlist (NSP) in Navidrome landet.
+Goal: give each song as correct a release year as possible so it lands in the
+right decade smart playlist (NSP) in Navidrome.
 
-Strategie:
-  1. MusicBrainz-Lookup (genaues Jahr, best effort): recording-Suche
-     artist+title, fruehestes Studio-Erstrelease (Live/Remix/Karaoke/
-     Instrumental/Demo/Cover werden ausgeschlossen, Score >= MB_SCORE_MIN).
-     Rate-Limit (MB_RATE_SLEEP) + Cache (auch Misses).
-  2. Plausibilisierung ueber die Channel-Dekade:
-       - MB-Jahr liegt in der Dekade  -> MB-Jahr nehmen.
-       - MB-Jahr widerspricht/leer/MB aus -> Dekaden-Mitte (von+5).
-       - keine Dekade (Theme/Kuenstler) + MB-Jahr -> MB-Jahr.
-       - keine Dekade + MB leer -> "" (kein Jahr-Tag).
+Strategy:
+  1. MusicBrainz lookup (exact year, best effort): recording search
+     artist+title, earliest studio first release (live/remix/karaoke/
+     instrumental/demo/cover are excluded, score >= MB_SCORE_MIN). Rate limit
+     (MB_RATE_SLEEP) + cache (misses too).
+  2. Sanity check against the channel decade:
+       - MB year is within the decade -> take the MB year.
+       - MB year contradicts/empty/MB off -> decade midpoint (from+5).
+       - no decade (theme/artist) + MB year -> MB year.
+       - no decade + MB empty -> "" (no year tag).
 
-EHRLICH: Das exakte Jahr ist best effort - MusicBrainz liefert es nicht immer
-richtig. Verlaesslich ist die DEKADE (durch den Channel + Clamp). Fuer die
-Dekaden-NSP ist das genau das, was zaehlt.
+HONEST: the exact year is best effort - MusicBrainz does not always get it
+right. Reliable is the DECADE (via the channel + clamp). For the decade NSP
+that is exactly what counts.
 """
 
 import json
@@ -36,12 +36,12 @@ logger = logging.getLogger(__name__)
 _MB_URL = "https://musicbrainz.org/ws/2/recording"
 _EXCLUDE = ("live", "remix", "karaoke", "instrumental", "demo", "cover")
 
-# Prozess-weiter Cache (persistiert in MB_CACHE_FILE).
+# Process-wide cache (persisted in MB_CACHE_FILE).
 _cache: dict | None = None
 
 
 def _lucene_phrase(s: str) -> str:
-    """Escaped Backslash und Anfuehrungszeichen fuer eine Lucene-Phrase."""
+    """Escape backslash and quotes for a Lucene phrase."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
@@ -72,7 +72,7 @@ def _save_cache() -> None:
 
 
 def _parse_year(value: str) -> int | None:
-    """Zieht ein plausibles 4-stelliges Jahr aus einem Datum-String."""
+    """Extract a plausible 4-digit year from a date string."""
     if not value or len(value) < 4:
         return None
     head = value[:4]
@@ -87,11 +87,11 @@ def _parse_year(value: str) -> int | None:
 
 def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
     """
-    Fragt MusicBrainz nach dem fruehesten Studio-Erscheinungsjahr.
-    Rueckgabe: (jahr, ok). jahr = "YYYY" oder "" (kein brauchbarer Treffer).
-    ok = True, wenn MusicBrainz sauber geantwortet hat (Ergebnis belastbar, auch
-    ein leeres); ok = False bei Netz-/HTTP-/Parse-Fehler (transient -> NICHT
-    cachen, damit der naechste Lauf erneut fragt).
+    Ask MusicBrainz for the earliest studio release year.
+    Returns: (year, ok). year = "YYYY" or "" (no usable hit).
+    ok = True when MusicBrainz answered cleanly (result solid, including an
+    empty one); ok = False on network/HTTP/parse error (transient -> do NOT
+    cache so the next run asks again).
     """
     q = f'recording:"{_lucene_phrase(title)}" AND artist:"{_lucene_phrase(artist)}"'
     try:
@@ -117,24 +117,24 @@ def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
         dis = (rec.get("disambiguation") or "").lower()
         if any(w in dis for w in _EXCLUDE):
             continue
-        # (i) Recording-Top-Level first-release-date.
+        # (i) Recording top-level first-release-date.
         y = _parse_year(rec.get("first-release-date") or "")
         if y:
             years.append(y)
-        # (ii) frueheste release.date dieses Recordings.
+        # (ii) earliest release.date of this recording.
         for rel in rec.get("releases", []) or []:
             if isinstance(rel, dict):
                 ry = _parse_year(rel.get("date") or "")
                 if ry:
                     years.append(ry)
-                # (iii) release-group first-release-date, falls gefuellt.
+                # (iii) release-group first-release-date, if filled.
                 rg = rel.get("release-group") if isinstance(rel, dict) else None
                 if isinstance(rg, dict):
                     gy = _parse_year(rg.get("first-release-date") or "")
                     if gy:
                         years.append(gy)
-    # API sauber beantwortet -> ok=True, auch wenn kein Jahr gefunden wurde
-    # (echter Miss, darf gecacht werden).
+    # API answered cleanly -> ok=True, even when no year was found (a real
+    # miss, may be cached).
     if not years:
         return "", True
     return str(min(years)), True
@@ -142,13 +142,13 @@ def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
 
 def resolve_year(artist: str, title: str, title_year: str) -> str:
     """
-    Liefert ein Jahr "YYYY" (oder "").
+    Return a year "YYYY" (or "").
 
-    Strategie:
-      1. title_year (aus dem FLASHBACK-Titel-Suffix "(JJJJ)") - VERLAESSLICH,
-         wird bevorzugt. FLASHBACK gibt das Erscheinungsjahr selbst an.
-      2. Nur falls kein Titel-Jahr vorhanden ist: MusicBrainz-Fallback
-         (best effort, mit Rate-Limit + Cache).
+    Strategy:
+      1. title_year (from the FLASHBACK title suffix "(JJJJ)") - RELIABLE, is
+         preferred. FLASHBACK states the release year itself.
+      2. Only if no title year is present: MusicBrainz fallback (best effort,
+         with rate limit + cache).
     """
     if title_year:
         return title_year
@@ -158,10 +158,10 @@ def resolve_year(artist: str, title: str, title_year: str) -> str:
         if key in cache:
             return cache[key] or ""
         mb, ok = _mb_year(artist, title)
-        # Nur belastbare Ergebnisse cachen (auch den echten Miss ""). Bei einem
-        # transienten Netz-/HTTP-Fehler (ok=False) NICHT cachen, sonst wuerde
-        # der Song wegen des Miss-Cache + seen-State nie wieder nach dem echten
-        # Jahr gefragt - der naechste Lauf soll es erneut versuchen.
+        # Only cache solid results (the real miss "" too). On a transient
+        # network/HTTP error (ok=False) do NOT cache, otherwise the song would,
+        # because of the miss cache + seen state, never be asked for the real
+        # year again - the next run should retry.
         if ok:
             cache[key] = mb
             _save_cache()

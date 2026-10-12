@@ -1,16 +1,16 @@
 """
-Unit-Tests fuer den FLASHBACK_ENABLED-Schalter (config._get_enabled) und die
-beiden idle-Guards in main._guarded_run.
+Unit tests for the FLASHBACK_ENABLED switch (config._get_enabled) and the two
+idle guards in main._guarded_run.
 
-Gedeckt:
-  - _get_enabled-Wertetabelle (leer -> default, true/1/yes/on -> True,
-    false/0/no/off -> False, unverstandener Wert -> False + WARN, Gross/Klein).
-  - FLASHBACK_ENABLED=False -> run_once wird NICHT aufgerufen, Status "idle"
-    ("deaktiviert"), gegen ein tmp-STATUS_DIR geprueft.
-  - FLASHBACK_ENABLED=True + leerer FLASHBACK_HASH -> run_once NICHT aufgerufen,
-    Status "idle" mit Message "kein FLASHBACK_HASH ...".
-  - FLASHBACK_ENABLED=True + gesetzter Hash -> Guard greift nicht, run_once wird
-    aufgerufen.
+Covered:
+  - _get_enabled value table (empty -> default, true/1/yes/on -> True,
+    false/0/no/off -> False, unrecognized value -> False + WARN, upper/lower).
+  - FLASHBACK_ENABLED=False -> run_once is NOT called, status "idle"
+    ("disabled"), checked against a tmp STATUS_DIR.
+  - FLASHBACK_ENABLED=True + empty FLASHBACK_HASH -> run_once NOT called, status
+    "idle" with message "no FLASHBACK_HASH ...".
+  - FLASHBACK_ENABLED=True + hash set -> the guard does not kick in, run_once is
+    called.
 """
 
 import json
@@ -22,14 +22,14 @@ import pytest
 from app import config, i18n, main, status
 
 
-# Zentrale, ausgelieferte Sprachdateien (app -> charts-flashback -> charts-stack/lang).
+# Central, shipped language files (app -> charts-flashback -> charts-stack/lang).
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 
 
 @pytest.fixture
 def de_lang():
-    """Setzt die aktive Sprache auf Deutsch (idle-Messages pruefen die
-    deutschen Status-Texte). Nach dem Test den Import-Zustand wiederherstellen."""
+    """Set the active language to German (idle messages check the German
+    status texts). Restore the import state after the test."""
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
     yield
     i18n.setup()
@@ -38,9 +38,9 @@ def de_lang():
 # --- _get_enabled ---------------------------------------------------------
 
 @pytest.mark.parametrize("raw,default,expected", [
-    (None, True, True),      # nicht gesetzt -> default
+    (None, True, True),      # not set -> default
     (None, False, False),
-    ("", True, True),        # leer -> default
+    ("", True, True),        # empty -> default
     ("", False, False),
     ("true", False, True),
     ("1", False, True),
@@ -50,10 +50,10 @@ def de_lang():
     ("0", True, False),
     ("no", True, False),
     ("off", True, False),
-    ("TRUE", False, True),   # Gross/Klein egal
+    ("TRUE", False, True),   # upper/lower irrelevant
     ("False", True, False),
     ("On", False, True),
-    ("maybe", True, False),  # unverstanden -> False (+ WARN)
+    ("maybe", True, False),  # unrecognized -> False (+ WARN)
     ("maybe", False, False),
 ])
 def test_get_enabled(monkeypatch, raw, default, expected):
@@ -71,7 +71,7 @@ def test_get_enabled_warns_on_garbage(monkeypatch, caplog, de_lang):
     assert any("nicht verstanden" in r.message for r in caplog.records)
 
 
-# --- _guarded_run idle-Guards ---------------------------------------------
+# --- _guarded_run idle guards ---------------------------------------------
 
 def _read_status(status_dir: str) -> dict:
     with open(os.path.join(status_dir, "charts-flashback.json"), encoding="utf-8") as fh:
@@ -86,7 +86,7 @@ def _spy_run_once(monkeypatch, called):
 
 
 def test_guarded_run_disabled_skips(monkeypatch, tmp_path, de_lang):
-    """ENABLED=False -> run_once NICHT aufgerufen, Status 'idle'/'deaktiviert'."""
+    """ENABLED=False -> run_once NOT called, status 'idle'/'disabled'."""
     called = []
     monkeypatch.setattr(config, "FLASHBACK_ENABLED", False)
     monkeypatch.setattr(config, "FLASHBACK_HASH", "deadbeef")
@@ -104,7 +104,7 @@ def test_guarded_run_disabled_skips(monkeypatch, tmp_path, de_lang):
 
 
 def test_guarded_run_enabled_empty_hash_idle(monkeypatch, tmp_path, de_lang):
-    """ENABLED=True + leerer Hash -> run_once NICHT aufgerufen, Status 'idle'."""
+    """ENABLED=True + empty hash -> run_once NOT called, status 'idle'."""
     called = []
     monkeypatch.setattr(config, "FLASHBACK_ENABLED", True)
     monkeypatch.setattr(config, "FLASHBACK_HASH", "")
@@ -122,12 +122,12 @@ def test_guarded_run_enabled_empty_hash_idle(monkeypatch, tmp_path, de_lang):
 
 
 def test_guarded_run_enabled_with_hash_calls_run_once(monkeypatch, tmp_path):
-    """ENABLED=True + Hash gesetzt -> Guard greift nicht, run_once laeuft."""
+    """ENABLED=True + hash set -> the guard does not kick in, run_once runs."""
     called = []
     monkeypatch.setattr(config, "FLASHBACK_ENABLED", True)
     monkeypatch.setattr(config, "FLASHBACK_HASH", "deadbeef")
     _spy_run_once(monkeypatch, called)
-    # _prev_status liest status.py -> gegen tmp lenken.
+    # _prev_status reads status.py -> point it at tmp.
     monkeypatch.setattr(status, "STATUS_DIR", str(tmp_path))
     status.init("charts-flashback")
 
@@ -135,5 +135,5 @@ def test_guarded_run_enabled_with_hash_calls_run_once(monkeypatch, tmp_path):
 
     assert called == [True]
     data = _read_status(str(tmp_path))
-    # attempts==0 -> bestehender Zweig schreibt "ok"/"nichts zu tun" (unberuehrt).
+    # attempts==0 -> existing branch writes "ok"/"nothing to do" (untouched).
     assert data["status"] == "ok"

@@ -1,15 +1,15 @@
 """
-Unit-Tests fuer den charts-sync-CHARTS-Parser (config._parse_charts /
+Unit tests for the charts-sync CHARTS parser (config._parse_charts /
 config._build_feed).
 
-Gedeckt: Abwaertskompatibilitaet (Alt-Config ohne 'service' == bisherige
-Zuordnung), das neue 'service'-Feld, die Startup-Validierung (Warnungen statt
-Crashes), die lowercase-Normalisierung von Last.fm-Methoden und der Drift-Test
-gegen lastfm._METHOD_PARAM.
+Covered: backward compatibility (legacy config without 'service' == former
+mapping), the new 'service' field, the startup validation (warnings instead of
+crashes), the lowercase normalization of Last.fm methods and the drift test
+against lastfm._METHOD_PARAM.
 
-Der Parser liest ausschliesslich os.environ["CHARTS"]; die Tests setzen ihn pro
-Fall und rufen config._parse_charts() direkt auf (statt sich auf das
-Modul-Import-Ergebnis config.CHARTS zu verlassen).
+The parser reads only os.environ["CHARTS"]; the tests set it per case and call
+config._parse_charts() directly (instead of relying on the module-import result
+config.CHARTS).
 """
 
 import json
@@ -31,22 +31,22 @@ def examples() -> dict:
 
 
 def _parse(monkeypatch, data) -> list:
-    """Setzt CHARTS auf das (serialisierte) data und ruft den Parser auf."""
+    """Set CHARTS to the (serialized) data and call the parser."""
     monkeypatch.setenv("CHARTS", json.dumps(data))
     return config._parse_charts()
 
 
 def _only_feed(sources):
-    """Hilfe: genau eine Playlist mit genau einem Feed -> dieser Feed."""
+    """Helper: exactly one playlist with exactly one feed -> that feed."""
     assert len(sources) == 1
     assert len(sources[0].feeds) == 1
     return sources[0].feeds[0]
 
 
-# --- Abwaertskompatibilitaet -------------------------------------------------
+# --- Backward compatibility --------------------------------------------------
 
 def test_legacy_without_service_matches_old_mapping(monkeypatch, examples):
-    """Alt-Config OHNE 'service' ergibt exakt die bisherige Feed-Zuordnung."""
+    """Legacy config WITHOUT 'service' yields exactly the former feed mapping."""
     data = examples["legacy_no_service"]["mixed"]
     sources = _parse(monkeypatch, data)
 
@@ -73,7 +73,7 @@ def test_legacy_without_service_matches_old_mapping(monkeypatch, examples):
 
 
 def test_legacy_single_source_without_sources_list(monkeypatch):
-    """Einzelquelle direkt am Eintrag (ohne 'sources') bleibt gueltig."""
+    """A single source directly on the entry (without 'sources') stays valid."""
     data = [{"type": "chart", "source": "0", "name": "x.m3u"}]
     feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "deezer"
@@ -81,7 +81,7 @@ def test_legacy_single_source_without_sources_list(monkeypatch):
     assert feed.source == "0"
 
 
-# --- Neues service-Feld ------------------------------------------------------
+# --- New service field -------------------------------------------------------
 
 def test_service_deezer_and_lastfm(monkeypatch, examples):
     data = examples["runnable"]["minimal"]
@@ -105,13 +105,13 @@ def test_service_case_insensitive(monkeypatch):
     assert feed.deezer_type == "chart"
 
 
-# --- Validierung: Warnungen statt Crashes -----------------------------------
+# --- Validation: warnings instead of crashes --------------------------------
 
 def test_contradiction_service_deezer_type_lastfm(monkeypatch, examples, caplog):
     data = examples["invalid"]["contradiction_service_deezer_type_lastfm"]
     with caplog.at_level(logging.WARNING):
         feed = _only_feed(_parse(monkeypatch, data))
-    assert feed.kind == "deezer"  # service gewinnt
+    assert feed.kind == "deezer"  # service wins
     assert any("contradictory" in r.message for r in caplog.records)
 
 
@@ -130,7 +130,7 @@ def test_unknown_deezer_type_falls_back_to_chart(monkeypatch, examples, caplog):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "deezer"
     assert feed.deezer_type == "chart"
-    assert feed.enabled is True  # Deezer-Fallback bleibt aktiv
+    assert feed.enabled is True  # Deezer fallback stays active
     assert any("unknown Deezer type" in r.message for r in caplog.records)
 
 
@@ -153,19 +153,19 @@ def test_lastfm_missing_required_param_disables_feed(monkeypatch, examples, capl
 
 
 def test_lastfm_with_deezer_source_is_ignored(monkeypatch, examples, caplog):
-    """MEDIUM-4: Last.fm-Quelle mit Deezer-'source' -> ignoriert + Warnung."""
+    """MEDIUM-4: Last.fm source with Deezer 'source' -> ignored + warning."""
     data = examples["invalid"]["lastfm_with_deezer_source"]
     with caplog.at_level(logging.WARNING):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "lastfm"
-    assert feed.enabled is True  # chart.getTopTracks braucht keinen Parameter
-    # 'source' darf NICHT als Last.fm-Query-Param durchgereicht werden.
+    assert feed.enabled is True  # chart.getTopTracks needs no parameter
+    # 'source' must NOT be passed through as a Last.fm query param.
     assert "source" not in feed.params
     assert any("with Deezer field 'source'" in r.message for r in caplog.records)
 
 
 def test_camelcase_lastfm_method_valid_and_lowercased(monkeypatch, examples, caplog):
-    """HIGH-2 + MEDIUM-5: CamelCase geo.getTopTracks -> gueltig, lowercase gespeichert."""
+    """HIGH-2 + MEDIUM-5: CamelCase geo.getTopTracks -> valid, stored lowercase."""
     data = examples["invalid"]["camelcase_method"]
     with caplog.at_level(logging.WARNING):
         feed = _only_feed(_parse(monkeypatch, data))
@@ -173,11 +173,11 @@ def test_camelcase_lastfm_method_valid_and_lowercased(monkeypatch, examples, cap
     assert feed.enabled is True
     assert feed.method == "geo.gettoptracks"
     assert feed.params == {"country": "Switzerland"}
-    # KEINE "unbekannte method"-Warnung
+    # NO "unknown method" warning
     assert not any("unknown Last.fm method" in r.message for r in caplog.records)
 
 
-# --- Fehlerhafte Eintraege / JSON -------------------------------------------
+# --- Faulty entries / JSON --------------------------------------------------
 
 def test_missing_name_skips_entry(monkeypatch, caplog):
     data = [{"sources": [{"service": "deezer", "type": "chart", "source": "0"}]}]
@@ -197,43 +197,43 @@ def test_empty_sources_list_warns(monkeypatch, caplog):
 
 
 def test_broken_json_falls_back_to_defaults(monkeypatch, caplog):
-    monkeypatch.setenv("CHARTS", '[{"name": "x.m3u", "sources": [}]')  # kaputt
+    monkeypatch.setenv("CHARTS", '[{"name": "x.m3u", "sources": [}]')  # broken
     with caplog.at_level(logging.ERROR):
         sources = config._parse_charts()
-    # Fall auf eingebaute Defaults -> genau so viele Playlists wie _DEFAULT_CHARTS.
+    # Fall back to built-in defaults -> exactly as many playlists as _DEFAULT_CHARTS.
     assert len(sources) == len(config._DEFAULT_CHARTS)
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert any("not valid JSON" in r.message for r in errors)
     assert any("CHARTS-SOURCES.md" in r.message for r in errors)
 
 
-# --- INFO-Zeile zaehlt aktive Quellen NACH Downgrade (NIT-6) ----------------
+# --- INFO line counts active sources AFTER downgrade (NIT-6) ----------------
 
 def test_info_line_counts_active_feeds_after_downgrade(monkeypatch, caplog):
-    """Eine deaktivierte (ungueltige) Last.fm-Quelle zaehlt NICHT als aktiv."""
+    """A disabled (invalid) Last.fm source does NOT count as active."""
     data = [{"name": "x.m3u", "sources": [
         {"service": "deezer", "type": "chart", "source": "0", "enabled": True},
-        {"service": "lastfm", "method": "geo.getTopTracks"},  # fehlt country -> aus
+        {"service": "lastfm", "method": "geo.getTopTracks"},  # missing country -> off
     ]}]
     with caplog.at_level(logging.INFO):
         sources = _parse(monkeypatch, data)
-    # Nur die Deezer-Quelle bleibt aktiv.
+    # Only the Deezer source stays active.
     assert sum(len(cs.active_feeds) for cs in sources) == 1
     info = [r for r in caplog.records if r.levelno == logging.INFO]
     assert any("1 active source(s)" in r.message for r in info)
 
 
-# --- Drift-Test (HIGH-1) -----------------------------------------------------
+# --- Drift test (HIGH-1) -----------------------------------------------------
 
 def test_valid_lastfm_methods_mirror_matches_lastfm_module():
-    """config._VALID_LASTFM_METHODS muss zu lastfm._METHOD_PARAM passen."""
+    """config._VALID_LASTFM_METHODS must match lastfm._METHOD_PARAM."""
     assert config._VALID_LASTFM_METHODS == lastfm._METHOD_PARAM
 
 
-# --- Pro-Playlist Genre-Filter (FEAT-002) -----------------------------------
+# --- Per-playlist genre filter (FEAT-002) -----------------------------------
 
 def _single_source(genre_filter=None):
-    """Eine Playlist mit genau einer Deezer-Quelle, optional mit genre_filter."""
+    """A playlist with exactly one Deezer source, optionally with genre_filter."""
     entry = {"name": "x.m3u", "sources": [
         {"service": "deezer", "type": "chart", "source": "0"}]}
     if genre_filter is not None:
@@ -242,7 +242,7 @@ def _single_source(genre_filter=None):
 
 
 def test_genre_filter_true_overrides_global(monkeypatch):
-    """genre_filter:true -> effective True, egal was global GENRE_FILTER ist."""
+    """genre_filter:true -> effective True, regardless of global GENRE_FILTER."""
     for global_default in (True, False):
         monkeypatch.setattr(config, "GENRE_FILTER", global_default)
         sources = _parse(monkeypatch, _single_source(True))
@@ -251,7 +251,7 @@ def test_genre_filter_true_overrides_global(monkeypatch):
 
 
 def test_genre_filter_false_overrides_global(monkeypatch):
-    """genre_filter:false -> effective False, egal was global GENRE_FILTER ist."""
+    """genre_filter:false -> effective False, regardless of global GENRE_FILTER."""
     for global_default in (True, False):
         monkeypatch.setattr(config, "GENRE_FILTER", global_default)
         sources = _parse(monkeypatch, _single_source(False))
@@ -260,7 +260,7 @@ def test_genre_filter_false_overrides_global(monkeypatch):
 
 
 def test_genre_filter_absent_uses_global(monkeypatch):
-    """Fehlt genre_filter -> effective == globaler GENRE_FILTER (beide Werte)."""
+    """Missing genre_filter -> effective == global GENRE_FILTER (both values)."""
     for global_default in (True, False):
         monkeypatch.setattr(config, "GENRE_FILTER", global_default)
         sources = _parse(monkeypatch, _single_source(None))
@@ -269,7 +269,7 @@ def test_genre_filter_absent_uses_global(monkeypatch):
 
 
 def test_genre_filter_non_bool_falls_back_to_global(monkeypatch):
-    """Nicht-bool genre_filter (z.B. String) -> None -> globaler Default."""
+    """Non-bool genre_filter (e.g. a string) -> None -> global default."""
     monkeypatch.setattr(config, "GENRE_FILTER", True)
     sources = _parse(monkeypatch, _single_source("yes"))
     assert sources[0].genre_filter is None

@@ -1,13 +1,12 @@
 """
-Deezer-Chart-Client.
+Deezer chart client.
 
-Deezer stellt eine offene REST-API bereit, die fuer Chart-Listen keinen
-Account und keinen API-Key benoetigt. Wir holen ausschliesslich Metadaten
-(Kuenstler + Titel), keine Audiodaten.
+Deezer offers an open REST API that needs neither an account nor an API key
+for chart lists. We fetch metadata only (artist + title), no audio data.
 
-Endpunkte:
-  - Globale/laenderbezogene Charts:  https://api.deezer.com/chart/<id>/tracks
-  - Beliebige Playlist:              https://api.deezer.com/playlist/<id>/tracks
+Endpoints:
+  - Global/country charts:  https://api.deezer.com/chart/<id>/tracks
+  - Arbitrary playlist:     https://api.deezer.com/playlist/<id>/tracks
 """
 
 import logging
@@ -25,7 +24,7 @@ _BASE_URL = "https://api.deezer.com"
 
 
 class ChartTrack:
-    """Ein einzelner Chart-Track mit den fuer das Matching relevanten Feldern."""
+    """A single chart track with the fields relevant for matching."""
 
     def __init__(self, position: int, artist: str, title: str, deezer_id: int = 0,
                  contributors: list[str] | None = None):
@@ -33,10 +32,10 @@ class ChartTrack:
         self.artist = artist
         self.title = title
         self.deezer_id = deezer_id
-        # Alle an diesem Track beteiligten Kuenstler (Deezer 'contributors[]'),
-        # inkl. Feature-/Collab-Partnern, die NICHT der Haupt-Kuenstler sind.
-        # Nur fuer den exclude_artists-Filter relevant; beim Matching spielt es
-        # keine Rolle. Last.fm-Tracks haben keine Contributors -> leere Liste.
+        # All artists involved in this track (Deezer 'contributors[]'),
+        # including feature/collab partners that are NOT the main artist.
+        # Only relevant for the exclude_artists filter; it plays no role in
+        # matching. Last.fm tracks have no contributors -> empty list.
         self.contributors: list[str] = contributors or []
 
     def __repr__(self) -> str:
@@ -44,19 +43,19 @@ class ChartTrack:
 
 
 def _parse_tracks(items: list[dict]) -> list[ChartTrack]:
-    """Wandelt die Deezer-JSON-Eintraege in ChartTrack-Objekte um."""
+    """Convert the Deezer JSON entries into ChartTrack objects."""
     tracks: list[ChartTrack] = []
     for index, item in enumerate(items, start=1):
         artist = (item.get("artist") or {}).get("name", "").strip()
-        # title_short ist ohne "(feat. ...)"-Zusaetze und matcht meist besser.
+        # title_short has no "(feat. ...)" additions and usually matches better.
         title = (item.get("title_short") or item.get("title") or "").strip()
         if not artist or not title:
             continue
         position = item.get("position", index)
-        # Contributors mitnehmen: Deezer fuehrt bei Collabs den Haupt-Kuenstler
-        # in 'artist', die Feature-/Begleit-Acts aber (nur) in 'contributors[]'.
-        # Der exclude_artists-Filter braucht sie, um z.B. "Goelae feat. Trauffer"
-        # (artist=Goelae, contributor=Trauffer) ausschliessen zu koennen.
+        # Carry contributors along: for collabs Deezer lists the main artist in
+        # 'artist' but the feature/supporting acts (only) in 'contributors[]'.
+        # The exclude_artists filter needs them to be able to exclude e.g.
+        # "Goelae feat. Trauffer" (artist=Goelae, contributor=Trauffer).
         contributors = [
             (c.get("name") or "").strip()
             for c in (item.get("contributors") or [])
@@ -67,31 +66,31 @@ def _parse_tracks(items: list[dict]) -> list[ChartTrack]:
     return tracks
 
 
-# Deezer liefert pro Antwort maximal ~100 Eintraege, auch wenn ein hoeheres
-# 'limit' angefragt wird. Um mehr (bis "all") zu holen, paginieren wir in
-# festen Schritten ueber den 'index'-Parameter.
+# Deezer returns at most ~100 entries per response, even when a higher 'limit'
+# is requested. To fetch more (up to "all") we paginate in fixed steps via the
+# 'index' parameter.
 _PAGE_SIZE = 100
-# Sicherheitsobergrenze, damit eine kaputte/riesige Quelle keine Endlosschleife
-# verursacht (deckt jede real existierende Chart/Playlist locker ab).
+# Safety cap so a broken/huge source cannot cause an endless loop (comfortably
+# covers every real-world chart/playlist).
 _MAX_TRACKS = 100000
 
 
 def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
     """
-    Holt EINE Deezer-Quelle (Chart oder Playlist), mit Pagination.
-    feed.limit ist die gewuenschte Gesamtzahl (bei "all" ein sehr hoher Wert);
-    es wird in _PAGE_SIZE-Schritten geladen, bis limit erreicht ist oder keine
-    weiteren Tracks mehr kommen.
+    Fetch ONE Deezer source (chart or playlist), with pagination.
+    feed.limit is the desired total count (a very high value for "all"); it is
+    loaded in _PAGE_SIZE steps until the limit is reached or no further tracks
+    arrive.
     """
     feed_type = feed.deezer_type
     feed_id = feed.source
     if feed_type == "playlist":
         url = f"{_BASE_URL}/playlist/{feed_id}/tracks"
     elif feed_type == "artist":
-        # Top-Tracks eines Kuenstlers. Dieselbe Track-Struktur (title + artist)
-        # wie Chart/Playlist, daher kein eigener Parser noetig. Deezer deckelt
-        # /artist/<id>/top intern bei ~100 - die Pagination unten bricht sauber
-        # ab, sobald keine weiteren Tracks mehr kommen.
+        # Top tracks of an artist. Same track structure (title + artist) as
+        # chart/playlist, so no dedicated parser is needed. Deezer caps
+        # /artist/<id>/top internally at ~100 - the pagination below breaks
+        # cleanly as soon as no further tracks arrive.
         url = f"{_BASE_URL}/artist/{feed_id}/top"
     else:
         url = f"{_BASE_URL}/chart/{feed_id}/tracks"
@@ -106,18 +105,18 @@ def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
         resp.raise_for_status()
         payload = resp.json()
 
-        # Deezer meldet Fehler als {"error": {...}} mit HTTP 200.
+        # Deezer reports errors as {"error": {...}} with HTTP 200.
         if isinstance(payload, dict) and payload.get("error"):
             raise RuntimeError(t("sync.deezer.api_error", feed_type=feed_type,
                                  feed_id=feed_id, error=payload['error']))
 
         items = payload.get("data", []) if isinstance(payload, dict) else []
         if not items:
-            break  # keine weiteren Tracks (Ende der Liste erreicht)
+            break  # no further tracks (end of the list reached)
 
         tracks.extend(_parse_tracks(items))
 
-        # Wenn Deezer weniger als angefragt liefert, ist die Liste zu Ende.
+        # If Deezer returns fewer than requested, the list has ended.
         if len(items) < page:
             break
         index += len(items)
@@ -127,16 +126,15 @@ def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
 
 
 def _merge_key(track: ChartTrack) -> str:
-    """Schluessel fuer die Deduplizierung ueber Quellen hinweg (Kuenstler+Titel)."""
+    """Key for deduplication across sources (artist+title)."""
     return f"{track.artist.strip().lower()}|{track.title.strip().lower()}"
 
 
 def _name_hits_exclude(name: str, exclude_set: set[str]) -> bool:
     """
-    True, wenn EIN Kuenstlername die Ausschlussliste trifft - entweder als
-    ganzer Name ODER als einer der per "feat."/"&"/","/.. getrennten
-    Einzelkuenstler (z.B. "Trauffer feat. Beatrice Egli" trifft wegen
-    "Trauffer"). Gross-/Kleinschreibung egal.
+    True if ONE artist name hits the exclude list - either as the whole name
+    OR as one of the individual artists separated by "feat."/"&"/","/.. (e.g.
+    "Trauffer feat. Beatrice Egli" hits because of "Trauffer"). Case-insensitive.
     """
     n = (name or "").strip().lower()
     if not n:
@@ -150,15 +148,15 @@ def _name_hits_exclude(name: str, exclude_set: set[str]) -> bool:
 def _is_excluded_artist(artist: str, exclude_set: set[str],
                         contributors: list[str] | None = None) -> bool:
     """
-    True, wenn der ausgeschlossene Kuenstler an diesem Track beteiligt ist (die
-    Ausschlussliste gilt playlist-spezifisch). Geprueft werden:
-      1. der Haupt-Kuenstler (artist) - ganzer Name oder ein per "feat."/"&"/
-         "," getrennter Einzelkuenstler, und
-      2. die Deezer-'contributors[]' (Feature-/Collab-Partner).
-    Grund fuer (2): Bei Collabs fuehrt Deezer den Haupt-Act in 'artist', den
-    Feature-Act aber nur in 'contributors[]' - z.B. "Goelae feat. Trauffer"
-    hat artist="Goelae" und waere ohne Contributor-Pruefung durchgerutscht
-    (an echten Mundart-Daten verifiziert). Kein API-Call, rein lokaler Vergleich.
+    True if the excluded artist is involved in this track (the exclude list is
+    playlist-specific). Checked are:
+      1. the main artist (artist) - whole name or one individual artist
+         separated by "feat."/"&"/",", and
+      2. the Deezer 'contributors[]' (feature/collab partners).
+    Reason for (2): for collabs Deezer lists the main act in 'artist' but the
+    feature act only in 'contributors[]' - e.g. "Goelae feat. Trauffer" has
+    artist="Goelae" and would have slipped through without the contributor
+    check (verified against real Mundart data). No API call, purely local.
     """
     if not exclude_set:
         return False
@@ -168,9 +166,9 @@ def _is_excluded_artist(artist: str, exclude_set: set[str],
 
 
 def _fetch_one_feed(feed, client: httpx.Client) -> list[ChartTrack]:
-    """Dispatcher: holt einen Feed je nach Typ von Deezer oder Last.fm."""
+    """Dispatcher: fetch a feed from Deezer or Last.fm depending on its type."""
     if feed.kind == "lastfm":
-        # Lazy-Import, damit Deezer-only-Setups Last.fm nicht brauchen.
+        # Lazy import so Deezer-only setups do not need Last.fm.
         from . import lastfm
         return lastfm.fetch_feed(feed, config.LASTFM_API_KEY, client)
     return _fetch_deezer_feed(feed, client)
@@ -178,12 +176,12 @@ def _fetch_one_feed(feed, client: httpx.Client) -> list[ChartTrack]:
 
 def _match_exclude_tag(top_tags: list[tuple[str, int]]):
     """
-    Prueft, ob einer der uebergebenen (Tag, count)-Paare auf die Ausschlussliste
-    passt. Match ist ein WORT-basierter Teilstring: der Ausschluss-Tag 'country'
-    trifft auch 'contemporary country', 'modern country', 'country rap' usw.
-    (aber nicht ein zufaellig enthaltenes Fragment in einem anderen Wort).
+    Check whether one of the given (tag, count) pairs matches the exclude list.
+    A match is a WORD-based substring: the exclude tag 'country' also hits
+    'contemporary country', 'modern country', 'country rap' etc. (but not a
+    fragment that happens to be contained in another word).
 
-    Gibt das erste Treffer-Paar (name, count) zurueck oder None.
+    Returns the first matching pair (name, count) or None.
     """
     for name, cnt in top_tags:
         if cnt < config.EXCLUDE_TAG_MIN_COUNT:
@@ -191,8 +189,8 @@ def _match_exclude_tag(top_tags: list[tuple[str, int]]):
         words = set(name.replace("-", " ").split())
         for ex in config.EXCLUDE_TAGS:
             ex_words = ex.replace("-", " ").split()
-            # Ein-Wort-Ausschluss (z.B. "country"): trifft, wenn das Wort im Tag
-            # vorkommt. Mehr-Wort-Ausschluss (z.B. "hard rock"): als Phrase.
+            # Single-word exclude (e.g. "country"): hits when the word occurs in
+            # the tag. Multi-word exclude (e.g. "hard rock"): as a phrase.
             if len(ex_words) == 1:
                 if ex_words[0] in words:
                     return (name, cnt)
@@ -205,15 +203,15 @@ def _apply_genre_filter(tracks: list[ChartTrack],
                         client: httpx.Client,
                         active: bool) -> list[ChartTrack]:
     """
-    Filtert Tracks anhand ihrer Last.fm-Genre-Tags. Ein Track fliegt raus, wenn
-    einer seiner staerksten EXCLUDE_TAG_TOP_N Tags in EXCLUDE_TAGS steht und
-    dessen count >= EXCLUDE_TAG_MIN_COUNT ist.
+    Filter tracks by their Last.fm genre tags. A track is dropped when one of
+    its strongest EXCLUDE_TAG_TOP_N tags is in EXCLUDE_TAGS and its count is
+    >= EXCLUDE_TAG_MIN_COUNT.
 
-    `active` ist der pro-Playlist wirksame Genre-Filter-Schalter
-    (ChartSource.effective_genre_filter). Ist er False, wird nicht gefiltert.
+    `active` is the per-playlist effective genre-filter switch
+    (ChartSource.effective_genre_filter). If it is False, nothing is filtered.
 
-    Fail-open: liefert Last.fm keine Tags (oder kein API-Key), bleibt der Track
-    drin. Braucht LASTFM_API_KEY; ohne Key wird der Filter uebersprungen.
+    Fail-open: if Last.fm returns no tags (or there is no API key), the track
+    stays. Needs LASTFM_API_KEY; without a key the filter is skipped.
     """
     if not active:
         return tracks
@@ -247,17 +245,16 @@ def _apply_genre_filter(tracks: list[ChartTrack],
 
 def fetch_chart(chart_source) -> list[ChartTrack]:
     """
-    Holt die Chart-Liste(n) fuer eine ChartSource und fuehrt mehrere Feeds
-    (Deezer und/oder Last.fm) zu einer deduplizierten Liste zusammen. Deaktivierte
-    Feeds (enabled=False) werden uebersprungen. Danach optional Genre-Filter.
+    Fetch the chart list(s) for a ChartSource and merge multiple feeds (Deezer
+    and/or Last.fm) into one deduplicated list. Disabled feeds (enabled=False)
+    are skipped. Afterwards an optional genre filter is applied.
 
-    Reihenfolge: Feeds werden in Konfigurationsreihenfolge abgefragt. Erscheint
-    ein Song in mehreren Feeds, gewinnt das erste Vorkommen (also die frueher
-    gelistete Quelle). Die Positionen werden nach dem Merge neu durchnummeriert,
-    damit die Playlist-Reihenfolge stabil ist.
+    Order: feeds are queried in configuration order. If a song appears in
+    multiple feeds, the first occurrence wins (i.e. the earlier-listed source).
+    Positions are renumbered after the merge so the playlist order is stable.
     """
     active = chart_source.active_feeds
-    # Pro-Playlist wirksamer Genre-Filter (explizites genre_filter > global).
+    # Per-playlist effective genre filter (explicit genre_filter > global).
     genre_active = chart_source.effective_genre_filter
     skipped = len(chart_source.feeds) - len(active)
     skipped_suffix = t("deezer.chart.fetch_skipped", skipped=skipped) if skipped else ""
@@ -268,12 +265,12 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
 
     merged: list[ChartTrack] = []
     seen: set[str] = set()
-    # Zaehler fuer per exclude_artists (playlist-spezifisch) entfernte Tracks.
+    # Counter for tracks removed via exclude_artists (playlist-specific).
     excluded_artists = 0
-    # Beitrags-Statistik je Quelle: roh geliefert und davon NEU (noch nicht
-    # durch einen frueheren Feed abgedeckt).
+    # Contribution stats per source: raw delivered and of those NEW (not yet
+    # covered by an earlier feed).
     stats: dict[str, dict[str, int]] = {}
-    # Merken, von welcher Quelle ein Song urspruenglich kam (fuer die Filter-Bilanz).
+    # Remember which source a song originally came from (for the filter balance).
     origin: dict[str, str] = {}
 
     with httpx.Client(timeout=30.0, headers={"User-Agent": "charts-sync/1.0"},
@@ -287,14 +284,13 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
             s = stats.setdefault(feed.kind, {"raw": 0, "new": 0})
             s["raw"] += len(tracks)
             for track in tracks:
-                # Kuenstler-Ausschluss (playlist-spezifisch) VOR der Dedup
-                # pruefen. Reihenfolge ist wichtig: Taeten wir erst 'seen', dann
-                # Ausschluss, koennte ein ausgeschlossener Kuenstler durchrutschen,
-                # wenn derselbe Song (gleicher _merge_key) zuerst von einem Feed
-                # unter einem NICHT ausgeschlossenen Namen kam - der zweite,
-                # korrekt ausgeschlossene Treffer liefe dann in 'continue' bei
-                # 'key in seen', bevor der Filter greift. Erst ausschliessen,
-                # dann dedupen, schliesst diesen Umgehungspfad aus. Kein API-Call.
+                # Check the artist exclusion (playlist-specific) BEFORE the
+                # dedup. Order matters: if we did 'seen' first and exclusion
+                # second, an excluded artist could slip through when the same
+                # song (same _merge_key) came first from a feed under a NOT
+                # excluded name - the second, correctly excluded hit would then
+                # hit 'continue' at 'key in seen' before the filter kicks in.
+                # Exclude first, then dedup, closes this bypass path. No API call.
                 if _is_excluded_artist(track.artist, chart_source.exclude_artists,
                                        track.contributors):
                     excluded_artists += 1
@@ -314,14 +310,14 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
                           name=chart_source.title, count=excluded_artists))
 
         before_filter = len(merged)
-        # Genre-Filter (optional) auf die gemergte Liste anwenden.
+        # Apply the (optional) genre filter to the merged list.
         merged = _apply_genre_filter(merged, client, genre_active)
 
-    # Positionen nach dem Merge neu vergeben (1..N in Merge-Reihenfolge).
+    # Reassign positions after the merge (1..N in merge order).
     for i, track in enumerate(merged, start=1):
         track.position = i
 
-    # Beitrags-Statistik loggen (was bringt jede Quelle NETTO dazu).
+    # Log the contribution stats (what each source adds NET).
     if stats:
         parts = []
         for kind in ("deezer", "lastfm"):
@@ -339,7 +335,7 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     else:
         filtered = 0
 
-    # Statistik fuer die spaetere Meldung (Pushover) am chart_source ablegen.
+    # Store stats on the chart_source for the later notification (Pushover).
     chart_source.last_stats = {
         "deezer_new": stats.get("deezer", {}).get("new", 0),
         "lastfm_new": stats.get("lastfm", {}).get("new", 0),

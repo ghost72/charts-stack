@@ -1,34 +1,34 @@
 """
-Deezer-Casing-Aufloesung fuer charts-flashback.
+Deezer casing resolution for charts-flashback.
 
-FLASHBACK FM liefert Artist/Titel in GROSSBUCHSTABEN (z.B.
-``U2 / WHERE THE STREETS HAVE NO NAME``). Diese Rohwerte wuerden ungefiltert in
-die missing-Liste und damit in Ordner-/Dateinamen der Library wandern. Dieses
-Modul loest zu jedem Song die ECHTE, offizielle Schreibweise ueber die offene
-Deezer-Such-API auf (kein API-Key) - konsistent zu charts-sync/charts-hitparade.
+FLASHBACK FM delivers artist/title in UPPERCASE (e.g.
+``U2 / WHERE THE STREETS HAVE NO NAME``). These raw values would, unfiltered,
+move into the missing list and thus into the library's folder/file names. This
+module resolves the REAL, official spelling for each song via the open Deezer
+search API (no API key) - consistent with charts-sync/charts-hitparade.
 
-Endpunkt:
+Endpoint:
   GET https://api.deezer.com/search?q=<artist> <title>
-  Antwort-JSON: {"data": [{"title": ..., "artist": {"name": ...}}, ...]}
-  Fehler meldet Deezer als {"error": {...}} MIT HTTP 200 (wie in
-  charts-sync/app/deezer.py behandelt) -> dann Fallback.
+  Response JSON: {"data": [{"title": ..., "artist": {"name": ...}}, ...]}
+  Deezer reports errors as {"error": {...}} WITH HTTP 200 (handled as in
+  charts-sync/app/deezer.py) -> then fallback.
 
-WICHTIG (verifiziert gegen die Live-API): Die strukturierte Advanced-Search-
-Query ``artist:"<a>" track:"<t>"`` liefert bei Deezer konsequent 0 Treffer
-(auch fuer bekannte Songs, unabhaengig vom Casing) - das Feature waere damit ein
-No-op. Die PLAIN-Query ``q="<artist> <title>"`` liefert dagegen korrekte
-Treffer. Die lockerere Plain-Query wird durch die strikte normalize()/
-similarity()-Validierung (DEEZER_MATCH_MIN) gegen Fehltreffer abgesichert.
+IMPORTANT (verified against the live API): the structured advanced-search query
+``artist:"<a>" track:"<t>"`` consistently returns 0 hits on Deezer (even for
+well-known songs, independent of casing) - the feature would thus be a no-op.
+The PLAIN query ``q="<artist> <title>"`` however returns correct hits. The
+looser plain query is guarded against false hits by the strict normalize()/
+similarity() validation (DEEZER_MATCH_MIN).
 
-Design (Stil von year.py):
-  - resolve_canonical(artist, title) -> (artist, title): kanonische Werte oder
-    - bei Abschaltung/kein Treffer/Netzfehler/zu grosser Abweichung - die
-    unveraenderten FLASHBACK-Rohwerte (lieber GROSS als falsch geraten).
-  - Prozess-weiter JSON-Cache (auch Misses), damit wiederkehrende Songs die API
-    nicht erneut belasten.
-  - Treffer-VALIDIERUNG ueber library.normalize/library.similarity (dieselbe
-    Logik wie das Library-Matching), nicht neu erfunden.
-  - Alle Netz-/HTTP-/JSON-Fehler sind nie fatal (Log DEBUG + Fallback).
+Design (style of year.py):
+  - resolve_canonical(artist, title) -> (artist, title): canonical values or
+    - when disabled/no hit/network error/too large a deviation - the unchanged
+    FLASHBACK raw values (rather UPPERCASE than wrongly guessed).
+  - Process-wide JSON cache (misses too) so recurring songs do not hit the API
+    again.
+  - Hit VALIDATION via library.normalize/library.similarity (the same logic as
+    the library matching), not reinvented.
+  - All network/HTTP/JSON errors are never fatal (log DEBUG + fallback).
 """
 
 import json
@@ -44,12 +44,12 @@ logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://api.deezer.com/search"
 
-# Prozess-weiter Cache (persistiert in DEEZER_CACHE_FILE).
+# Process-wide cache (persisted in DEEZER_CACHE_FILE).
 _cache: dict | None = None
 
 
 def _key(artist: str, title: str) -> str:
-    """Cache-Key identisch zum Matching-/Jahr-Map-Key (lowercase 'artist|title')."""
+    """Cache key identical to the matching/year-map key (lowercase 'artist|title')."""
     return f"{artist.lower()}|{title.lower()}"
 
 
@@ -81,25 +81,25 @@ def _save_cache() -> None:
 
 import re as _re
 
-# Entfernt EINEN runden Klammer-Zusatz am Titelende (z.B. "There Must Be an
+# Removes ONE parenthesized addition at the title end (e.g. "There Must Be an
 # Angel (Playing With My Heart)" -> "There Must Be an Angel"). library.normalize
-# strippt nur bekannte Zusaetze (feat/version/remaster/...); ein genereller
-# Untertitel in Klammern bleibt sonst stehen und drueckt die Titel-Similarity.
+# only strips known additions (feat/version/remaster/...); a general
+# parenthesized subtitle otherwise stays and depresses the title similarity.
 _TRAILING_PAREN = _re.compile(r"\s*[\(\[][^\(\)\[\]]*[\)\]]\s*$")
 
 
 def _strip_trailing_paren(text: str) -> str:
-    """Schneidet einen abschliessenden (…)/[…]-Zusatz ab (einmal)."""
+    """Cut off a trailing (…)/[…] addition (once)."""
     return _TRAILING_PAREN.sub("", text or "").strip()
 
 
 def _passes(a_score: int, t_score: int) -> bool:
     """
-    Validierungs-Regel fuer einen Treffer. Primaer strikt (beide >= MATCH_MIN).
-    Zusaetzlich ASYMMETRISCH: ist EIN Feld sehr sicher (>= STRONG), reicht beim
-    anderen die gelockerte Schwelle (>= RELAX). Faengt Alias-Kuenstler (Titel
-    100, Artist niedrig) und Klammer-Titel (Artist 100, Titel gedrueckt), ohne
-    bei beidseitig schwachen Treffern Fehltreffer zuzulassen.
+    Validation rule for a hit. Primarily strict (both >= MATCH_MIN).
+    Additionally ASYMMETRIC: if ONE field is very confident (>= STRONG), the
+    relaxed threshold (>= RELAX) is enough for the other. Catches alias artists
+    (title 100, artist low) and parenthesized titles (artist 100, title
+    depressed) without allowing false hits when both are weak.
     """
     mn = config.DEEZER_MATCH_MIN
     strong = config.DEEZER_MATCH_STRONG
@@ -115,13 +115,13 @@ def _passes(a_score: int, t_score: int) -> bool:
 
 def _best_canonical(data: list, raw_artist: str, raw_title: str):
     """
-    Waehlt aus den Deezer-Treffern (data[]) den BESTEN belastbaren Kandidaten.
-    Belastbar = Validierung nach _passes() (strikt ODER asymmetrisch, s.o.).
-    Fuer den Titel-Score wird zusaetzlich die klammerbereinigte Variante geprueft
-    und der bessere der beiden Werte genommen (Deezer-Untertitel wie
-    "(Playing With My Heart)" sollen nicht gegen den Treffer zaehlen). Unter den
-    belastbaren gewinnt der mit der hoechsten Summe (artist+title). Rueckgabe:
-    (artist, title) oder None (kein gueltiger Treffer -> Rohwerte).
+    Pick the BEST solid candidate from the Deezer hits (data[]). Solid =
+    validation per _passes() (strict OR asymmetric, see above). For the title
+    score the paren-stripped variant is also checked and the better of the two
+    values taken (Deezer subtitles like "(Playing With My Heart)" should not
+    count against the hit). Among the solid ones the one with the highest sum
+    (artist+title) wins. Returns: (artist, title) or None (no valid hit -> raw
+    values).
     """
     n_raw_artist = library.normalize(raw_artist)
     n_raw_title = library.normalize(raw_title)
@@ -132,13 +132,13 @@ def _best_canonical(data: list, raw_artist: str, raw_title: str):
         if not isinstance(item, dict):
             continue
         cand_artist = ((item.get("artist") or {}).get("name") or "").strip()
-        # title_short laesst "(feat. ...)"-Zusaetze weg und matcht meist besser.
+        # title_short omits "(feat. ...)" additions and usually matches better.
         cand_title = (item.get("title_short") or item.get("title") or "").strip()
         if not cand_artist or not cand_title:
             continue
         a_score = library.similarity(library.normalize(cand_artist), n_raw_artist)
-        # Titel-Score: besserer Wert aus vollem und klammerbereinigtem Vergleich,
-        # beidseitig (Kandidat UND Rohwert koennen den Zusatz tragen).
+        # Title score: better value from the full and the paren-stripped
+        # comparison, on both sides (candidate AND raw value can carry the add).
         n_cand_title = library.normalize(cand_title)
         n_cand_title_stripped = library.normalize(_strip_trailing_paren(cand_title))
         t_score = max(
@@ -157,11 +157,11 @@ def _best_canonical(data: list, raw_artist: str, raw_title: str):
 
 def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
     """
-    Liefert (artist, title) in kanonischer Schreibweise ueber die Deezer-Suche.
+    Return (artist, title) in canonical spelling via the Deezer search.
 
-    Fallback auf die unveraenderten Rohwerte, wenn der Schalter aus ist, kein
-    belastbarer Treffer existiert oder ein Netz-/HTTP-/JSON-Fehler auftritt
-    (lieber GROSS als falsch geraten). Ergebnis wird gecacht (auch Misses).
+    Fall back to the unchanged raw values when the switch is off, no solid hit
+    exists or a network/HTTP/JSON error occurs (rather UPPERCASE than wrongly
+    guessed). The result is cached (misses too).
     """
     if not config.DEEZER_CANONICAL_ENABLED:
         return artist, title
@@ -174,10 +174,10 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
         cached = cache[k]
         if isinstance(cached, list) and len(cached) == 2:
             return cached[0], cached[1]
-        # Unerwartetes Cache-Format -> ignorieren und neu aufloesen.
+        # Unexpected cache format -> ignore and resolve anew.
 
-    # Plain-Query "<artist> <title>" (die strukturierte Query liefert bei Deezer
-    # 0 Treffer, siehe Modul-Docstring). httpx uebernimmt das URL-Encoding.
+    # Plain query "<artist> <title>" (the structured query returns 0 hits on
+    # Deezer, see module docstring). httpx handles the URL encoding.
     query = f"{artist} {title}"
     result = (artist, title)
     try:
@@ -185,7 +185,7 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
             resp = client.get(_SEARCH_URL, params={"q": query})
             resp.raise_for_status()
             payload = resp.json()
-        # Deezer meldet Fehler als {"error": {...}} mit HTTP 200.
+        # Deezer reports errors as {"error": {...}} with HTTP 200.
         if isinstance(payload, dict) and payload.get("error"):
             logger.debug(t("flashback.deezer.api_error", artist=artist,
                            title=title, error=payload["error"]))
@@ -204,7 +204,7 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
         logger.debug(t("flashback.deezer.lookup_failed", artist=artist,
                        title=title, error=e))
 
-    # Immer ein Ergebnis cachen (auch den Rohwert-Miss), nie leer lassen.
+    # Always cache a result (the raw-value miss too), never leave it empty.
     cache[k] = [result[0], result[1]]
     _save_cache()
     return result

@@ -1,27 +1,27 @@
 """
-charts-flashback – Hauptservice (Download-only).
+charts-flashback – main service (download-only).
 
-Liest die "zuletzt gespielt"-Rotation von FLASHBACK FM (GraphQL) pro
-konfiguriertem Dekaden-Channel und laesst die GEMEINSAME Library mitwachsen. Er
-schreibt KEINE Playlists - die Dekaden-Anzeige uebernehmen die Navidrome Smart
-Playlists (NSP), die nach Jahr filtern.
+Reads the "last played" rotation of FLASHBACK FM (GraphQL) per configured
+decade channel and lets the SHARED library grow along. It writes NO playlists -
+the decade display is handled by the Navidrome Smart Playlists (NSP), which
+filter by year.
 
-  1. Library-Index bauen (wie charts-sync).
-  2. Pro Channel die zuletzt gespielten Songs holen (flashback.fetch_played).
-  3. NEUE Songs (nicht im State, nicht schon in diesem Lauf gesehen) bis
-     FLASHBACK_LIMIT verarbeiten: Jahr aufloesen (year.resolve_year, Hybrid
-     MusicBrainz + Channel-Dekade) und gegen die Library matchen.
-       - vorhanden -> zaehlen (nichts nachzuladen)
-       - fehlt     -> in die missing-flashback.txt (mit {YYYY}-Suffix), damit
-                      charts-download sie nachlaedt und charts-import das
-                      Jahr-Tag setzt.
-  4. State speichern, Pushover-Meldung.
+  1. Build the library index (like charts-sync).
+  2. Fetch the last played songs per channel (flashback.fetch_played).
+  3. Process NEW songs (not in the state, not already seen in this run) up to
+     FLASHBACK_LIMIT: resolve the year (year.resolve_year, hybrid MusicBrainz +
+     channel decade) and match against the library.
+       - present -> count (nothing to backfill)
+       - missing -> into missing-flashback.txt (with a {YYYY} suffix) so
+                    charts-download backfills it and charts-import sets the
+                    year tag.
+  4. Save state, Pushover message.
 
-Laeuft als Scheduler-Loop (alle INTERVAL_HOURS Stunden).
+Runs as a scheduler loop (every INTERVAL_HOURS hours).
 
-Fehler-Sichtbarkeit (watchdog): schlaegt der GraphQL-Abruf fuer ALLE Channels
-fehl (toter Hash / API geaendert), meldet der Dienst status=error + Pushover.
-Ein erfolgreicher Abruf ohne NEUE Songs ist KEIN Fehler.
+Error visibility (watchdog): if the GraphQL fetch fails for ALL channels (dead
+hash / API changed), the service reports status=error + Pushover. A successful
+fetch without NEW songs is NOT an error.
 """
 
 import json
@@ -42,7 +42,7 @@ logger = logging.getLogger("charts-flashback")
 
 
 # ---------------------------------------------------------------------------
-# State (gesehene Songs, gegen Rotations-Reprocessing)
+# State (seen songs, against rotation reprocessing)
 # ---------------------------------------------------------------------------
 
 def _load_state() -> dict:
@@ -72,18 +72,18 @@ def _key(artist: str, title: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Missing-Writer (4-Tupel + optionales {YYYY}-Suffix, von charts-download gelesen)
+# Missing writer (4-tuple + optional {YYYY} suffix, read by charts-download)
 # ---------------------------------------------------------------------------
 
 def write_missing(missing: list[tuple[int, str, str, str]], file_name: str) -> str:
     """
-    Schreibt die Fehlliste im charts-download-Format ("  <pos>. <artist> -
-    <title>") - EXAKT wie charts-sync/charts-hitparade, OHNE jedes Jahr-Zeichen.
-    So erstellt charts-import Pfad/Name/Tags identisch zu allen anderen Diensten
-    (Lidarr-Stil). Das Jahr wird NICHT ueber den Dateinamen transportiert
-    (das verseuchte frueher Titel/Album/Pfad), sondern separat ueber die
-    Jahr-Map (write_year_map) rein in die Metadaten.
-    missing: (position, artist, title, year) - year wird hier IGNORIERT.
+    Write the missing list in the charts-download format ("  <pos>. <artist> -
+    <title>") - EXACTLY like charts-sync/charts-hitparade, WITHOUT any year
+    character. This way charts-import creates path/name/tags identical to all
+    other services (Lidarr style). The year is NOT transported via the file
+    name (that formerly poisoned title/album/path) but separately via the year
+    map (write_year_map), purely into the metadata.
+    missing: (position, artist, title, year) - year is IGNORED here.
     """
     os.makedirs(config.CHARTS_DIR, exist_ok=True)
     missing_path = os.path.join(config.CHARTS_DIR, file_name)
@@ -104,12 +104,11 @@ def write_missing(missing: list[tuple[int, str, str, str]], file_name: str) -> s
 
 def write_year_map(missing: list[tuple[int, str, str, str]]) -> None:
     """
-    Schreibt/aktualisiert die Jahr-Map (artist|title -> jahr) nach
-    config.YEAR_MAP_FILE. charts-import liest sie beim Taggen und setzt das
-    date/originaldate-Tag - OHNE dass das Jahr je im Datei-/Ordnernamen auftaucht.
-    Der Key ist identisch zum Matching-Key (lowercase 'artist|title'), damit
-    charts-import denselben Song wiederfindet. Bestehende Eintraege bleiben
-    erhalten (die Map waechst mit).
+    Write/update the year map (artist|title -> year) to config.YEAR_MAP_FILE.
+    charts-import reads it when tagging and sets the date/originaldate tag -
+    WITHOUT the year ever appearing in the file/folder name. The key is
+    identical to the matching key (lowercase 'artist|title') so charts-import
+    finds the same song again. Existing entries are kept (the map grows along).
     """
     path = config.YEAR_MAP_FILE
     data = {}
@@ -143,28 +142,28 @@ def write_year_map(missing: list[tuple[int, str, str, str]]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Hauptlauf
+# Main run
 # ---------------------------------------------------------------------------
 
 def run_once() -> tuple[dict, list[str], int, int]:
     """
-    Fuehrt einen FLASHBACK-Lauf aus.
+    Run one FLASHBACK run.
 
-    Rueckgabe: (counters, fetch_errors, transport_attempts, transport_failures)
-      counters:           {channels, new, matched, missing} (Momentanwerte).
-      fetch_errors:       Channel-Fehlermeldungen (FetchError nach Retries).
-      transport_attempts: Wie viele Channel-Abrufe stattfanden.
-      transport_failures: Davon mit FetchError.
+    Returns: (counters, fetch_errors, transport_attempts, transport_failures)
+      counters:           {channels, new, matched, missing} (snapshot values).
+      fetch_errors:       channel error messages (FetchError after retries).
+      transport_attempts: how many channel fetches happened.
+      transport_failures: of those, how many with a FetchError.
 
-    Jeder Channel wird einzeln abgesichert: faellt einer aus, koennen andere
-    trotzdem liefern. Nur ein FetchError zaehlt als Fehler; ein erfolgreicher
-    Abruf ohne neue Songs ist kein Fehler.
+    Each channel is guarded individually: if one fails, others can still
+    deliver. Only a FetchError counts as an error; a successful fetch without
+    new songs is not an error.
     """
     logger.info(t("flashback.run.start"))
     lib = library.build_index(config.MUSIC_DIR)
     state = _load_state()
     seen_state: dict = state["seen"]
-    seen_run: set[str] = set()           # innerhalb dieses Laufs (erster Channel gewinnt)
+    seen_run: set[str] = set()           # within this run (first channel wins)
     missing: list[tuple[int, str, str, str]] = []
     channels_with_data = 0
     new_count = 0
@@ -193,11 +192,11 @@ def run_once() -> tuple[dict, list[str], int, int]:
             for artist, title, title_year in played:
                 if new_count >= config.FLASHBACK_LIMIT:
                     break
-                # Casing kanonisieren BEVOR _key/seen/find_match/missing laufen:
-                # FLASHBACK liefert GROSS, Deezer gibt die echte Schreibweise.
-                # _key/seen bleiben casing-robust (lowercase), aber der in
-                # missing.txt geschriebene Name bestimmt den spaeteren Ordner-/
-                # Dateinamen und muss kanonisch sein. Fallback = Rohwert.
+                # Canonicalize casing BEFORE _key/seen/find_match/missing run:
+                # FLASHBACK delivers UPPERCASE, Deezer gives the real spelling.
+                # _key/seen stay casing-robust (lowercase), but the name written
+                # into missing.txt determines the later folder/file name and
+                # must be canonical. Fallback = raw value.
                 artist, title = deezer.resolve_canonical(artist, title)
                 k = _key(artist, title)
                 if k in seen_state or k in seen_run:
@@ -216,7 +215,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
     _save_state(state)
     if config.WRITE_MISSING and missing:
         write_missing(missing, config.MISSING_FILE)
-        write_year_map(missing)   # Jahr separat -> charts-import taggt daraus
+        write_year_map(missing)   # year separately -> charts-import tags from it
 
     counters = {
         "channels": channels_with_data,
@@ -240,7 +239,7 @@ def _prev_status() -> str:
     return val if isinstance(val, str) else "ok"
 
 
-# Counter-Keys (literal, dashboard-Payload) -> i18n-Key fuer das lesbare Label.
+# Counter keys (literal, dashboard payload) -> i18n key for the readable label.
 _COUNTER_LABEL_KEYS = {
     "channels": "flashback.counter.channels",
     "new": "flashback.counter.new",
@@ -250,8 +249,8 @@ _COUNTER_LABEL_KEYS = {
 
 
 def _base_msg(counters: dict) -> str:
-    """Lesbare Status-/Dashboard-Zeile aus den Countern (uebersetztes Label je
-    Counter, keine rohen englischen Counter-Keys)."""
+    """Readable status/dashboard line from the counters (translated label per
+    counter, no raw English counter keys)."""
     parts = [f"{v} {t(_COUNTER_LABEL_KEYS[k])}"
              for k, v in counters.items()
              if k in _COUNTER_LABEL_KEYS and isinstance(v, (int, float)) and v]
@@ -284,15 +283,15 @@ def _alert_fetch_error(message: str, was_error_before: bool) -> None:
 
 
 def _guarded_run() -> None:
-    # Deaktiviert: Container laeuft weiter, aber kein Abruf. Status idle (grau,
-    # kein Fehler) statt ok/error. VOR prev_status/status.start()/run_once().
+    # Disabled: the container keeps running but no fetch. Status idle (gray, not
+    # an error) instead of ok/error. BEFORE prev_status/status.start()/run_once().
     if not config.FLASHBACK_ENABLED:
         status.start()
         status.finish("idle", t("flashback.status.disabled"), {}, _next_run_iso())
         logger.info(t("flashback.disabled_skip"))
         return
-    # Aktiv, aber kein Hash gesetzt -> es gibt nichts abzurufen. Ehrlicher als
-    # ein gruenes "ok" (es lief kein echter Abruf): Status idle.
+    # Active but no hash set -> there is nothing to fetch. More honest than a
+    # green "ok" (no real fetch ran): status idle.
     if not config.FLASHBACK_HASH:
         status.start()
         status.finish("idle", t("flashback.status.no_hash"),

@@ -1,6 +1,6 @@
 """
-Konfiguration fuer den Charts-Sync-Service.
-Alle Werte werden aus Umgebungsvariablen gelesen (siehe .env.example).
+Configuration for the charts-sync service.
+All values are read from environment variables (see .env.example).
 """
 
 import json
@@ -13,35 +13,36 @@ logger = logging.getLogger(__name__)
 
 
 def _get_int(name: str, default: int) -> int:
-    """Liest eine Ganzzahl aus der Umgebung, faellt bei Fehlern auf den Default zurueck."""
+    """Read an integer from the environment, falling back to the default on error."""
     try:
         return int(os.environ.get(name, str(default)))
     except (TypeError, ValueError):
         return default
 
 
-# --- Pfade (im Container gemountet) ---
-# MUSIC_DIR:    der Ordner, den auch Navidrome als Library-Root sieht.
-#               Die Song-Pfade in den Playlists werden relativ zu diesem
-#               Verzeichnis geschrieben, damit Navidrome sie zuordnen kann.
-# PLAYLIST_DIR: Zielordner fuer die .m3u-Playlists. MUSS ein Ort sein, den
-#               Navidrome scannt (z.B. direkt MUSIC_DIR), sonst tauchen die
-#               Playlists in Navidrome nicht auf. Default = MUSIC_DIR.
-# CHARTS_DIR:   Ablageort fuer die missing-Dateien (muss Navidrome NICHT sehen).
+# --- Paths (mounted inside the container) ---
+# MUSIC_DIR:    the folder that Navidrome also sees as the library root.
+#               The song paths in the playlists are written relative to this
+#               directory so Navidrome can map them.
+# PLAYLIST_DIR: target folder for the .m3u playlists. MUST be a location that
+#               Navidrome scans (e.g. MUSIC_DIR directly), otherwise the
+#               playlists do not show up in Navidrome. Default = MUSIC_DIR.
+# CHARTS_DIR:   storage location for the missing files (Navidrome does NOT need
+#               to see it).
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 PLAYLIST_DIR = os.environ.get("PLAYLIST_DIR", "") or MUSIC_DIR
 CHARTS_DIR = os.environ.get("CHARTS_DIR", "/music/Charts")
 
-# Wie viele Chart-Songs pro Quelle beruecksichtigt werden (Default fuer Quellen
-# ohne eigenes "limit").
-#   "all" (Default) = alle verfuegbaren Tracks der Quelle holen
-#   Zahl            = auf so viele Tracks pro Quelle begrenzen
-# Intern wird "all" als sehr hohes Limit umgesetzt (Deezer liefert dann alles).
+# How many chart songs per source are considered (default for sources without
+# their own "limit").
+#   "all" (default) = fetch all available tracks of the source
+#   number          = limit to that many tracks per source
+# Internally "all" is implemented as a very high limit (Deezer then returns all).
 _ALL_LIMIT = 100000
 
 
 def _parse_limit(value, default: int = _ALL_LIMIT) -> int:
-    """Wandelt einen Limit-Wert ('all' oder Zahl) in eine Ganzzahl um."""
+    """Convert a limit value ('all' or a number) into an integer."""
     if value is None:
         return default
     s = str(value).strip().lower()
@@ -55,24 +56,24 @@ def _parse_limit(value, default: int = _ALL_LIMIT) -> int:
 
 CHART_LIMIT = _parse_limit(os.environ.get("CHART_LIMIT"), _ALL_LIMIT)
 
-# --- Last.fm (optional, zweite Chart-Quelle neben Deezer) ---
-# Kostenloser API-Key von https://www.last.fm/api/account/create.
-# Nur noetig, wenn mindestens ein Feed vom Typ "lastfm" aktiv ist.
+# --- Last.fm (optional, second chart source alongside Deezer) ---
+# Free API key from https://www.last.fm/api/account/create.
+# Only needed when at least one feed of type "lastfm" is active.
 LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "").strip()
 
-# --- Genre-Filter (optional) ---
-# Schliesst Chart-Tracks aus, deren dominante Last.fm-Tags in dieser Liste
-# stehen (z.B. um Country/Schlager aus den Pop-Charts zu halten). Der Filter
-# fragt pro Track track.getTopTags ab und braucht daher LASTFM_API_KEY.
-#   GENRE_FILTER=1        -> Filter aktiv (opt-in; Shipped-Default in
-#                            compose.yml/.env.example ist 0 = aus)
-#   EXCLUDE_TAGS=a,b,c    -> auszuschliessende Tags (kommagetrennt)
-# Ein Track fliegt raus, wenn einer seiner staerksten EXCLUDE_TAG_TOP_N Tags
-# in EXCLUDE_TAGS steht UND dessen count >= EXCLUDE_TAG_MIN_COUNT ist.
+# --- Genre filter (optional) ---
+# Excludes chart tracks whose dominant Last.fm tags are in this list (e.g. to
+# keep country/schlager out of the pop charts). The filter queries
+# track.getTopTags per track and therefore needs LASTFM_API_KEY.
+#   GENRE_FILTER=1        -> filter active (opt-in; shipped default in
+#                            compose.yml/.env.example is 0 = off)
+#   EXCLUDE_TAGS=a,b,c    -> tags to exclude (comma-separated)
+# A track is dropped when one of its strongest EXCLUDE_TAG_TOP_N tags is in
+# EXCLUDE_TAGS AND its count is >= EXCLUDE_TAG_MIN_COUNT.
 GENRE_FILTER = os.environ.get("GENRE_FILTER", "0") == "1"
-# Fremd-Genres, die aus den Pop-Charts gehalten werden sollen. Bewusst OHNE
-# "hard rock"/"metal": Rock-Klassiker (AC/DC, Bon Jovi, Guns N' Roses, Europe)
-# gehoeren in die 80er/90er-Playlist. Country/Schlager/Folk/Klassik dagegen raus.
+# Foreign genres that should be kept out of the pop charts. Deliberately WITHOUT
+# "hard rock"/"metal": rock classics (AC/DC, Bon Jovi, Guns N' Roses, Europe)
+# belong in the 80s/90s playlist. Country/schlager/folk/classical however out.
 _DEFAULT_EXCLUDE_TAGS = (
     "country,contemporary country,modern country,schlager,volksmusik,"
     "folk,americana,bluegrass,classical,classic country"
@@ -83,131 +84,130 @@ def _parse_tags(value: str) -> set[str]:
     return {t.strip().lower() for t in value.split(",") if t.strip()}
 
 
-# Leeres oder nicht gesetztes EXCLUDE_TAGS faellt auf die Default-Liste zurueck.
-# (Ein leeres EXCLUDE_TAGS= in .env/compose soll NICHT alles durchlassen, sonst
-# waere der Filter faktisch aus, obwohl GENRE_FILTER=1 ist.)
+# An empty or unset EXCLUDE_TAGS falls back to the default list. (An empty
+# EXCLUDE_TAGS= in .env/compose should NOT let everything through, otherwise the
+# filter would effectively be off even though GENRE_FILTER=1.)
 _exclude_raw = os.environ.get("EXCLUDE_TAGS", "").strip() or _DEFAULT_EXCLUDE_TAGS
 EXCLUDE_TAGS = _parse_tags(_exclude_raw)
-# Wie viele der staerksten Tags eines Songs geprueft werden.
+# How many of a song's strongest tags are checked.
 EXCLUDE_TAG_TOP_N = _get_int("EXCLUDE_TAG_TOP_N", 3)
-# Mindest-count eines Tags (Last.fm-Tags gehen 0-100), damit er zaehlt. 60 haelt
-# Troll-/Nischen-Tags (z.B. "brutal death metal 41" bei Rick Astley) draussen;
-# nur ein wirklich dominantes Genre (>=60) fuehrt zum Ausschluss.
+# Minimum count of a tag (Last.fm tags range 0-100) for it to count. 60 keeps
+# troll/niche tags (e.g. "brutal death metal 41" on Rick Astley) out; only a
+# truly dominant genre (>=60) leads to exclusion.
 EXCLUDE_TAG_MIN_COUNT = _get_int("EXCLUDE_TAG_MIN_COUNT", 60)
-# Pause zwischen den Genre-Tag-Abfragen (ms), schont die Last.fm-API.
+# Pause between the genre-tag queries (ms), to be gentle on the Last.fm API.
 GENRE_FILTER_SLEEP_MS = _get_int("GENRE_FILTER_SLEEP_MS", 200)
 
 # --- Scheduler ---
-# Intervall zwischen zwei regulaeren Sync-Laeufen in Stunden (fuer neue Charts).
+# Interval between two regular sync runs in hours (for new charts).
 SYNC_INTERVAL_HOURS = _get_int("SYNC_INTERVAL_HOURS", 12)
-# Beim Start sofort einmal synchronisieren (1) oder erst nach dem Intervall (0).
+# Synchronize once immediately on start (1) or only after the interval (0).
 RUN_ON_START = os.environ.get("RUN_ON_START", "1") == "1"
 
-# --- Resync-Trigger (von charts-import) ---
-# charts-import legt nach einem Import eine Signal-Datei an, damit die Playlist
-# zeitnah aktualisiert wird, statt erst beim naechsten regulaeren Lauf. charts-
-# sync prueft alle RESYNC_CHECK_SECONDS, ob das Signal existiert.
-# Der Check ist nur eine Datei-Existenzabfrage (praktisch kostenlos); ein
-# echter (teurer) Sync-Lauf passiert nur, wenn das Signal wirklich da ist.
+# --- Resync trigger (from charts-import) ---
+# charts-import drops a signal file after an import so the playlist is updated
+# promptly instead of only on the next regular run. charts-sync checks every
+# RESYNC_CHECK_SECONDS whether the signal exists. The check is just a file
+# existence probe (practically free); a real (expensive) sync run only happens
+# when the signal is actually there.
 RESYNC_SIGNAL = os.environ.get(
     "RESYNC_SIGNAL", os.path.join(CHARTS_DIR, ".resync-requested")
 )
 RESYNC_CHECK_SECONDS = _get_int("RESYNC_CHECK_SECONDS", 60)
 
 # --- Matching ---
-# Ab welcher Aehnlichkeit (0-100) ein Library-Track als Treffer gilt.
+# From which similarity (0-100) a library track counts as a hit.
 MATCH_THRESHOLD = _get_int("MATCH_THRESHOLD", 87)
 
-# Mindest-Aehnlichkeit (0-100) des KUENSTLERS, damit ein Track ueberhaupt als
-# Treffer infrage kommt. Verhindert, dass ein gleicher Titel eines anderen
-# Kuenstlers faelschlich matcht (z.B. Chart "BLACKPINK - Jump" -> "Van Halen -
-# Jump"). Hoeher = strenger. 60 ist ein guter Wert; bei zu vielen Fehltreffern
-# erhoehen, bei zu vielen faelschlich fehlenden Songs senken.
+# Minimum similarity (0-100) of the ARTIST for a track to even be considered a
+# hit. Prevents a same title by a different artist from matching wrongly (e.g.
+# chart "BLACKPINK - Jump" -> "Van Halen - Jump"). Higher = stricter. 60 is a
+# good value; raise it with too many false hits, lower it with too many songs
+# wrongly reported missing.
 ARTIST_MIN_SCORE = _get_int("ARTIST_MIN_SCORE", 60)
 
-# IGNORE_COMPILATIONS=1 (Standard): Library-Tracks, die aus einer Compilation/
-#   einem Sampler stammen (z.B. "Various Artists", "Bravo Hits", "Top 100"),
-#   werden beim Abgleich IGNORIERT. Ein Chart-Song, der bei dir nur als Teil
-#   einer Compilation vorliegt, gilt dann als "fehlend" und wird von
-#   charts-download als saubere Single-/Album-Version nachgeladen.
-# IGNORE_COMPILATIONS=0: gegen die komplette Library abgleichen (inkl.
-#   Compilations) - dann wird ein Song, der in einer Compilation steckt, als
-#   vorhanden gewertet und nicht neu geladen.
+# IGNORE_COMPILATIONS=1 (default): library tracks that come from a compilation/
+#   a sampler (e.g. "Various Artists", "Bravo Hits", "Top 100") are IGNORED
+#   during matching. A chart song that you only have as part of a compilation
+#   then counts as "missing" and is fetched by charts-download as a clean
+#   single/album version.
+# IGNORE_COMPILATIONS=0: match against the complete library (incl. compilations)
+#   - then a song that sits in a compilation counts as present and is not
+#   re-fetched.
 IGNORE_COMPILATIONS = os.environ.get("IGNORE_COMPILATIONS", "1") == "1"
-# Dateiendungen, die als Musikdateien betrachtet werden.
+# File extensions considered to be music files.
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".wav", ".alac",
 }
 
-# --- Pushover (optional, identisch zum jellyfin-webhook Setup) ---
+# --- Pushover (optional, identical to the jellyfin-webhook setup) ---
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
-# Pushover fuer diesen Dienst global stummschalten (ohne Token/User zu loeschen).
+# Globally mute Pushover for this service (without deleting token/user).
 PUSHOVER_ENABLED = os.environ.get("PUSHOVER_ENABLED", "1") == "1"
 PUSHOVER_DEVICE = os.environ.get("PUSHOVER_DEVICE", "").strip()
-# Cache-Dauer (Sekunden) fuer die vom Pushover-Account abgerufene Geräteliste.
-# Gegen die wird die PUSHOVER_DEVICE-Liste vor dem Senden gefiltert, damit ein
-# ungültiger/deaktivierter Gerätename nicht Pushovers "an alle"-Fallback
-# ausloest (Doppel-Push). Standard 3600s = 1h.
+# Cache duration (seconds) for the device list fetched from the Pushover
+# account. The PUSHOVER_DEVICE list is filtered against it before sending so an
+# invalid/disabled device name does not trigger Pushover's "to all" fallback
+# (double push). Default 3600s = 1h.
 PUSHOVER_DEVICES_TTL = _get_int("PUSHOVER_DEVICES_TTL", 3600)
-# Pushover-Benachrichtigungston. Leer = Account-Default (kein sound-Feld im
-# Request). Default fuer charts-sync: "falling".
+# Pushover notification sound. Empty = account default (no sound field in the
+# request). Default for charts-sync: "falling".
 PUSHOVER_SOUND = os.environ.get("PUSHOVER_SOUND", "falling").strip()
-# Nur benachrichtigen, wenn sich die Playlist gegenueber dem letzten Lauf
-# geaendert hat (1) oder nach jedem Lauf (0).
+# Notify only when the playlist changed compared to the last run (1) or after
+# every run (0).
 NOTIFY_ONLY_ON_CHANGE = os.environ.get("NOTIFY_ONLY_ON_CHANGE", "1") == "1"
 
-# Wie viele fehlende Songs maximal in die Pushover-Meldung geschrieben werden.
-# So bekommst du die "missing"-Liste direkt aufs Handy, ohne dich am NAS
-# einzuloggen. Pushover begrenzt eine Nachricht auf 1024 Zeichen; bei sehr
-# vielen fehlenden Songs wird die Liste gekuerzt und ein Hinweis angehaengt.
-# 0 = keine fehlenden Songs in der Meldung auffuehren (nur die Anzahl).
+# How many missing songs are written into the Pushover message at most. This
+# gets you the "missing" list straight to your phone without logging into the
+# NAS. Pushover limits a message to 1024 characters; with very many missing
+# songs the list is truncated and a note appended.
+# 0 = do not list any missing songs in the message (only the count).
 NOTIFY_MISSING_LIMIT = _get_int("NOTIFY_MISSING_LIMIT", 40)
 
-# Zustandsdatei, in der der letzte Stand pro Playlist gespeichert wird
-# (fuer die "nur bei Aenderung"-Benachrichtigung und die Sortierung). Liegt in
-# CHARTS_DIR.
+# State file in which the last state per playlist is stored (for the "only on
+# change" notification and the ordering). Lives in CHARTS_DIR.
 STATE_FILE = os.environ.get("STATE_FILE", ".charts-sync-state.json")
 
-# --- Playlist-Definition aus einer DATEI (optional, admin-freundlich) ---
-# Die CHARTS-Env ist zwingend EINZEILIG (Env-Limitierung) und bei vielen
-# Playlists/Quellen unuebersichtlich. Alternativ kann die komplette Definition
-# aus einer mehrzeiligen, lesbaren JSON-Datei geladen werden (CHARTS_FILE).
-# Prioritaet: CHARTS_FILE (wenn gesetzt UND Datei existiert UND valides JSON)
-# > CHARTS-Env > eingebaute Default-Playlists. Leer = Datei-Weg aus.
+# --- Playlist definition from a FILE (optional, admin-friendly) ---
+# The CHARTS env is necessarily SINGLE-LINE (env limitation) and gets unwieldy
+# with many playlists/sources. Alternatively the whole definition can be loaded
+# from a multi-line, readable JSON file (CHARTS_FILE).
+# Priority: CHARTS_FILE (if set AND file exists AND valid JSON)
+# > CHARTS env > built-in default playlists. Empty = file path off.
 CHARTS_FILE = os.environ.get("CHARTS_FILE", "").strip()
 
-# --- Playlist-Reihenfolge ---
-# In welcher Reihenfolge die Tracks in die .m3u geschrieben werden:
-#   "chart"        (Default): nach Chart-Position (Platz 1 zuoberst) - so wie
-#                  die Charts wirklich aussehen.
-#   "newest-first": zuletzt neu in die Playlist gekommene Songs zuoberst,
-#                  danach die aelteren. Praktisch, wenn die Playlist staendig
-#                  wechselt und man in der Player-App (z.B. Substreamer) sofort
-#                  die Neuzugaenge oben sehen will, statt immer dieselben
-#                  Chart-Platz-1-Songs. Das "erste Gesehen"-Datum je Song wird
-#                  im State gefuehrt (first_seen), damit die Reihenfolge ueber
-#                  Laeufe hinweg stabil bleibt.
+# --- Playlist order ---
+# In which order the tracks are written to the .m3u:
+#   "chart"        (default): by chart position (number 1 on top) - the way the
+#                  charts really look.
+#   "newest-first": songs most recently new to the playlist on top, then the
+#                  older ones. Handy when the playlist changes constantly and
+#                  you want to see the new additions at the top in the player
+#                  app (e.g. Substreamer) right away, instead of always the same
+#                  chart-position-1 songs. The "first seen" date per song is
+#                  kept in the state (first_seen) so the order stays stable
+#                  across runs.
 PLAYLIST_ORDER = os.environ.get("PLAYLIST_ORDER", "chart").strip().lower()
 
 
 class Feed:
     """
-    Eine einzelne Chart-Quelle innerhalb einer Playlist.
+    A single chart source within a playlist.
 
-    kind:    "deezer" oder "lastfm".
-    enabled: False -> Feed wird uebersprungen (ohne ihn aus der Config zu
-             loeschen). So kann man z.B. alle Deezer-Feeds ausschalten und nur
-             Last.fm importieren lassen (oder umgekehrt).
-    limit:   max. Anzahl Tracks fuer GENAU diese Quelle ("all" -> sehr hoch).
+    kind:    "deezer" or "lastfm".
+    enabled: False -> feed is skipped (without deleting it from the config). So
+             you can e.g. turn off all Deezer feeds and only import Last.fm (or
+             vice versa).
+    limit:   max number of tracks for EXACTLY this source ("all" -> very high).
 
-    Deezer-spezifisch:
-      deezer_type = "playlist" (Playlist-ID) oder "chart" (Chart-ID)
-      source      = die ID
-    Last.fm-spezifisch:
-      method = z.B. "chart.getTopTracks", "geo.getTopTracks",
+    Deezer-specific:
+      deezer_type = "playlist" (playlist ID) or "chart" (chart ID)
+      source      = the ID
+    Last.fm-specific:
+      method = e.g. "chart.getTopTracks", "geo.getTopTracks",
                "tag.getTopTracks", "user.getTopTracks"
-      params = dict mit method-spezifischen Zusatzwerten
+      params = dict with method-specific extra values
                (country / tag / user / period)
     """
 
@@ -233,19 +233,19 @@ class Feed:
 
 class ChartSource:
     """
-    Eine Playlist-Definition. Kann EINE oder MEHRERE Quellen (Deezer und/oder
-    Last.fm) buendeln; mehrere Quellen werden zu einer Playlist zusammengefuehrt
-    (gemergt) und dabei ueber Kuenstler+Titel dedupliziert.
+    A playlist definition. Can bundle ONE or MULTIPLE sources (Deezer and/or
+    Last.fm); multiple sources are merged into one playlist and deduplicated by
+    artist+title.
 
-    feeds:   Liste von Feed-Objekten.
-    name:    Dateiname der .m3u (landet in PLAYLIST_DIR).
-    title:   Anzeigename in Navidrome (Emojis + {date} erlaubt).
-    missing: Dateiname der Fehlliste (landet in CHARTS_DIR).
-    limit:   Standard-Limit des Eintrags (Fallback fuer Feeds ohne eigenes
-             "limit"; faellt selbst auf CHART_LIMIT zurueck).
-    exclude_artists: Kuenstler, die aus GENAU dieser Playlist entfernt werden.
-    genre_filter: Pro-Playlist-Override fuer den globalen GENRE_FILTER
-             (True/False). None (fehlt in der Config) -> globaler Default.
+    feeds:   list of Feed objects.
+    name:    file name of the .m3u (lands in PLAYLIST_DIR).
+    title:   display name in Navidrome (emojis + {date} allowed).
+    missing: file name of the missing list (lands in CHARTS_DIR).
+    limit:   default limit of the entry (fallback for feeds without their own
+             "limit"; itself falls back to CHART_LIMIT).
+    exclude_artists: artists removed from EXACTLY this playlist.
+    genre_filter: per-playlist override for the global GENRE_FILTER
+             (True/False). None (missing in the config) -> global default.
     """
 
     def __init__(self, feeds: list["Feed"], name: str, title: str,
@@ -257,31 +257,31 @@ class ChartSource:
         self.title = title
         self.missing = missing
         self.limit = limit
-        # Kuenstler, die NUR aus DIESER Playlist ferngehalten werden (unabhaengig
-        # vom Genre-Filter). Gross-/Kleinschreibung egal. Gedacht fuer Faelle,
-        # die sich per Genre nicht sauber trennen lassen - z.B. Schweizer
-        # Mundart-Schlager (Trauffer), den die APIs als "Pop" fuehren, du aber
-        # nicht in dieser Playlist willst. Andere Playlists behalten den Artist.
+        # Artists kept out of ONLY THIS playlist (independent of the genre
+        # filter). Case-insensitive. Meant for cases that cannot be cleanly
+        # separated by genre - e.g. Swiss Mundart schlager (Trauffer) that the
+        # APIs list as "pop" but you do not want in this playlist. Other
+        # playlists keep the artist.
         self.exclude_artists: set[str] = exclude_artists or set()
-        # Pro-Playlist-Override fuer den Genre-Filter. True/False stechen den
-        # globalen GENRE_FILTER aus; None (Feld fehlt) faellt auf den globalen
-        # Default zurueck (siehe effective_genre_filter).
+        # Per-playlist override for the genre filter. True/False override the
+        # global GENRE_FILTER; None (field missing) falls back to the global
+        # default (see effective_genre_filter).
         self.genre_filter: bool | None = genre_filter
-        # Wird von deezer.fetch_chart nach dem Lauf befuellt (fuer Pushover):
+        # Populated by deezer.fetch_chart after the run (for Pushover):
         # {"deezer_new": int, "lastfm_new": int, "genre_filtered": int}
         self.last_stats: dict[str, int] = {}
 
     @property
     def active_feeds(self) -> list["Feed"]:
-        """Nur die aktivierten Feeds (enabled=True)."""
+        """Only the enabled feeds (enabled=True)."""
         return [f for f in self.feeds if f.enabled]
 
     @property
     def effective_genre_filter(self) -> bool:
         """
-        Der tatsaechlich wirksame Genre-Filter-Schalter dieser Playlist:
-        explizites genre_filter (True/False) sticht den globalen GENRE_FILTER
-        aus; fehlt es (None), gilt der globale Default.
+        The genre-filter switch actually in effect for this playlist: an
+        explicit genre_filter (True/False) overrides the global GENRE_FILTER;
+        if it is missing (None), the global default applies.
         """
         return self.genre_filter if self.genre_filter is not None else GENRE_FILTER
 
@@ -290,33 +290,33 @@ class ChartSource:
         return f"ChartSource({self.title!r} [{feeds}] -> {self.name})"
 
 
-# Standard: ZWEI Playlists.
-#   1) charts.m3u      = globale Chart (auf Top 100 begrenzt) + Schweiz-Chart (alle).
-#      So bekommt man die weltweiten Top-Hits ohne den globalen Longtail
-#      (Platz 100-300) plus die komplette Schweizer Chart.
-#   2) mundart.m3u     = kuratierte Schweizer-Mundart-Sammlung (alle), separat, damit
-#      sie die Hits-Playlist nicht verwaessert.
-# Die Dekaden (80er/90er usw.) laufen NICHT mehr ueber charts-sync, sondern
-# ueber den Nachlade-Dienst charts-flashback (FLASHBACK FM) - er fuellt die
-# Library, die Dekaden-Anzeige uebernehmen die Navidrome Smart Playlists (NSP).
+# Default: TWO playlists.
+#   1) charts.m3u      = global chart (capped at Top 100) + Switzerland chart (all).
+#      This gets you the worldwide top hits without the global long tail
+#      (positions 100-300) plus the complete Swiss chart.
+#   2) mundart.m3u     = curated Swiss Mundart collection (all), separate so it
+#      does not dilute the hits playlist.
+# The decades (80s/90s etc.) no longer run via charts-sync but via the
+# backfill service charts-flashback (FLASHBACK FM) - it fills the library, and
+# the decade display is handled by the Navidrome Smart Playlists (NSP).
 # IDs:
-#   chart/0     = globale Deezer-Chart
-#   1313617925  = offizielle Deezer-Playlist "Top Switzerland"
-#   658561775   = Deezer-Playlist "Swiss Mundart Hits"
-# Feed-Schreibweisen in der CHARTS-Config:
+#   chart/0     = global Deezer chart
+#   1313617925  = official Deezer playlist "Top Switzerland"
+#   658561775   = Deezer playlist "Swiss Mundart Hits"
+# Feed notations in the CHARTS config:
 #   Deezer:  {"type": "chart"|"playlist", "source": "<id>", "limit": ..,
 #            "enabled": true}
-#   Last.fm: {"type": "lastfm", "method": "<methode>", "limit": ..,
-#            "enabled": true, <method-parameter: country|tag|user|period>}
+#   Last.fm: {"type": "lastfm", "method": "<method>", "limit": ..,
+#            "enabled": true, <method parameter: country|tag|user|period>}
 #
-# Der "enabled"-Schalter erlaubt es, eine Quelle stillzulegen, ohne sie zu
-# loeschen -> z.B. Deezer aus, nur Last.fm importieren (oder umgekehrt).
+# The "enabled" switch lets you suspend a source without deleting it -> e.g.
+# Deezer off, import only Last.fm (or vice versa).
 _DEFAULT_CHARTS = [
     {
-        # Aktuelle Pop-Hits. Deezer-Charts (global Top 100 + Schweiz) liefern die
-        # Neuheiten; der optionale Genre-Filter (GENRE_FILTER=1) haelt
-        # Country/Schlager draussen. Last.fm-Feeds sind vordefiniert, aber
-        # per "enabled": false vorerst aus - einfach umschalten zum Testen.
+        # Current pop hits. The Deezer charts (global Top 100 + Switzerland)
+        # deliver the novelties; the optional genre filter (GENRE_FILTER=1)
+        # keeps country/schlager out. The Last.fm feeds are predefined but off
+        # for now via "enabled": false - just toggle to test.
         "sources": [
             {"type": "chart", "source": "0", "limit": 100, "enabled": True},
             {"type": "playlist", "source": "1313617925", "limit": "all", "enabled": True},
@@ -339,23 +339,23 @@ _DEFAULT_CHARTS = [
     },
 ]
 
-# Deezer-Feed-Typen (alles andere ausser "lastfm" wird als Deezer behandelt).
-#   chart    = Genre-/Global-Chart (/chart/<id>/tracks, id 0 = global)
-#   playlist = kuratierte Playlist (/playlist/<id>/tracks)
-#   artist   = Top-Tracks eines Kuenstlers (/artist/<id>/top) - fuer gezielte
-#              Kuenstler-Quellen (z.B. Mundart: Goelae, Polo Hofer, Trauffer).
+# Deezer feed types (everything other than "lastfm" is treated as Deezer).
+#   chart    = genre/global chart (/chart/<id>/tracks, id 0 = global)
+#   playlist = curated playlist (/playlist/<id>/tracks)
+#   artist   = top tracks of an artist (/artist/<id>/top) - for targeted artist
+#              sources (e.g. Mundart: Goelae, Polo Hofer, Trauffer).
 _DEEZER_TYPES = {"chart", "playlist", "artist"}
-# Nicht-Feed-Schluessel eines Last.fm-Eintrags (der Rest sind method-Parameter).
-# "service" und "source" sind KEINE Last.fm-Query-Parameter: sie werden bewusst
-# ignoriert statt an die API durchgereicht (ein versehentlich an einer Last.fm-
-# Quelle gesetztes Deezer-"source" wuerde sonst als &source=.. mitgeschickt).
+# Non-feed keys of a Last.fm entry (the rest are method parameters).
+# "service" and "source" are NOT Last.fm query parameters: they are
+# deliberately ignored instead of passed through to the API (a "source"
+# accidentally set on a Last.fm source would otherwise be sent as &source=..).
 _LASTFM_META_KEYS = {"type", "method", "limit", "enabled", "service", "source"}
 
-# Gueltige Last.fm-Methoden als Spiegelmenge zu lastfm._METHOD_PARAM. Bewusst
-# KEIN Import von lastfm hier (Import-Zyklus config->lastfm->deezer->config,
-# deezer.py importiert `from . import config` auf Modulebene). Ein Drift-Test in
-# den charts-sync-Tests prueft die Gleichheit zu lastfm._METHOD_PARAM.
-#   key = lowercase Methode, value = (pflicht-paramname|None, required)
+# Valid Last.fm methods as a mirror set of lastfm._METHOD_PARAM. Deliberately NO
+# import of lastfm here (import cycle config->lastfm->deezer->config, deezer.py
+# imports `from . import config` at module level). A drift test in the
+# charts-sync tests checks equality with lastfm._METHOD_PARAM.
+#   key = lowercase method, value = (mandatory param name|None, required)
 _VALID_LASTFM_METHODS = {
     "chart.gettoptracks": (None, False),
     "geo.gettoptracks": ("country", True),
@@ -367,15 +367,15 @@ _VALID_LASTFM_METHODS = {
 def _build_feed(s: dict, entry_limit: int, context: str,
                 index: int, warnings: list[str]) -> Feed:
     """
-    Baut aus einem Quell-Dict ein Feed-Objekt (Deezer oder Last.fm).
+    Build a Feed object (Deezer or Last.fm) from a source dict.
 
-    Der effektive Dienst (feed.kind) wird aus dem optionalen Feld "service"
-    bestimmt; fehlt es, gilt die abwaertskompatible type-Heuristik. Alle
-    Validierungsbefunde werden an `warnings` angehaengt (das ruft _parse_charts
-    danach gebuendelt ins Log) - es wird NICHT abgebrochen.
+    The effective service (feed.kind) is determined from the optional field
+    "service"; if it is missing, the backward-compatible type heuristic applies.
+    All validation findings are appended to `warnings` (which _parse_charts then
+    logs in a bundle) - processing is NOT aborted.
 
-    context: Playlist-Name/-Titel fuer sprechende Meldungen.
-    index:   1-basierte Quellen-Nummer innerhalb der Playlist.
+    context: playlist name/title for descriptive messages.
+    index:   1-based source number within the playlist.
     """
     service = str(s.get("service", "")).strip().lower()
     type_ = str(s.get("type", "")).strip().lower()
@@ -383,11 +383,11 @@ def _build_feed(s: dict, entry_limit: int, context: str,
     limit = _parse_limit(s.get("limit"), entry_limit)
     enabled = bool(s.get("enabled", True))
 
-    # 1) Effektiven Dienst bestimmen.
+    # 1) Determine the effective service.
     if service == "lastfm":
         kind = "lastfm"
         if type_ == "chart" or type_ == "playlist":
-            # Harmlos, aber verwirrend: Deezer-type an einer Last.fm-Quelle.
+            # Harmless but confusing: a Deezer type on a Last.fm source.
             warnings.append(t("sync.config.lastfm_deezer_type",
                                context=context, index=index, type=type_))
     elif service == "deezer":
@@ -396,14 +396,14 @@ def _build_feed(s: dict, entry_limit: int, context: str,
             warnings.append(t("sync.config.deezer_type_lastfm",
                                context=context, index=index))
     elif service == "":
-        # Abwaertskompatibler Fallback (unveraendertes Alt-Verhalten).
+        # Backward-compatible fallback (unchanged legacy behavior).
         kind = "lastfm" if type_ == "lastfm" else "deezer"
     else:
         warnings.append(t("sync.config.unknown_service",
                            context=context, index=index, service=service))
         kind = "deezer"
 
-    # 2) Feed je nach Dienst bauen + validieren.
+    # 2) Build + validate the feed depending on the service.
     if kind == "lastfm":
         method = method_raw or "chart.gettoptracks"
         if method not in _VALID_LASTFM_METHODS:
@@ -420,7 +420,7 @@ def _build_feed(s: dict, entry_limit: int, context: str,
         if str(s.get("source", "")).strip():
             warnings.append(t("sync.config.lastfm_has_source",
                                context=context, index=index))
-        # Alle nicht-Meta-Schluessel sind method-Parameter (country/tag/user/period).
+        # All non-meta keys are method parameters (country/tag/user/period).
         params = {k: v for k, v in s.items() if k not in _LASTFM_META_KEYS}
         return Feed(kind="lastfm", limit=limit, enabled=enabled,
                     method=method, params=params)
@@ -431,7 +431,7 @@ def _build_feed(s: dict, entry_limit: int, context: str,
                            context=context, index=index, type=type_))
     deezer_type = type_ if type_ in _DEEZER_TYPES else "chart"
     source = str(s.get("source", "0")).strip() or "0"
-    # playlist und artist brauchen eine echte ID (leer/"0" liefert nichts).
+    # playlist and artist need a real ID (empty/"0" returns nothing).
     if deezer_type in ("playlist", "artist") and source in ("", "0"):
         warnings.append(t("sync.config.deezer_no_source_id",
                            context=context, index=index, deezer_type=deezer_type))
@@ -442,30 +442,31 @@ def _build_feed(s: dict, entry_limit: int, context: str,
 def _extract_feeds(entry: dict, entry_limit: int, context: str,
                    warnings: list[str]) -> list["Feed"]:
     """
-    Ermittelt die Quellen eines CHARTS-Eintrags als Liste von Feed-Objekten.
+    Determine the sources of a CHARTS entry as a list of Feed objects.
 
-    Jede Quelle kann ein eigenes "limit" ('all' oder Zahl) und "enabled" haben;
-    fehlt das Limit, gilt das Eintrags-Limit (entry_limit, das seinerseits auf
-    CHART_LIMIT zurueckfaellt).
+    Each source can have its own "limit" ('all' or a number) and "enabled"; if
+    the limit is missing, the entry limit applies (entry_limit, which in turn
+    falls back to CHART_LIMIT).
 
-    Unterstuetzt beide Schreibweisen:
-      - mehrere:  "sources": [{...}, {...}]
-      - einzeln:  Felder direkt am Eintrag (abwaertskompatibel)
+    Supports both notations:
+      - multiple:  "sources": [{...}, {...}]
+      - single:    fields directly on the entry (backward-compatible)
     """
     if isinstance(entry.get("sources"), list):
         if not entry["sources"]:
             warnings.append(t("sync.config.empty_sources", context=context))
         return [_build_feed(s, entry_limit, context, i, warnings)
                 for i, s in enumerate(entry["sources"], start=1)]
-    # Einzelquelle
+    # Single source
     return [_build_feed(entry, entry_limit, context, 1, warnings)]
 
 
 def _parse_exclude_artists(value) -> set[str]:
     """
-    Liest die 'exclude_artists' eines CHARTS-Eintrags. Unterstuetzt eine Liste
-    (["Nemo", "Trauffer"]) ODER einen kommagetrennten String ("Nemo,Trauffer").
-    Vergleich spaeter case-insensitiv, daher hier schon lowercased. Default leer.
+    Read the 'exclude_artists' of a CHARTS entry. Supports a list
+    (["Nemo", "Trauffer"]) OR a comma-separated string ("Nemo,Trauffer").
+    The comparison is case-insensitive later, so it is lowercased here already.
+    Default empty.
     """
     if not value:
         return set()
@@ -480,12 +481,11 @@ def _parse_exclude_artists(value) -> set[str]:
 
 def _load_charts_data():
     """
-    Liefert die rohe Playlist-Definition (Liste von Dicts) gemaess der
-    Prioritaet CHARTS_FILE > CHARTS-Env > _DEFAULT_CHARTS. Kaputtes JSON auf
-    einer gesetzten Stufe -> klare Fehlermeldung + Default (kein stilles
-    Durchreichen auf die naechste Stufe).
+    Return the raw playlist definition (list of dicts) according to the priority
+    CHARTS_FILE > CHARTS env > _DEFAULT_CHARTS. Broken JSON at a set level ->
+    clear error message + default (no silent pass-through to the next level).
     """
-    # 1. Datei-Weg (wenn CHARTS_FILE gesetzt).
+    # 1. File path (if CHARTS_FILE is set).
     if CHARTS_FILE:
         if os.path.isfile(CHARTS_FILE):
             try:
@@ -503,9 +503,9 @@ def _load_charts_data():
                 return _DEFAULT_CHARTS
         else:
             logger.error(t("sync.config.file_missing", path=CHARTS_FILE))
-            # bewusst weiter zur Env-Stufe (Datei fehlt != kaputte Datei)
+            # deliberately continue to the env level (missing file != broken file)
 
-    # 2. CHARTS-Env (einzeiliges JSON).
+    # 2. CHARTS env (single-line JSON).
     raw = os.environ.get("CHARTS", "").strip()
     if raw:
         try:
@@ -520,15 +520,15 @@ def _load_charts_data():
 
 def _parse_charts() -> list[ChartSource]:
     """
-    Liest die Chart-Quellen. Prioritaet:
-      1. CHARTS_FILE (mehrzeilige, lesbare JSON-Datei) - wenn gesetzt, existiert
-         und valides JSON.
-      2. CHARTS-Env (einzeiliges JSON).
-      3. Eingebaute Default-Playlists.
-    Bei kaputtem JSON wird NICHT auf die naechste Stufe durchgereicht, sondern
-    (wie bei der Env) auf die Default-Playlists gefallen und klar geloggt - so
-    merkt der Admin, dass seine Datei/Env fehlerhaft ist, statt stillschweigend
-    etwas anderes geladen zu bekommen.
+    Read the chart sources. Priority:
+      1. CHARTS_FILE (multi-line, readable JSON file) - if set, exists and valid
+         JSON.
+      2. CHARTS env (single-line JSON).
+      3. Built-in default playlists.
+    On broken JSON it does NOT fall through to the next level but (as with the
+    env) falls back to the default playlists and logs clearly - so the admin
+    notices that their file/env is faulty instead of silently getting something
+    else loaded.
     """
     data = _load_charts_data()
 
@@ -548,9 +548,9 @@ def _parse_charts() -> list[ChartSource]:
             feeds = _extract_feeds(entry, entry_limit, context, warnings)
             if not feeds:
                 warnings.append(t("sync.config.entry_no_feeds", context=context))
-            # Pro-Playlist-Genre-Filter: nur ein echter bool ueberschreibt den
-            # globalen GENRE_FILTER; fehlt das Feld oder ist es kein bool,
-            # bleibt es None -> globaler Default.
+            # Per-playlist genre filter: only a real bool overrides the global
+            # GENRE_FILTER; if the field is missing or not a bool, it stays
+            # None -> global default.
             gf = entry.get("genre_filter")
             sources.append(ChartSource(
                 feeds=feeds,
@@ -564,11 +564,11 @@ def _parse_charts() -> list[ChartSource]:
         except (KeyError, TypeError, ValueError) as e:
             warnings.append(t("sync.config.entry_skipped", i=i, error=e))
 
-    # Alle gesammelten Validierungsbefunde gebuendelt loggen (jeweils eine WARN).
+    # Log all collected validation findings in a bundle (one WARN each).
     for w in warnings:
         logger.warning("CHARTS: %s", w)
 
-    # Aktive Quellen NACH dem enabled=False-Downgrade zaehlen.
+    # Count the active sources AFTER the enabled=False downgrade.
     active = sum(len(cs.active_feeds) for cs in sources)
     if warnings:
         logger.info(t("sync.config.summary_warn", n_pl=len(sources),

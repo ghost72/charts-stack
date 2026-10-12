@@ -1,16 +1,16 @@
 """
-Library-Index und Matching.
+Library index and matching.
 
-Durchsucht die Navidrome-Musikbibliothek (MUSIC_DIR) nach Audiodateien und
-baut einen durchsuchbaren Index auf. Fuer jeden Chart-Track wird geprueft, ob
-ein passender Track bereits in der Library existiert.
+Scans the Navidrome music library (MUSIC_DIR) for audio files and builds a
+searchable index. For each chart track it checks whether a matching track
+already exists in the library.
 
-Das Matching arbeitet zweistufig:
-  1. Metadaten-Tags (Kuenstler/Titel) via mutagen, wenn vorhanden.
-  2. Fallback auf Dateinamen/Ordnernamen.
+Matching works in two stages:
+  1. Metadata tags (artist/title) via mutagen, if present.
+  2. Fallback to file names/folder names.
 
-Der Vergleich ist tolerant gegenueber Gross-/Kleinschreibung, Sonderzeichen
-und Zusaetzen wie "(feat. ...)" oder "(Remastered)".
+The comparison is tolerant of case, special characters and additions like
+"(feat. ...)" or "(Remastered)".
 """
 
 import logging
@@ -27,7 +27,7 @@ from .i18n import t
 logger = logging.getLogger(__name__)
 
 
-# Zusaetze, die vor dem Vergleich aus Titeln entfernt werden.
+# Additions removed from titles before the comparison.
 _NOISE_PATTERNS = [
     r"\(feat\.?.*?\)", r"\[feat\.?.*?\]",
     r"\(ft\.?.*?\)", r"\[ft\.?.*?\]",
@@ -40,37 +40,37 @@ _NOISE_PATTERNS = [
 
 def normalize(text: str) -> str:
     """
-    Normalisiert einen String fuer den Vergleich:
-    - Unicode-Akzente entfernen
-    - Kleinschreibung
-    - bekannte Zusaetze (feat/remaster/version) entfernen
-    - alles ausser Buchstaben/Ziffern auf Leerzeichen reduzieren
+    Normalize a string for the comparison:
+    - remove Unicode accents
+    - lowercase
+    - remove known additions (feat/remaster/version)
+    - reduce everything other than letters/digits to spaces
     """
     if not text:
         return ""
     text = text.lower()
     for pattern in _NOISE_PATTERNS:
         text = re.sub(pattern, " ", text)
-    # Akzente entfernen (é -> e)
+    # Remove accents (é -> e)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
-    # "&" und "and" vereinheitlichen
+    # Unify "&" and "and"
     text = text.replace("&", " and ")
-    # alles Nicht-Alphanumerische zu Leerzeichen
+    # Everything non-alphanumeric to spaces
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
 def similarity(a: str, b: str) -> int:
-    """Aehnlichkeit zweier normalisierter Strings als Wert 0-100."""
+    """Similarity of two normalized strings as a value 0-100."""
     if not a or not b:
         return 0
     return round(SequenceMatcher(None, a, b).ratio() * 100)
 
 
-# Marker im Pfad oder Album-Tag, die auf eine Compilation / Sampler hindeuten.
-# Wird genutzt, um solche Tracks beim Abgleich optional zu ignorieren, damit
-# charts-download eine saubere Single-/Album-Version nachladen kann.
+# Markers in the path or album tag that indicate a compilation / sampler. Used
+# to optionally ignore such tracks during matching so charts-download can
+# backfill a clean single/album version.
 _COMPILATION_MARKERS = [
     "va -", "va-", "various artists", "various", "verschiedene interpreten",
     "compilation", "sampler",
@@ -83,29 +83,29 @@ _COMPILATION_MARKERS = [
 
 def _looks_like_compilation(path: str, album: str, albumartist: str) -> bool:
     """
-    Heuristik: True, wenn Pfad, Album- oder AlbumArtist-Tag auf eine
-    Compilation hindeuten. Das zuverlaessigste Signal ist der AlbumArtist
-    "Various Artists" (Standard-Tag fuer Sampler).
+    Heuristic: True when the path, album or AlbumArtist tag indicate a
+    compilation. The most reliable signal is the AlbumArtist "Various Artists"
+    (standard tag for samplers).
     """
     haystack = normalize(f"{path} {album} {albumartist}".replace("\\", "/"))
     return any(marker in haystack for marker in _COMPILATION_MARKERS)
 
 
-# Album-Ordner mit Jahresangabe, z.B. "Wonderwall (1995)". Das ist das
-# Benennungsschema, das Lidarr beim Renaming erzeugt. Solche Tracks werden bei
-# gleich gutem Match bevorzugt, damit die Playlist auf die kuratierte Lidarr-
-# Version zeigt (statt auf eine separat geladene Chart-Single) - und die Single
-# so nicht mehr referenziert wird (sie kann dann gefahrlos aufgeraeumt werden).
+# Album folders with a year, e.g. "Wonderwall (1995)". That is the naming scheme
+# Lidarr produces when renaming. Such tracks are preferred on an equally good
+# match so the playlist points to the curated Lidarr version (instead of a
+# separately downloaded chart single) - and the single is then no longer
+# referenced (it can then be cleaned up safely).
 _YEAR_DIR_RE = re.compile(r"\(\d{4}\)")
 
 
 def _in_year_album(path: str) -> bool:
-    """True, wenn ein Ordner im Pfad eine Jahresangabe '(YYYY)' traegt (Lidarr)."""
+    """True when a folder in the path carries a year '(YYYY)' (Lidarr)."""
     return any(_YEAR_DIR_RE.search(part) for part in path.split(os.sep))
 
 
 class LibraryTrack:
-    """Ein in der Library gefundener Track."""
+    """A track found in the library."""
 
     def __init__(self, path: str, artist: str, title: str,
                  is_compilation: bool = False):
@@ -115,16 +115,16 @@ class LibraryTrack:
         self.is_compilation = is_compilation
         self.norm_artist = normalize(artist)
         self.norm_title = normalize(title)
-        # Kombinierter Suchstring fuer den Fallback-Vergleich.
+        # Combined search string for the fallback comparison.
         self.norm_combined = f"{self.norm_artist} {self.norm_title}".strip()
-        # Liegt der Track in einem Lidarr-"(Jahr)"-Album? Fuer den Tie-Break.
+        # Does the track sit in a Lidarr "(year)" album? For the tie-break.
         self.in_year_album = _in_year_album(path)
 
 
 def _read_tags(path: str) -> tuple[str, str, str, str]:
     """
-    Liest Kuenstler/Titel/Album/AlbumArtist aus den Datei-Tags.
-    Leere Strings, wenn nicht lesbar.
+    Read artist/title/album/AlbumArtist from the file tags.
+    Empty strings when not readable.
     """
     try:
         audio = MutagenFile(path, easy=True)
@@ -141,39 +141,40 @@ def _read_tags(path: str) -> tuple[str, str, str, str]:
 
 def _guess_from_path(path: str) -> tuple[str, str]:
     """
-    Rateversuch aus dem Pfad, wenn keine Tags vorhanden sind.
-    Erwartet grob: .../<Artist>/<Album>/<NN - Title>.<ext>
+    Best-effort guess from the path when no tags are present.
+    Roughly expects: .../<Artist>/<Album>/<NN - Title>.<ext>
     """
     filename = os.path.splitext(os.path.basename(path))[0]
-    # fuehrende Tracknummern wie "01 - " oder "01. " entfernen
+    # remove leading track numbers like "01 - " or "01. "
     cleaned = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", filename).strip()
 
-    # "Artist - Title" im Dateinamen hat Vorrang, weil spezifischer als der
-    # Ordnername (z.B. "Various Artists/.../Bruno Mars - I Just Might.mp3").
+    # "Artist - Title" in the file name takes precedence because it is more
+    # specific than the folder name (e.g. "Various Artists/.../Bruno Mars - I
+    # Just Might.mp3").
     if " - " in cleaned:
         artist, _, title = cleaned.partition(" - ")
         return artist.strip(), title.strip()
 
-    # Sonst: zwei Ebenen ueber der Datei ist meist der Kuenstler-Ordner.
+    # Otherwise: two levels above the file is usually the artist folder.
     parts = path.split(os.sep)
     artist = parts[-3] if len(parts) >= 3 else ""
     return artist.strip(), cleaned.strip()
 
 
 class Library:
-    """Haelt den Index aller gefundenen Tracks im Speicher."""
+    """Holds the index of all found tracks in memory."""
 
     def __init__(self, tracks: list[LibraryTrack]):
         self.tracks = tracks
 
     def find_match(self, artist: str, title: str, threshold: int):
         """
-        Sucht den besten Treffer fuer artist/title.
-        Gibt (LibraryTrack, score) zurueck oder (None, best_score).
+        Find the best hit for artist/title.
+        Returns (LibraryTrack, score) or (None, best_score).
 
-        Bei config.IGNORE_COMPILATIONS werden Compilation-Tracks uebersprungen,
-        sodass ein Song, der nur in einer Compilation vorliegt, als "fehlend"
-        gilt und die Einzelversion nachgeladen werden kann.
+        With config.IGNORE_COMPILATIONS compilation tracks are skipped, so a
+        song that only exists as part of a compilation counts as "missing" and
+        the single version can be backfilled.
         """
         n_artist = normalize(artist)
         n_title = normalize(title)
@@ -190,19 +191,18 @@ class Library:
             artist_score = similarity(n_artist, track.norm_artist)
 
             if track.norm_title and track.norm_artist:
-                # WICHTIG: Titel UND Kuenstler muessen passen. Ein perfekter
-                # Titel darf einen falschen Kuenstler NICHT kompensieren (sonst
-                # matcht z.B. Chart "BLACKPINK - Jump" faelschlich "Van Halen -
-                # Jump"). Deshalb: harte Kuenstler-Mindestschwelle. Liegt der
-                # Kuenstler-Score darunter, ist es kein Treffer, egal wie gut
-                # der Titel passt.
+                # IMPORTANT: title AND artist must match. A perfect title must
+                # NOT compensate for a wrong artist (otherwise chart "BLACKPINK
+                # - Jump" would wrongly match "Van Halen - Jump"). Hence a hard
+                # artist minimum threshold. If the artist score is below it, it
+                # is not a hit, no matter how well the title matches.
                 if artist_score < config.ARTIST_MIN_SCORE:
                     continue
-                # gewichteter Score: Titel 60%, Kuenstler 40%
+                # weighted score: title 60%, artist 40%
                 score = round(title_score * 0.6 + artist_score * 0.4)
             else:
-                # Fallback (fehlende Tags): Vergleich gegen den kombinierten
-                # String. Hier kann der Kuenstler nicht separat geprueft werden.
+                # Fallback (missing tags): compare against the combined string.
+                # Here the artist cannot be checked separately.
                 score = similarity(n_combined, track.norm_combined)
 
             if score > best_score:
@@ -210,9 +210,9 @@ class Library:
                 best = track
             elif (score == best_score and best is not None
                   and track.in_year_album and not best.in_year_album):
-                # Gleich guter Treffer: die Lidarr-"(Jahr)"-Version bevorzugen,
-                # damit die Playlist auf das kuratierte Album zeigt statt auf
-                # eine separat geladene Chart-Single.
+                # Equally good hit: prefer the Lidarr "(year)" version so the
+                # playlist points to the curated album instead of a separately
+                # downloaded chart single.
                 best = track
 
         if best is not None and best_score >= threshold:
@@ -221,7 +221,7 @@ class Library:
 
 
 def build_index(music_dir: str) -> Library:
-    """Scannt music_dir rekursiv und baut den Library-Index auf."""
+    """Scan music_dir recursively and build the library index."""
     logger.info(t("library.scan", dir=music_dir))
     tracks: list[LibraryTrack] = []
     scanned = 0
@@ -230,7 +230,7 @@ def build_index(music_dir: str) -> Library:
     charts_dir_abs = os.path.abspath(config.CHARTS_DIR)
 
     for root, _dirs, files in os.walk(music_dir):
-        # Den Charts-Ordner selbst nicht als Quelle indexieren.
+        # Do not index the Charts folder itself as a source.
         if os.path.abspath(root).startswith(charts_dir_abs):
             continue
         for name in files:

@@ -1,20 +1,20 @@
 """
-Charts-Sync – Hauptservice.
+Charts-Sync – main service.
 
-Ablauf pro Sync-Lauf:
-  1. Musik-Library (MUSIC_DIR) EINMAL indexieren.
-  2. Fuer JEDE konfigurierte Chart-Quelle (CHARTS):
-     a. Aktuelle Charts von Deezer holen (nur Metadaten, ohne Account).
-     b. Jeden Chart-Track gegen die Library matchen.
-     c. Treffer als eigene M3U-Playlist in PLAYLIST_DIR schreiben.
-     d. Fehlende Songs in eine eigene missing-Datei in CHARTS_DIR schreiben.
-  3. Optional: Pushover-Benachrichtigung (nur bei Aenderung, wenn gewuenscht).
+Flow per sync run:
+  1. Index the music library (MUSIC_DIR) ONCE.
+  2. For EVERY configured chart source (CHARTS):
+     a. Fetch the current charts from Deezer (metadata only, no account).
+     b. Match each chart track against the library.
+     c. Write the hits as a dedicated M3U playlist in PLAYLIST_DIR.
+     d. Write missing songs into a dedicated missing file in CHARTS_DIR.
+  3. Optional: Pushover notification (only on change, if desired).
 
-Der Service laeuft als Endlosschleife und wiederholt den Lauf alle
-SYNC_INTERVAL_HOURS Stunden.
+The service runs as an endless loop and repeats the run every
+SYNC_INTERVAL_HOURS hours.
 
-Hinweis: Dieser Service laedt bewusst KEINE Audiodateien herunter. Er arbeitet
-ausschliesslich mit Metadaten und der bereits vorhandenen Library.
+Note: this service deliberately downloads NO audio files. It works exclusively
+with metadata and the already present library.
 """
 
 import json
@@ -33,14 +33,14 @@ logging.basicConfig(
 logger = logging.getLogger("charts-sync")
 
 
-# --- Zustand (fuer "nur bei Aenderung"-Benachrichtigung) ---
+# --- State (for the "only on change" notification) ---
 
 def _state_path() -> str:
     return os.path.join(config.CHARTS_DIR, config.STATE_FILE)
 
 
 def _load_state() -> dict:
-    """Laedt den zuletzt gespeicherten Stand pro Playlist."""
+    """Load the last saved state per playlist."""
     try:
         with open(_state_path(), encoding="utf-8") as fh:
             return json.load(fh)
@@ -57,10 +57,10 @@ def _save_state(state: dict) -> None:
 
 
 def _sync_source(chart_source, lib, state: dict) -> None:
-    """Verarbeitet eine einzelne Chart-Quelle."""
+    """Process a single chart source."""
     logger.info(t("sync.source.header", name=chart_source.title))
 
-    # a. Charts holen
+    # a. Fetch charts
     try:
         chart_tracks = deezer.fetch_chart(chart_source)
     except Exception as e:
@@ -70,7 +70,7 @@ def _sync_source(chart_source, lib, state: dict) -> None:
         logger.warning(t("sync.source.no_tracks", name=chart_source.title))
         return
 
-    # b. Matching
+    # b. Match
     matched: list[tuple[int, str, str, str]] = []
     missing: list[tuple[int, str, str]] = []
     for ct in chart_tracks:
@@ -83,8 +83,8 @@ def _sync_source(chart_source, lib, state: dict) -> None:
     matched.sort(key=lambda x: x[0])
     missing.sort(key=lambda x: x[0])
 
-    # Dedup: derselbe Song kann von mehreren Chart-Positionen getroffen werden.
-    # Wir behalten jeweils die beste (niedrigste) Chart-Position.
+    # Dedup: the same song can be hit by multiple chart positions. We keep the
+    # best (lowest) chart position each time.
     deduped: list[tuple[int, str, str, str]] = []
     seen_paths: set[str] = set()
     for entry in matched:
@@ -97,10 +97,10 @@ def _sync_source(chart_source, lib, state: dict) -> None:
         logger.info(t("sync.source.dedup_removed", name=chart_source.title, count=removed))
     matched = deduped
 
-    # Reihenfolge festlegen (Chart-Position ODER neueste zuerst).
+    # Determine the order (chart position OR newest first).
     ordered = _order_matched(chart_source, matched, state)
 
-    # c. + d. Schreiben
+    # c. + d. Write
     playlist.write_playlist(ordered, chart_source.name, chart_source.title)
     playlist.write_missing(missing, chart_source.missing)
 
@@ -109,27 +109,27 @@ def _sync_source(chart_source, lib, state: dict) -> None:
         name=chart_source.title, matched=len(matched), total=len(chart_tracks),
     ))
 
-    # Benachrichtigung (Aenderungserkennung ueber die gematchten Pfade)
+    # Notification (change detection via the matched paths)
     _handle_notify(chart_source, matched, missing, state)
 
 
 def _order_matched(chart_source, matched, state: dict):
     """
-    Bringt die gematchten Tracks in die konfigurierte Reihenfolge und pflegt
-    dabei das "first_seen"-Datum je Song im State.
+    Put the matched tracks into the configured order while maintaining the
+    "first_seen" date per song in the state.
 
-    matched: Liste (position, artist, title, absolute_path), bereits
-             chart-sortiert + dedupliziert.
-    Rueckgabe: Liste in derselben Tupel-Form, in gewuenschter Reihenfolge.
+    matched: list (position, artist, title, absolute_path), already
+             chart-sorted + deduplicated.
+    Returns: list in the same tuple form, in the desired order.
 
-    PLAYLIST_ORDER="chart" (Default): unveraendert (Chart-Position, Platz 1 oben).
+    PLAYLIST_ORDER="chart" (default): unchanged (chart position, number 1 on top).
 
-    PLAYLIST_ORDER="newest-first": zuletzt neu hinzugekommene Songs zuoberst.
-      Dazu wird pro Song das Datum des ersten Auftauchens im State gefuehrt
-      (first_seen[relpath] = ISO-Zeitstempel). Bekannte Songs behalten ihr
-      Datum, neue bekommen "jetzt" -> wandern nach oben. Bei gleichem Datum
-      (z.B. beim allerersten Lauf sind alle neu) entscheidet die Chart-Position,
-      damit die Reihenfolge deterministisch bleibt.
+    PLAYLIST_ORDER="newest-first": songs most recently added on top. For this
+      the date of first appearance is kept per song in the state
+      (first_seen[relpath] = ISO timestamp). Known songs keep their date, new
+      ones get "now" -> move to the top. On an equal date (e.g. on the very
+      first run all are new) the chart position decides, so the order stays
+      deterministic.
     """
     if config.PLAYLIST_ORDER != "newest-first":
         return matched
@@ -138,8 +138,8 @@ def _order_matched(chart_source, matched, state: dict):
     first_seen: dict[str, str] = dict(prev.get("first_seen", {}))
     now_iso = datetime.now().isoformat(timespec="seconds")
 
-    # first_seen fuer aktuelle Songs pflegen (relativer Pfad = stabiler Key,
-    # identisch zu dem, was in der m3u steht).
+    # Maintain first_seen for current songs (relative path = stable key,
+    # identical to what is written in the m3u).
     current_relpaths: list[str] = []
     for _pos, _a, _t, path in matched:
         rel = os.path.relpath(path, config.MUSIC_DIR)
@@ -147,17 +147,17 @@ def _order_matched(chart_source, matched, state: dict):
         if rel not in first_seen:
             first_seen[rel] = now_iso
 
-    # Nur Eintraege fuer aktuell vorhandene Songs behalten (State nicht wachsen
-    # lassen; ein spaeter zurueckkehrender Song gilt zu Recht wieder als neu).
+    # Keep only entries for currently present songs (do not let the state grow;
+    # a song returning later rightly counts as new again).
     first_seen = {rel: first_seen[rel] for rel in current_relpaths}
 
-    # Merken, damit _handle_notify es beim State-Update nicht verwirft.
-    chart_source._first_seen = first_seen  # noqa: SLF001 (interner Transport)
+    # Remember it so _handle_notify does not discard it on the state update.
+    chart_source._first_seen = first_seen  # noqa: SLF001 (internal transport)
 
-    # Zweistufig stabil sortieren (Pythons sort ist stabil):
-    #   1. nach Chart-Position aufsteigend (Tiebreaker bei gleichem Datum),
-    #   2. nach first_seen absteigend (Hauptkriterium: neueste zuoberst).
-    ordered = sorted(matched, key=lambda e: e[0])  # Chart-Position aufsteigend
+    # Sort stably in two stages (Python's sort is stable):
+    #   1. by chart position ascending (tiebreaker on equal date),
+    #   2. by first_seen descending (main criterion: newest on top).
+    ordered = sorted(matched, key=lambda e: e[0])  # chart position ascending
     ordered.sort(
         key=lambda e: first_seen.get(os.path.relpath(e[3], config.MUSIC_DIR), now_iso),
         reverse=True,
@@ -167,15 +167,14 @@ def _order_matched(chart_source, matched, state: dict):
 
 def _handle_notify(chart_source, matched, missing, state: dict) -> None:
     """
-    Sendet Pushover, ggf. nur wenn sich etwas geaendert hat.
+    Send Pushover, optionally only when something changed.
 
-    "Aenderung" umfasst sowohl die Playlist-Treffer (gematchte Pfade) als auch
-    die Liste der fehlenden Songs. So kommt auch dann eine Meldung, wenn sich
-    nur die zu suchenden Songs aendern (z.B. neue Chart-Eintraege), selbst wenn
-    die Trefferliste identisch bleibt.
+    "Change" covers both the playlist hits (matched paths) and the list of
+    missing songs. So a message also goes out when only the songs to search for
+    change (e.g. new chart entries), even if the hit list stays identical.
     """
     current_paths = sorted(p for _pos, _a, _t, p in matched)
-    # Fehlende Songs als vergleichbare Signatur (Kuenstler|Titel), positionsunabhaengig.
+    # Missing songs as a comparable signature (artist|title), position-independent.
     current_missing = sorted(f"{a}|{t}" for _pos, a, t in missing)
 
     prev = state.get(chart_source.name, {})
@@ -186,15 +185,15 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
     missing_changed = current_missing != prev_missing
     changed = paths_changed or missing_changed
 
-    # Neu hinzugekommene Songs (fuer eine sprechende Meldung)
+    # Newly added songs (for a descriptive message)
     new_songs = [
         (pos, a, t) for pos, a, t, p in matched if p not in set(prev_paths)
     ]
 
-    # Zustand immer aktualisieren (Treffer UND fehlende Songs). first_seen
-    # (fuer PLAYLIST_ORDER=newest-first) mitfuehren, falls _order_matched es
-    # gesetzt hat - sonst ginge die Reihenfolge-Historie beim naechsten Lauf
-    # verloren. Bei PLAYLIST_ORDER=chart existiert es nicht -> weglassen.
+    # Always update the state (hits AND missing songs). Carry first_seen along
+    # (for PLAYLIST_ORDER=newest-first) if _order_matched set it - otherwise the
+    # order history would be lost on the next run. With PLAYLIST_ORDER=chart it
+    # does not exist -> omit it.
     entry = {"paths": current_paths, "missing": current_missing}
     first_seen = getattr(chart_source, "_first_seen", None)
     if first_seen is not None:
@@ -206,19 +205,19 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
         return
 
     total = len(matched) + len(missing)
-    # Pushover-Titel = Dienst-Emoji + Dienstname (wie alle anderen charts-
-    # Dienste: "⬇️ charts-download", "🎧 charts-recommend" ...). Der Playlist-
-    # Name mit seinen eigenen Emojis steht als fette Kopfzeile im Body - so ist
-    # er identisch zum Navidrome-Anzeigenamen. {date} wird wie im Playlist-
-    # Writer ersetzt.
+    # Pushover title = service emoji + service name (like all other charts
+    # services: "⬇️ charts-download", "🎧 charts-recommend" ...). The playlist
+    # name with its own emojis sits as a bold header in the body - so it is
+    # identical to the Navidrome display name. {date} is replaced as in the
+    # playlist writer.
     title = t("notify.title", service="charts-sync")
     playlist_name = chart_source.title.replace(
         "{date}", datetime.now().strftime("%d.%m.%Y"))
     lines = [f"<b>{playlist_name}</b>",
              t("notify.summary", matched=len(matched), total=total)]
 
-    # Quellen-/Filter-Statistik (falls verfuegbar) – zeigt, was Last.fm netto
-    # dazubringt und wie viele Fremd-Genre-Songs der Filter entfernt hat.
+    # Source/filter stats (if available) – shows what Last.fm adds net and how
+    # many foreign-genre songs the filter removed.
     stats = getattr(chart_source, "last_stats", None) or {}
     stat_bits = []
     if stats.get("deezer_new"):
@@ -236,8 +235,8 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
         for pos, a, song_title in new_songs[:8]:
             lines.append(t("notify.song_entry", pos=pos, artist=a, title=song_title))
 
-    # Fehlende Songs auffuehren, damit man sie direkt vom Handy aus in slskd
-    # suchen kann (ohne NAS-Login). Menge ueber NOTIFY_MISSING_LIMIT begrenzt.
+    # List missing songs so you can search for them in slskd straight from the
+    # phone (without a NAS login). Amount limited via NOTIFY_MISSING_LIMIT.
     if missing and config.NOTIFY_MISSING_LIMIT > 0:
         limit = config.NOTIFY_MISSING_LIMIT
         shown = missing[:limit]
@@ -252,20 +251,20 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
         lines.append(t("notify.missing.none_listed", count=len(missing)))
 
     message = "\n".join(lines)
-    # Pushover begrenzt eine Nachricht auf 1024 Zeichen. Bei Ueberlaenge kuerzen
-    # wir am letzten vollstaendigen Song und haengen einen Hinweis an.
+    # Pushover limits a message to 1024 characters. On overflow we cut at the
+    # last complete song and append a note.
     message = _truncate_for_pushover(message)
     notify.send(title, message)
 
 
 def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
-    """Kuerzt die Nachricht auf Pushovers 1024-Zeichen-Limit (an Zeilengrenze)."""
+    """Truncate the message to Pushover's 1024-character limit (at a line boundary)."""
     if len(message) <= max_len:
         return message
     suffix = "\n" + t("notify.truncated")
     budget = max_len - len(suffix)
     cut = message[:budget]
-    # An der letzten kompletten Zeile abschneiden, damit kein Song halb dasteht.
+    # Cut at the last complete line so no song is left half-shown.
     nl = cut.rfind("\n")
     if nl > 0:
         cut = cut[:nl]
@@ -274,8 +273,8 @@ def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
 
 def run_sync() -> None:
     """
-    Fuehrt einen einzelnen Sync-Lauf ueber alle Chart-Quellen aus.
-    Rueckgabe: Zaehler-Dict fuer das Status-/Dashboard-Modul.
+    Run a single sync run over all chart sources.
+    Returns: counter dict for the status/dashboard module.
     """
     logger.info(t("sync.run.start", sources=len(config.CHARTS)))
 
@@ -283,12 +282,12 @@ def run_sync() -> None:
         logger.warning(t("sync.run.no_sources"))
         return {"sources": 0, "library_tracks": 0}
 
-    # 1. Library EINMAL indexieren (der teure Teil, fuer alle Quellen wiederverwendet)
+    # 1. Index the library ONCE (the expensive part, reused for all sources)
     lib = library.build_index(config.MUSIC_DIR)
     if not lib.tracks:
         logger.warning(t("sync.run.library_empty", dir=config.MUSIC_DIR))
 
-    # 2. Zustand laden, alle Quellen verarbeiten, Zustand speichern
+    # 2. Load state, process all sources, save state
     state = _load_state()
     ok_sources = 0
     for chart_source in config.CHARTS:
@@ -307,13 +306,13 @@ def run_sync() -> None:
 
 
 def _next_run_iso() -> str:
-    """Zeitpunkt des naechsten regulaeren Laufs als ISO-8601 (fuer das Dashboard)."""
+    """Time of the next regular run as ISO-8601 (for the dashboard)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S%z",
                          time.localtime(time.time() + max(1, config.SYNC_INTERVAL_HOURS) * 3600))
 
 
 def _guarded_sync() -> None:
-    """Fuehrt run_sync() aus und schreibt den Status (Erfolg/Fehler)."""
+    """Run run_sync() and write the status (success/error)."""
     status.start()
     try:
         counters = run_sync() or {}
@@ -326,7 +325,7 @@ def _guarded_sync() -> None:
 
 
 def main() -> None:
-    """Startet den Scheduler-Loop."""
+    """Start the scheduler loop."""
     status.init("charts-sync")
     logger.info(t(
         "sync.scheduler.started",
@@ -339,7 +338,7 @@ def main() -> None:
 
     if config.RUN_ON_START:
         _guarded_sync()
-        _clear_resync_signal()  # evtl. waehrend des Laufs gesetztes Signal abraeumen
+        _clear_resync_signal()  # clear a signal possibly set during the run
     else:
         logger.info(t("sync.scheduler.run_on_start_off"))
 
@@ -367,12 +366,12 @@ def main() -> None:
 
 
 def _resync_requested() -> bool:
-    """True, wenn charts-import ein Resync-Signal hinterlegt hat."""
+    """True when charts-import has left a resync signal."""
     return os.path.exists(config.RESYNC_SIGNAL)
 
 
 def _clear_resync_signal() -> None:
-    """Entfernt das Resync-Signal nach einem Lauf (idempotent)."""
+    """Remove the resync signal after a run (idempotent)."""
     try:
         os.remove(config.RESYNC_SIGNAL)
     except FileNotFoundError:
