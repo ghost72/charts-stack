@@ -1,16 +1,16 @@
 """
-Sammelt den Gesamtzustand des charts-stack fuer das Dashboard.
+Collects the overall state of the charts-stack for the dashboard.
 
-Drei Quellen:
-  1. Status-JSONs (von den charts-Diensten geschrieben) -> exakte Lauf-Statistik.
-  2. Docker-Engine (ueber den Socket) -> laeuft/healthy je Container.
-  3. Live-Checks: slskd-Verbindung (/api/v0/server), Lidarr-Ping und die
-     externen/abhaengigen Dienste (ListenBrainz/Deezer/Last.fm + iTunes +
-     Pushover-validate + FLASHBACK-FM-GraphQL) via _external_status().
-Plus Speicher-/Bestandszahlen aus den gemounteten Ordnern.
+Three sources:
+  1. Status JSONs (written by the charts services) -> exact run statistics.
+  2. Docker engine (via the socket) -> running/healthy per container.
+  3. Live checks: slskd connection (/api/v0/server), Lidarr ping and the
+     external/dependent services (ListenBrainz/Deezer/Last.fm + iTunes +
+     Pushover validate + FLASHBACK FM GraphQL) via _external_status().
+Plus storage/inventory numbers from the mounted folders.
 
-Alle Funktionen sind defensiv: faellt eine Quelle aus, liefert sie "unknown"
-statt den ganzen Request zu sprengen.
+All functions are defensive: if a source fails, it returns "unknown" instead of
+blowing up the whole request.
 """
 
 import json
@@ -26,7 +26,7 @@ from . import config, i18n
 
 logger = logging.getLogger("charts-dashboard")
 
-# Docker-SDK lazy initialisieren (faellt elegant aus, wenn Socket fehlt).
+# Lazy-initialize the Docker SDK (degrades gracefully if the socket is missing).
 try:
     import docker  # type: ignore
     _docker_client = docker.from_env()
@@ -36,7 +36,7 @@ except Exception as e:  # pragma: no cover
 
 
 def _read_status_files() -> dict:
-    """Liest alle <dienst>.json aus STATUS_DIR. Rueckgabe: {service: data}."""
+    """Read all <service>.json from STATUS_DIR. Returns: {service: data}."""
     out: dict = {}
     d = config.STATUS_DIR
     if not os.path.isdir(d):
@@ -56,9 +56,9 @@ def _read_status_files() -> dict:
 
 def _container_states() -> dict:
     """
-    Docker-Zustand je ueberwachtem Container.
-    Rueckgabe: {name: {"state": "running"/"exited"/..., "health": "healthy"/
-               "none"/..., "since": "<ISO>", "ok": bool}}
+    Docker state per monitored container.
+    Returns: {name: {"state": "running"/"exited"/..., "health": "healthy"/
+             "none"/..., "since": "<ISO>", "ok": bool}}
     """
     out: dict = {}
     for name in config.WATCH_CONTAINERS:
@@ -76,14 +76,14 @@ def _container_states() -> dict:
                     and info["health"] in ("healthy", "none")
                 )
             except Exception:
-                # Container nicht gefunden o. a. -> missing bleibt stehen.
+                # Container not found etc. -> missing stays.
                 pass
         out[name] = info
     return out
 
 
 def _slskd_status() -> dict:
-    """slskd-Verbindungsstatus + grobe Transfer-Zahlen."""
+    """slskd connection status + rough transfer numbers."""
     out = {"ok": False, "state": i18n.t("dashboard.conn.slskd.state_unknown"),
            "downloads_active": None, "detail": ""}
     if not config.SLSKD_API_KEY:
@@ -101,7 +101,7 @@ def _slskd_status() -> dict:
         out["detail"] = i18n.t("dashboard.conn.unreachable",
                                err=e.__class__.__name__)
         return out
-    # Aktive Downloads zaehlen (optional, best effort).
+    # Count active downloads (optional, best effort).
     try:
         r = httpx.get(f"{base}/api/v0/transfers/downloads", headers=headers, timeout=8)
         if r.status_code == 200:
@@ -120,7 +120,7 @@ def _slskd_status() -> dict:
 
 
 def _lidarr_status() -> dict:
-    """Lidarr-Erreichbarkeit (optional)."""
+    """Lidarr reachability (optional)."""
     out = {"configured": bool(config.LIDARR_URL and config.LIDARR_API_KEY),
            "ok": False, "detail": ""}
     if not out["configured"]:
@@ -131,8 +131,8 @@ def _lidarr_status() -> dict:
         r = httpx.get(url, headers={"X-Api-Key": config.LIDARR_API_KEY}, timeout=8)
         r.raise_for_status()
         out["ok"] = True
-        # "v{version}" bleibt bewusst ein literaler Formatstring (kosmetischer
-        # Versionsmarker, keine Prosa) - nicht uebersetzt.
+        # "v{version}" is deliberately kept a literal format string (cosmetic
+        # version marker, not prose) - not translated.
         out["detail"] = f"v{r.json().get('version', '?')}"
     except Exception as e:
         out["detail"] = i18n.t("dashboard.conn.unreachable",
@@ -140,50 +140,51 @@ def _lidarr_status() -> dict:
     return out
 
 
-# Live-Erreichbarkeit der EXTERNEN Chart-Quellen (WAN zu Drittanbietern).
-# Gecacht nach dem _dir_stats-Muster (modulglobaler Cache + Zeitstempel), weil
-# das Dashboard alle 15s pollt - ohne Cache wuerde jeder Refresh drei WAN-
-# Requests ausloesen. TTL: config.EXTERNAL_TTL (Default 120s).
+# Live reachability of the EXTERNAL chart sources (WAN to third parties).
+# Cached following the _dir_stats pattern (module-global cache + timestamp)
+# because the dashboard polls every 15s - without a cache every refresh would
+# trigger three WAN requests. TTL: config.EXTERNAL_TTL (default 120s).
 _ext_cache: dict | None = None
 _ext_ts: float = 0.0
 
 
 def _external_status() -> dict:
     """
-    Live-Erreichbarkeit der externen/abhaengigen Dienste (ListenBrainz, Deezer,
-    Last.fm, iTunes nur Info, Pushover). Nach dem _slskd_status/_lidarr_status-
-    Muster: fail-open (jede Exception -> ok=False + detail, NIE nach oben
-    werfen), timeout=8. Gecacht (EXTERNAL_TTL), weil das Dashboard alle 15s
-    pollt - ohne Cache ginge pro Refresh u.a. ein echter Pushover-Auth-Call raus.
+    Live reachability of the external/dependent services (ListenBrainz, Deezer,
+    Last.fm, iTunes info only, Pushover). Following the _slskd_status/
+    _lidarr_status pattern: fail-open (every exception -> ok=False + detail,
+    NEVER raise upward), timeout=8. Cached (EXTERNAL_TTL) because the dashboard
+    polls every 15s - without a cache a real Pushover auth call (among others)
+    would go out per refresh.
 
-    Rueckgabe: {service: {"ok": bool, "detail": str}} fuer fuenf Dienste;
-    lastfm + pushover zusaetzlich mit "configured": bool.
+    Returns: {service: {"ok": bool, "detail": str}} for five services; lastfm +
+    pushover additionally with "configured": bool.
     """
     global _ext_cache, _ext_ts
     now = time.time()
     if _ext_cache is not None and (now - _ext_ts) < config.EXTERNAL_TTL:
         return _ext_cache
 
-    # ListenBrainz: /1/validate-token OHNE Token -> HTTP 400 = erreichbar.
-    # Darum KEIN raise_for_status(): ok=True, sobald ueberhaupt eine Antwort kam.
-    # follow_redirects=True: ListenBrainz leitet seine Endpoints per 308 auf die
-    # URL mit abschliessendem Slash um; ohne Folgen landet der Check auf dem
-    # Redirect statt auf der echten validate-token-Antwort (gruen zwar, aber nur
-    # weil "irgendeine Antwort kam" - mit Folgen ist der Check echt).
+    # ListenBrainz: /1/validate-token WITHOUT a token -> HTTP 400 = reachable.
+    # Hence NO raise_for_status(): ok=True as soon as any response came back.
+    # follow_redirects=True: ListenBrainz redirects its endpoints via 308 to the
+    # URL with a trailing slash; without following, the check lands on the
+    # redirect instead of the real validate-token response (green, but only
+    # because "some response came" - with following, the check is real).
     lb = {"ok": False, "detail": ""}
     try:
         r = httpx.get("https://api.listenbrainz.org/1/validate-token", timeout=8,
                       follow_redirects=True)
         lb["ok"] = True
-        # Kein detail bei Erfolg: die UI zeigt bereits "erreichbar" als
-        # Status-Zeile. detail nur fuellen, wenn es etwas Zusaetzliches sagt.
+        # No detail on success: the UI already shows "reachable" as the status
+        # line. Only fill detail if it says something additional.
         lb["detail"] = ""
     except Exception as e:
         lb["detail"] = i18n.t("dashboard.conn.unreachable",
                               err=e.__class__.__name__)
 
-    # Deezer: /chart/0/tracks?limit=1 -> 200 OHNE 'error'-Feld. Deezer meldet
-    # Fehler als HTTP 200 mit error-Objekt, darum beides pruefen.
+    # Deezer: /chart/0/tracks?limit=1 -> 200 WITHOUT an 'error' field. Deezer
+    # reports errors as HTTP 200 with an error object, so check both.
     dz = {"ok": False, "detail": ""}
     try:
         r = httpx.get("https://api.deezer.com/chart/0/tracks",
@@ -197,8 +198,8 @@ def _external_status() -> dict:
         dz["detail"] = i18n.t("dashboard.conn.unreachable",
                               err=e.__class__.__name__)
 
-    # Last.fm: optional, nur mit API-Key (kein anonymer Ping). Ohne Key:
-    # configured=False -> UI zeigt die Kachel "muted", NICHT rot.
+    # Last.fm: optional, only with an API key (no anonymous ping). Without a
+    # key: configured=False -> UI shows the tile "muted", NOT red.
     lf = {"configured": bool(config.LASTFM_API_KEY), "ok": False, "detail": ""}
     if lf["configured"]:
         try:
@@ -217,8 +218,8 @@ def _external_status() -> dict:
     else:
         lf["detail"] = i18n.t("dashboard.conn.lastfm.no_api_key")
 
-    # iTunes/Apple: NUR Info, NIE an die Rot-Logik gekoppelt. 429/403 = gedros-
-    # selt, nicht tot -> trotzdem ok=True (erreichbar), detail unterscheidet.
+    # iTunes/Apple: INFO only, NEVER coupled to the red logic. 429/403 =
+    # throttled, not dead -> still ok=True (reachable), detail distinguishes.
     it = {"ok": False, "detail": ""}
     try:
         r = httpx.get("https://itunes.apple.com/search",
@@ -239,11 +240,11 @@ def _external_status() -> dict:
         it["detail"] = i18n.t("dashboard.conn.unreachable",
                               err=e.__class__.__name__)
 
-    # Pushover: echter validate-Call (POST /1/users/validate.json). Verbraucht
-    # KEIN Nachrichten-Budget, prueft aber Token+User wirklich. Nur mit beiden
-    # Credentials; sonst configured=False -> UI zeigt die Kachel "muted", nicht
-    # rot. Gueltig: HTTP 200 + {"status":1}; ungueltig: HTTP 400 + {"status":0}.
-    # Deshalb MUSS der TTL-Cache greifen (sonst Auth-Call bei jedem 15s-Refresh).
+    # Pushover: real validate call (POST /1/users/validate.json). Uses NO
+    # message budget but really checks token+user. Only with both credentials;
+    # otherwise configured=False -> UI shows the tile "muted", not red. Valid:
+    # HTTP 200 + {"status":1}; invalid: HTTP 400 + {"status":0}. That is why the
+    # TTL cache MUST take effect (otherwise an auth call on every 15s refresh).
     po = {"configured": bool(config.PUSHOVER_TOKEN and config.PUSHOVER_USER),
           "ok": False, "detail": ""}
     if po["configured"]:
@@ -255,10 +256,10 @@ def _external_status() -> dict:
                 "content-type", "").startswith("application/json") else {}
             po["ok"] = r.status_code == 200 and (
                 isinstance(payload, dict) and payload.get("status") == 1)
-            # detail = Klartext-Zusatzinfo, konsistent mit den anderen Checks.
-            # Die Klartext-Bewertung ("Credentials gültig/ungültig") setzt die
-            # UI selbst aus pu.ok – hier NICHT wiederholen, sonst steht derselbe
-            # Satz doppelt in der Kachel.
+            # detail = plain-text extra info, consistent with the other checks.
+            # The plain-text verdict ("credentials valid/invalid") is set by the
+            # UI itself from pu.ok - do NOT repeat it here, otherwise the same
+            # sentence appears twice in the tile.
             po["detail"] = (i18n.t("dashboard.conn.pushover.ok") if po["ok"]
                             else i18n.t("dashboard.conn.pushover.rejected"))
         except Exception as e:
@@ -267,11 +268,11 @@ def _external_status() -> dict:
     else:
         po["detail"] = i18n.t("dashboard.conn.pushover.not_configured")
 
-    # FLASHBACK FM: GraphQL-Live-Check (LastPlayed persisted query). Nur mit
-    # gesetztem Hash; sonst configured=False -> UI "muted". ok nur bei HTTP 200
-    # OHNE GraphQL-errors-Block UND mit nicht-leerer streams-Liste. Ein toter
-    # persisted-query-Hash (API neu gebaut) -> ok=False -> rote Kachel -> Signal
-    # "FLASHBACK_HASH neu holen".
+    # FLASHBACK FM: GraphQL live check (LastPlayed persisted query). Only with a
+    # set hash; otherwise configured=False -> UI "muted". ok only on HTTP 200
+    # WITHOUT a GraphQL errors block AND with a non-empty streams list. A dead
+    # persisted query hash (API rebuilt) -> ok=False -> red tile -> signal
+    # "fetch a new FLASHBACK_HASH".
     fb = {"configured": bool(config.FLASHBACK_HASH), "ok": False, "detail": ""}
     if fb["configured"]:
         try:
@@ -290,9 +291,9 @@ def _external_status() -> dict:
                        .get("streams") or []) if isinstance(payload, dict) else []
             fb["ok"] = r.status_code == 200 and not has_err and bool(streams)
             if fb["ok"]:
-                # detail LEER lassen: die Kachel zeigt den Status "erreichbar"
-                # schon in Zeile 1 (fb.ok). Ein zusaetzliches "erreichbar" in
-                # detail wuerde die Zeile doppeln (wie bei Deezer: nur einzeilig).
+                # Leave detail EMPTY: the tile already shows the status
+                # "reachable" in line 1 (fb.ok). An additional "reachable" in
+                # detail would double the line (like Deezer: single line only).
                 fb["detail"] = ""
             elif has_err:
                 fb["detail"] = i18n.t("dashboard.conn.flashback.bad_hash")
@@ -313,25 +314,25 @@ def _external_status() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Quellen-Finder (read-only Helfer fuer das Dashboard-Panel "Quellen-Finder").
-# Alle drei Funktionen folgen exakt dem _external_status-Muster: httpx mit
-# timeout=8, jede Exception -> {"ok": False, "detail": "nicht erreichbar
-# (<ExcClass>)"}, NIE nach oben werfen. Deezer/Last.fm melden Fehler als HTTP
-# 200 + "error"-Feld, darum wird das Feld zusaetzlich geprueft. Die
-# "snippet"-Strings sind fertige, parserkonforme CHARTS-Quell-JSONs zum
-# Copy-paste in die .env (siehe CHARTS-SOURCES.md).
+# Source finder (read-only helpers for the dashboard panel "source finder").
+# All three functions follow exactly the _external_status pattern: httpx with
+# timeout=8, every exception -> {"ok": False, "detail": "not reachable
+# (<ExcClass>)"}, NEVER raise upward. Deezer/Last.fm report errors as HTTP 200 +
+# "error" field, so the field is checked additionally. The "snippet" strings are
+# ready, parser-conformant CHARTS source JSONs for copy-pasting into the .env
+# (see CHARTS-SOURCES.md).
 # ---------------------------------------------------------------------------
 
-# Erlaubte Zeichen fuer Last.fm-Tags: Wortzeichen, Leerraum und ein paar
-# ueblich vorkommende Sonderzeichen (mehrwortige Tags wie "classic country"
-# oder "r&b" sind ZULAESSIG).
+# Allowed characters for Last.fm tags: word characters, whitespace and a few
+# commonly occurring special characters (multi-word tags like "classic country"
+# or "r&b" are ALLOWED).
 _TAG_RE = re.compile(r"^[\w\s&/+-]+$", re.UNICODE)
 
 
 def search_deezer_playlists(q: str) -> dict:
     """
-    Deezer-Playlist-Suche (read-only, fail-open, kein Cache).
-    Gibt pro Treffer ein fertiges CHARTS-Quell-Snippet zum Copy-paste zurueck.
+    Deezer playlist search (read-only, fail-open, no cache).
+    Returns a ready CHARTS source snippet per hit for copy-pasting.
     """
     q = (q or "").strip()
     if not (1 <= len(q) <= 100):
@@ -369,10 +370,10 @@ def search_deezer_playlists(q: str) -> dict:
 
 def search_deezer_artists(q: str) -> dict:
     """
-    Deezer-Kuenstler-Suche (read-only, fail-open, kein Cache).
-    Gibt pro Treffer ein fertiges CHARTS-Quell-Snippet (type:artist) zum
-    Copy-paste zurueck. nb_fan hilft, gleichnamige Kuenstler zu unterscheiden
-    (z.B. gibt es zwei "Hecht").
+    Deezer artist search (read-only, fail-open, no cache).
+    Returns a ready CHARTS source snippet (type:artist) per hit for
+    copy-pasting. nb_fan helps distinguish artists with the same name (e.g.
+    there are two "Hecht").
     """
     q = (q or "").strip()
     if not (1 <= len(q) <= 100):
@@ -392,8 +393,8 @@ def search_deezer_artists(q: str) -> dict:
             if aid is None:
                 continue
             aid = str(aid)
-            # limit:50 als Zahl (nicht "all"), weil /artist/top von Deezer eh
-            # bei ~100 gedeckelt ist - 50 ist ein guter Default.
+            # limit:50 as a number (not "all"), because Deezer's /artist/top is
+            # capped at ~100 anyway - 50 is a good default.
             snippet = (
                 '{"service":"deezer","type":"artist","source":"'
                 + aid + '","limit":50,"enabled":true}')
@@ -409,18 +410,18 @@ def search_deezer_artists(q: str) -> dict:
             "dashboard.conn.unreachable", err=e.__class__.__name__)}
 
 
-# Deezer-Genre-Liste: 1x/Tag gecacht (eigene TTL, selten geaendert). Modul-
-# globaler Cache nach dem _ext_cache-Muster.
+# Deezer genre list: cached once a day (own TTL, rarely changed). Module-global
+# cache following the _ext_cache pattern.
 _genre_cache: dict | None = None
 _genre_ts: float = 0.0
 
 
 def deezer_genres() -> dict:
     """
-    Deezer-Genre-Katalog (read-only, fail-open, 24-h-Cache).
-    Rueckgabe bei Erfolg: {"ok": True, "genres": [{"id","name"}], "fetched":
-    "<ISO>"}; bei Fehler: {"ok": False, "detail": ..., "genres": []} (das
-    Frontend faellt dann auf die statische Liste zurueck).
+    Deezer genre catalog (read-only, fail-open, 24h cache).
+    Returns on success: {"ok": True, "genres": [{"id","name"}], "fetched":
+    "<ISO>"}; on error: {"ok": False, "detail": ..., "genres": []} (the frontend
+    then falls back to the static list).
     """
     global _genre_cache, _genre_ts
     now = time.time()
@@ -456,10 +457,10 @@ def deezer_genres() -> dict:
 
 def lastfm_tag_check(q: str) -> dict:
     """
-    Last.fm-Tag-Validierung via tag.getTopTracks (read-only, fail-open).
-    Ohne API-Key -> configured:false. Ein Tag gilt als brauchbar, wenn der
-    Aufruf HTTP 200 ohne error-Feld und eine nicht-leere Trackliste liefert.
-    Bei Erfolg kommt ein fertiges CHARTS-Quell-Snippet mit zurueck.
+    Last.fm tag validation via tag.getTopTracks (read-only, fail-open).
+    Without an API key -> configured:false. A tag counts as usable if the call
+    returns HTTP 200 without an error field and a non-empty track list.
+    On success a ready CHARTS source snippet is returned as well.
     """
     if not config.LASTFM_API_KEY:
         return {"ok": False, "configured": False,
@@ -506,9 +507,9 @@ def lastfm_tag_check(q: str) -> dict:
 
 _AUDIO_EXT = (".mp3", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wav", ".wma")
 
-# Verzeichnis-Statistik ist teuer (os.walk ueber ggf. zehntausende Dateien,
-# v.a. die Music-Library auf HDD). Daher cachen und nur alle STATS_TTL Sekunden
-# neu berechnen - nicht bei jedem 15s-Abruf.
+# Directory statistics are expensive (os.walk over possibly tens of thousands
+# of files, especially the music library on HDD). Hence cache and only recompute
+# every STATS_TTL seconds - not on every 15s fetch.
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, str(default)))
@@ -516,12 +517,12 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-# Charts-Share + Quarantaene sind klein -> haeufiger neu zaehlen ist billig.
+# Charts share + quarantine are small -> recounting more often is cheap.
 _STATS_TTL = _env_int("DASHBOARD_STATS_TTL", 300)
-# Die Library ist GROSS (zehntausende Dateien auf HDD). Ihr Ordner-Scan dauert
-# ~10s -> nur SEHR selten neu zaehlen (Default 24h). Die Sammlung waechst eh
-# nur langsam. Getrennter Cache, damit die haeufigen Charts-Stats nicht jedes
-# Mal den teuren Library-Scan ausloesen.
+# The library is LARGE (tens of thousands of files on HDD). Its folder scan
+# takes ~10s -> recount only VERY rarely (default 24h). The collection grows
+# only slowly anyway. Separate cache so the frequent charts stats do not trigger
+# the expensive library scan every time.
 _LIBRARY_TTL = _env_int("DASHBOARD_LIBRARY_TTL", 86400)
 _stats_cache: dict | None = None
 _stats_ts: float = 0.0
@@ -531,8 +532,8 @@ _library_ts: float = 0.0
 
 def _walk_count_bytes(root: str) -> tuple[int, int]:
     """
-    Zaehlt Audiodateien + Gesamtgroesse in EINEM Walk. Fuer die KLEINEN Ordner
-    (Charts-Share, Quarantaene) - dort ist der volle Walk guenstig.
+    Count audio files + total size in ONE walk. For the SMALL folders (charts
+    share, quarantine) - there the full walk is cheap.
     """
     files_n = 0
     total = 0
@@ -552,18 +553,17 @@ def _walk_count_bytes(root: str) -> tuple[int, int]:
 
 def _library_counts(root: str) -> dict:
     """
-    Systemschonende Zaehlung der Library: NUR Verzeichnis-Eintraege ueber zwei
-    Ebenen (Kuenstler-Ordner + deren Album-Unterordner). KEIN Datei-Walk, KEIN
-    getsize ueber zehntausende Dateien.
+    System-friendly count of the library: ONLY directory entries over two
+    levels (artist folders + their album subfolders). NO file walk, NO getsize
+    over tens of thousands of files.
 
-    Es wird BEWUSST keine Songzahl geschaetzt - die Library enthaelt viele
-    Single-/Chart-Ordner mit nur 1 Track, ein pauschaler "pro Album"-Faktor
-    waere stark irrefuehrend. Angezeigt werden nur die EXAKT gezaehlten
-    Kuenstler + Alben.
+    DELIBERATELY no song count is estimated - the library contains many
+    single/chart folders with only 1 track, a blanket "per album" factor would
+    be strongly misleading. Only the EXACTLY counted artists + albums are shown.
 
-    Diese Funktion ist teuer (~10s auf HDD) und wird daher nur sehr selten
-    aufgerufen (siehe _LIBRARY_TTL, Default 24h).
-    Rueckgabe: {"artists", "albums"}
+    This function is expensive (~10s on HDD) and is therefore called only very
+    rarely (see _LIBRARY_TTL, default 24h).
+    Returns: {"artists", "albums"}
     """
     if not os.path.isdir(root):
         return {"artists": 0, "albums": 0}
@@ -592,7 +592,7 @@ _library_running = False
 
 
 def _library_refresh_bg() -> None:
-    """Berechnet die Library-Zahlen im Hintergrund und legt sie in den Cache."""
+    """Compute the library numbers in the background and store them in the cache."""
     global _library_cache, _library_ts, _library_running
     try:
         counts = _library_counts(config.MUSIC_DIR)
@@ -606,11 +606,11 @@ def _library_refresh_bg() -> None:
 
 def _library_stats() -> dict:
     """
-    Library-Zahlen mit eigenem LANGEM Cache (_LIBRARY_TTL, Default 24h).
-    NICHT-BLOCKIEREND: ist der Cache leer/veraltet, wird die (teure, ~10s)
-    Zaehlung in einem Hintergrund-Thread angestossen und der ALTE Wert (oder
-    "wird berechnet") sofort zurueckgegeben. So blockiert kein /api/status-
-    Abruf 10 Sekunden auf dem Library-Scan.
+    Library numbers with their own LONG cache (_LIBRARY_TTL, default 24h).
+    NON-BLOCKING: if the cache is empty/stale, the (expensive, ~10s) count is
+    triggered in a background thread and the OLD value (or "being computed") is
+    returned immediately. This way no /api/status fetch blocks 10 seconds on the
+    library scan.
     """
     global _library_running
     now = time.time()
@@ -627,9 +627,9 @@ def _library_stats() -> dict:
 
 def _dir_stats() -> dict:
     """
-    Datei-/Groessen-Zahlen (read-only). Gecacht (STATS_TTL).
-    - Charts-Share + Quarantaene: exakt (kleine Ordner, guenstig).
-    - Library: nur GROBE Schaetzung ueber Ordnerzahl, KEIN teurer Datei-Walk.
+    File/size numbers (read-only). Cached (STATS_TTL).
+    - Charts share + quarantine: exact (small folders, cheap).
+    - Library: only a ROUGH estimate over folder count, NO expensive file walk.
     """
     global _stats_cache, _stats_ts
     now = time.time()
@@ -646,7 +646,7 @@ def _dir_stats() -> dict:
         "charts_bytes": charts_bytes,
         "rejected_files": rejected_files,
         "rejected_bytes": rejected_bytes,
-        # Library hat einen EIGENEN, langen Cache (teurer Scan) - separat holen.
+        # The library has its OWN long cache (expensive scan) - fetch separately.
         "library": _library_stats(),
         "computed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(now)),
     }
@@ -655,15 +655,15 @@ def _dir_stats() -> dict:
 
 
 def collect() -> dict:
-    """Baut den kompletten Dashboard-Zustand zusammen."""
+    """Assemble the complete dashboard state."""
     return {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "services": _read_status_files(),
         "containers": _container_states(),
         "slskd": _slskd_status(),
         "lidarr": _lidarr_status(),
-        # Pushover kommt jetzt aus dem Live-Check (external.pushover: echter
-        # validate-Call) statt aus einem reinen Config-Flag.
+        # Pushover now comes from the live check (external.pushover: real
+        # validate call) instead of a pure config flag.
         "external": _external_status(),
         "storage": _dir_stats(),
     }

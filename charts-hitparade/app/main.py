@@ -1,22 +1,22 @@
 """
-charts-hitparade - Hauptservice.
+charts-hitparade - main service.
 
-Holt woechentlich (sonntags) die Schweizer Hitparade von hitparade.ch, matcht
-gegen die Library und schreibt pro Chart eine Playlist (.m3u) + eine
-missing-Datei fuer charts-download. Reiner HTTP-Abruf, kein Headless-Browser.
+Fetches the Swiss Hitparade from hitparade.ch weekly (on Sundays), matches it
+against the library and writes a playlist (.m3u) + a missing file for
+charts-download per chart. Plain HTTP fetch, no headless browser.
 
-Ablauf pro Lauf (je konfiguriertem Chart):
-  1. Chart-Liste von hitparade.ch holen (hitparade.fetch_chart).
-  2. Jeden Song gegen die Library matchen (library.find_match).
-  3. Treffer -> Playlist (.m3u), Fehlende -> missing-Datei (charts-download).
+Flow per run (per configured chart):
+  1. Fetch chart list from hitparade.ch (hitparade.fetch_chart).
+  2. Match each song against the library (library.find_match).
+  3. Hits -> playlist (.m3u), missing ones -> missing file (charts-download).
 
-Monitoring: Liefert hitparade.ch 0 Songs (Seite umgebaut/blockiert) oder ist
-nicht erreichbar, wird der Lauf als status=error gemeldet -> Dashboard-Kachel
-orange/rot + Pushover. So faellt ein kaputter Scraper sofort auf.
+Monitoring: If hitparade.ch returns 0 songs (page rebuilt/blocked) or is
+unreachable, the run is reported as status=error -> dashboard tile orange/red +
+Pushover. This way a broken scraper stands out immediately.
 
-Stellung in der Kette (wie charts-sync):
+Position in the chain (like charts-sync):
   charts-hitparade (hitparade.m3u + missing-hitparade.txt)
-  -> charts-download (laedt die fehlenden) -> charts-import -> Navidrome
+  -> charts-download (fetches the missing ones) -> charts-import -> Navidrome
 """
 
 import logging
@@ -34,7 +34,7 @@ logger = logging.getLogger("charts-hitparade")
 
 
 def _match_all(lib, songs):
-    """Matcht eine Chart-Liste gegen die Library. -> (matched, missing)."""
+    """Match a chart list against the library. -> (matched, missing)."""
     matched = []
     missing = []
     for pos, artist, title in songs:
@@ -48,9 +48,9 @@ def _match_all(lib, songs):
 
 def run_once() -> dict:
     """
-    Fuehrt einen Hitparade-Lauf aus (alle konfigurierten Charts).
-    Rueckgabe: Zaehler-Dict fuers Dashboard. Wirft bei einem Quell-Fehler eine
-    Exception weiter (-> _guarded_run meldet status=error).
+    Run one Hitparade run (all configured charts).
+    Returns: counter dict for the dashboard. Re-raises an exception on a source
+    error (-> _guarded_run reports status=error).
     """
     logger.info(t("hitparade.run.start", charts=", ".join(config.HITPARADE_CHARTS)))
     lib = library.build_index(config.MUSIC_DIR)
@@ -60,8 +60,8 @@ def run_once() -> dict:
     total_matched = 0
     total_missing = 0
     results = []
-    errors = []        # echte Scraper-Fehler (0 Songs) -> rot
-    unavailable = []   # hitparade.ch voruebergehend down (5xx) -> gelb/idle
+    errors = []        # real scraper errors (0 songs) -> red
+    unavailable = []   # hitparade.ch temporarily down (5xx) -> yellow/idle
 
     for chart in config.HITPARADE_CHARTS:
         meta = config.CHART_META.get(chart)
@@ -75,14 +75,14 @@ def run_once() -> dict:
                 retries=config.FETCH_RETRIES,
             )
         except hitparade.HitparadeUnavailable as e:
-            # hitparade.ch voruebergehend nicht erreichbar (5xx/Timeout) - das
-            # ist DEREN Problem, kein Scraper-Defekt. Separat merken, damit es
-            # milder (idle/gelb, kein Alarm) behandelt wird.
+            # hitparade.ch temporarily unreachable (5xx/timeout) - this is
+            # THEIR problem, not a scraper defect. Record separately so it is
+            # handled more leniently (idle/yellow, no alarm).
             logger.warning(t("hitparade.run.chart_unavailable", chart=chart, error=e))
             unavailable.append(f"{chart}: {e}")
             continue
         except hitparade.HitparadeError as e:
-            # Seite antwortet, aber 0 Songs -> Scraper kaputt -> harter Fehler.
+            # Page answers but 0 songs -> scraper broken -> hard error.
             logger.error(t("hitparade.run.chart_failed", chart=chart, error=e))
             errors.append(f"{chart}: {e}")
             continue
@@ -99,22 +99,22 @@ def run_once() -> dict:
         results.append({"chart": chart, "title": meta["title"],
                         "total": len(songs), "matched": len(matched),
                         "missing": len(missing),
-                        # Volle Fehlliste (pos, artist, title) fuer die
-                        # Pushover-Auflistung durchreichen (wie charts-sync).
+                        # Pass through the full missing list (pos, artist,
+                        # title) for the Pushover listing (like charts-sync).
                         "missing_songs": missing})
 
     _notify(results)
 
-    # Echter Scraper-Fehler (0 Songs trotz Antwort) -> harter Fehler (rot).
+    # Real scraper error (0 songs despite a response) -> hard error (red).
     if errors and not results:
         raise hitparade.HitparadeError("; ".join(errors))
-    # Teil-Fehler (ein Chart ok, einer kaputt) ebenfalls als Fehler sichtbar.
+    # Partial error (one chart ok, one broken) also visible as an error.
     if errors:
         logger.warning(t("hitparade.run.partial_failed", errors="; ".join(errors)))
 
-    # KEIN echter Fehler, aber alle Quellen nur voruebergehend nicht erreichbar
-    # (5xx/Timeout) und nichts geladen -> als UNAVAILABLE signalisieren, damit
-    # _guarded_run den Status auf idle (gelb, kein Alarm) setzt statt rot.
+    # NO real error, but all sources only temporarily unreachable (5xx/timeout)
+    # and nothing loaded -> signal as UNAVAILABLE so _guarded_run sets the
+    # status to idle (yellow, no alarm) instead of red.
     if unavailable and not results and not errors:
         raise hitparade.HitparadeUnavailable("; ".join(unavailable))
     if unavailable:
@@ -131,15 +131,15 @@ def run_once() -> dict:
 
 
 def _notify(results: list[dict]) -> None:
-    """Pushover-Meldung mit den Hitparade-Ergebnissen (nur bei Aenderung)."""
+    """Pushover message with the Hitparade results (only on change)."""
     if not results:
         return
     total_matched = sum(r["matched"] for r in results)
     total_missing = sum(r["missing"] for r in results)
 
-    # Pushover-Titel = Dienst-Emoji + Dienstname (wie alle anderen charts-
-    # Dienste). Der Playlist-Name mit seinen Emojis steht als fette Kopfzeile
-    # je Playlist im Body - identisch zum Navidrome-Anzeigenamen.
+    # Pushover title = service emoji + service name (like all other charts
+    # services). The playlist name with its emojis appears as a bold header per
+    # playlist in the body - identical to the Navidrome display name.
     push_title = t("hitparade.notify.title", service="charts-hitparade")
 
     lines = [t("hitparade.notify.summary_header",
@@ -148,13 +148,13 @@ def _notify(results: list[dict]) -> None:
         lines.append(f"<b>{r['title']}</b>")
         lines.append(t("hitparade.notify.chart_line",
                        matched=r["matched"], missing=r["missing"], total=r["total"]))
-        # Fehlende Songs auffuehren (wie charts-sync), damit man direkt vom
-        # Handy aus sieht, was nachgeladen wird. Menge ueber
-        # NOTIFY_MISSING_LIMIT begrenzt (0 = nur Anzahl, keine Songliste).
+        # List missing songs (like charts-sync) so you can see directly from
+        # your phone what will be fetched. Quantity limited via
+        # NOTIFY_MISSING_LIMIT (0 = only the count, no song list).
         missing_songs = r.get("missing_songs") or []
         if missing_songs and config.NOTIFY_MISSING_LIMIT > 0:
             limit = config.NOTIFY_MISSING_LIMIT
-            lines.append("")  # Leerzeile vor der Songliste (bessere Lesbarkeit)
+            lines.append("")  # blank line before the song list (readability)
             for pos, artist, title in missing_songs[:limit]:
                 lines.append(t("notify.song_entry", pos=pos, artist=artist, title=title))
             if len(missing_songs) > limit:
@@ -162,13 +162,13 @@ def _notify(results: list[dict]) -> None:
                 lines.append(t("notify.missing.more", count=rest))
         lines.append("")
     message = _truncate_for_pushover("\n".join(lines).strip())
-    # NOTIFY_ONLY_ON_CHANGE wird in notify.send selbst nicht geprueft - der
-    # Scheduler laeuft eh nur 1x/Woche, da ist eine Meldung pro Lauf ok.
+    # NOTIFY_ONLY_ON_CHANGE is not checked in notify.send itself - the
+    # scheduler only runs 1x/week anyway, so one message per run is fine.
     notify.send(push_title, message)
 
 
 def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
-    """Kuerzt die Nachricht auf Pushovers 1024-Zeichen-Limit (an Zeilengrenze)."""
+    """Truncate the message to Pushover's 1024-char limit (at a line boundary)."""
     if len(message) <= max_len:
         return message
     suffix = "\n" + t("notify.truncated")
@@ -181,9 +181,9 @@ def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
 
 
 def _next_run_dt(now: datetime) -> datetime:
-    """Naechster geplanter Lauf-Zeitpunkt (fuer die Dashboard-Anzeige)."""
+    """Next scheduled run time (for the dashboard display)."""
     import datetime as _dt
-    # Tage bis zum konfigurierten Wochentag
+    # Days until the configured weekday
     days_ahead = (config.RUN_WEEKDAY - now.weekday()) % 7
     candidate = now.replace(hour=config.RUN_HOUR, minute=config.RUN_MINUTE,
                             second=0, microsecond=0) + _dt.timedelta(days=days_ahead)
@@ -193,11 +193,11 @@ def _next_run_dt(now: datetime) -> datetime:
 
 
 def _next_run_iso() -> str:
-    """Naechster geplanter Lauf als lokale ISO-Zeit mit Zeitzonen-Offset."""
+    """Next scheduled run as local ISO time with timezone offset."""
     return _next_run_dt(datetime.now()).astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
-# Counter-Keys (literal, dashboard-Payload) -> i18n-Key fuer das lesbare Label.
+# Counter keys (literal, dashboard payload) -> i18n key for the readable label.
 _COUNTER_LABEL_KEYS = {
     "charts": "hitparade.counter.charts",
     "songs": "hitparade.counter.songs",
@@ -207,11 +207,11 @@ _COUNTER_LABEL_KEYS = {
 
 
 def _guarded_run() -> None:
-    """Fuehrt run_once() aus und schreibt den Status (Erfolg/Fehler)."""
+    """Run run_once() and write the status (success/error)."""
     next_run = _next_run_iso()
     if not config.HITPARADE_ENABLED:
-        # Deaktiviert: Container laeuft weiter, aber kein Fetch/Playlist/Pushover.
-        # Status idle (grau, kein Fehler) statt ok/error.
+        # Disabled: container keeps running, but no fetch/playlist/Pushover.
+        # Status idle (gray, not an error) instead of ok/error.
         status.start()
         status.finish("idle", t("hitparade.status.disabled"), {}, next_run)
         logger.info(t("hitparade.disabled_skip"))
@@ -221,23 +221,23 @@ def _guarded_run() -> None:
         result = run_once() or {}
         error_note = result.pop("_error_note", "")
         counters = {k: v for k, v in result.items() if isinstance(v, (int, float))}
-        # Lesbare Status-/Dashboard-Zeile aus den Countern (uebersetztes Label je
-        # Counter, keine rohen englischen Counter-Keys).
+        # Readable status/dashboard line from the counters (translated label per
+        # counter, no raw English counter keys).
         parts = [f"{v} {t(_COUNTER_LABEL_KEYS[k])}"
                  for k, v in counters.items() if k in _COUNTER_LABEL_KEYS and v]
         msg = ", ".join(parts) if parts else t("hitparade.status.nothing_to_do")
         if error_note:
-            # Teil-Fehler: Lauf lief, aber eine Quelle war kaputt -> als Fehler
-            # markieren, damit es im Dashboard auffaellt.
+            # Partial error: the run ran, but one source was broken -> mark as
+            # an error so it stands out in the dashboard.
             status.finish("error",
                           t("hitparade.status.error_suffix", msg=msg, error=error_note),
                           counters, next_run)
         else:
             status.finish("ok", msg, counters, next_run)
     except hitparade.HitparadeUnavailable as e:
-        # hitparade.ch voruebergehend nicht erreichbar (5xx/Timeout) - KEIN
-        # Scraper-Defekt. Idle (gelb/grau im Dashboard, kein Pushover-Alarm);
-        # erholt sich beim naechsten Lauf von selbst.
+        # hitparade.ch temporarily unreachable (5xx/timeout) - NOT a scraper
+        # defect. Idle (yellow/gray in the dashboard, no Pushover alarm);
+        # recovers on its own at the next run.
         logger.warning(t("hitparade.unavailable.warn", error=e))
         status.finish("idle", t("hitparade.status.source_unavailable", error=e),
                       {}, next_run)
@@ -258,8 +258,8 @@ def main() -> None:
         library=config.MUSIC_DIR, playlist_dir=config.PLAYLIST_DIR,
     ))
 
-    # next_run beim Start sofort aktuell setzen (sonst zeigt das Dashboard bis
-    # zum ersten Lauf gar keinen / einen alten Wert).
+    # Set next_run current immediately at startup (otherwise the dashboard
+    # shows no / an old value until the first run).
     status.set_next_run(_next_run_iso())
 
     if config.RUN_ON_START:
@@ -271,12 +271,12 @@ def main() -> None:
     while True:
         time.sleep(check)
         now = datetime.now()
-        # next_run bei JEDEM Check aktuell halten, damit die Dashboard-Anzeige
-        # nie "ueberfaellig" zeigt, nur weil der letzte Lauf laenger her ist.
-        # set_next_run beruehrt NUR next_run, nicht den status - ein per
-        # _guarded_run gesetztes idle/deaktiviert bleibt also erhalten.
+        # Keep next_run current at EVERY check so the dashboard display never
+        # shows "overdue" just because the last run was longer ago.
+        # set_next_run touches ONLY next_run, not the status - so an
+        # idle/disabled set by _guarded_run is preserved.
         status.set_next_run(_next_run_iso())
-        # Lauf-Fenster: richtiger Wochentag, Stunde erreicht, heute noch nicht gelaufen.
+        # Run window: correct weekday, hour reached, not yet run today.
         due = (now.weekday() == config.RUN_WEEKDAY
                and now.hour >= config.RUN_HOUR
                and (now.hour > config.RUN_HOUR or now.minute >= config.RUN_MINUTE)

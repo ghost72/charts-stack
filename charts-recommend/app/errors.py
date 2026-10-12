@@ -1,15 +1,15 @@
 """
-Gemeinsame Fehlertypen fuer charts-recommend.
+Shared error types for charts-recommend.
 """
 
 
 class FetchError(Exception):
     """
-    Transport-Fehler beim Abruf einer Empfehlungs-Quelle (Timeout, HTTP-Fehler,
-    Verbindungsfehler) - NACHDEM alle Wiederholungen fehlgeschlagen sind.
+    Transport error when fetching a recommendation source (timeout, HTTP error,
+    connection error) - AFTER all retries have failed.
 
-    WICHTIG: Das ist bewusst getrennt von einem *leeren, aber erfolgreichen*
-    Ergebnis (ListenBrainz hat z.B. noch keine Playlists generiert). Ein leeres
-    Ergebnis ist KEIN Fehler, sondern fehlende Daten; nur ein FetchError
-    signalisiert eine echte Stoerung (-> status="error" + Pushover-Alarm).
+    IMPORTANT: This is deliberately separate from an *empty but successful*
+    result (e.g. ListenBrainz has not generated any playlists yet). An empty
+    result is NOT an error but missing data; only a FetchError signals a real
+    failure (-> status="error" + Pushover alarm).
     """

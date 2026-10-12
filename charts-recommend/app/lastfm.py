@@ -1,19 +1,19 @@
 """
-Last.fm-Empfehlungs-Client (optional, sofort nutzbar mit vorhandenem API-Key).
+Last.fm recommendation client (optional, usable right away with an existing
+API key).
 
-Zwei Empfehlungs-Modi (per config waehlbar, beide brauchen nur den API-Key -
-kein OAuth):
+Two recommendation modes (selectable via config, both need only the API key -
+no OAuth):
 
-  1. "top" (user.getTopTracks): die meistgehoerten Tracks eines Last.fm-Users.
-     Braucht einen Last.fm-USERNAME (LASTFM_USER) mit Hoerverlauf. Das ist am
-     naechsten an "deine Rotation".
+  1. "top" (user.getTopTracks): the most-played tracks of a Last.fm user.
+     Needs a Last.fm USERNAME (LASTFM_USER) with listening history. This is
+     closest to "your rotation".
 
-  2. "similar" (track.getSimilar): ausgehend von Seed-Songs (deinen Top-Tracks
-     oder einer konfigurierten Seed-Liste) aehnliche Songs. Liefert Entdeckungen
-     im Stil dessen, was du hoerst - auch OHNE Last.fm-Hoerverlauf, wenn Seeds
-     vorgegeben werden.
+  2. "similar" (track.getSimilar): songs similar to seed songs (your top tracks
+     or a configured seed list). Yields discoveries in the style of what you
+     listen to - even WITHOUT Last.fm listening history when seeds are given.
 
-Alle Abfragen liefern nur Metadaten (Kuenstler + Titel).
+All queries return only metadata (artist + title).
 """
 
 import logging
@@ -31,10 +31,10 @@ _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
 
 def _get(client: httpx.Client, params: dict) -> dict:
-    # GET mit Wiederholung bei Transport-Fehlern (Timeout/HTTP/Verbindung).
-    # Erst wenn der letzte Versuch scheitert, fliegt der httpx.HTTPError weiter
-    # (wird oben in einen FetchError uebersetzt). Last.fm-Fehler-Payloads
-    # (payload["error"]) sind KEINE Transport-Fehler und werden nicht wiederholt.
+    # GET with retry on transport errors (timeout/HTTP/connection).
+    # Only when the last attempt fails does the httpx.HTTPError propagate
+    # (translated into a FetchError above). Last.fm error payloads
+    # (payload["error"]) are NOT transport errors and are not retried.
     attempts = max(1, config.HTTP_RETRIES)
     resp = None
     for attempt in range(1, attempts + 1):
@@ -59,7 +59,7 @@ def _get(client: httpx.Client, params: dict) -> dict:
 
 def get_top_tracks(user: str, api_key: str, limit: int,
                    client: httpx.Client) -> list[tuple[int, str, str]]:
-    """Meistgehoerte Tracks eines Last.fm-Users -> (pos, artist, title)."""
+    """Most-played tracks of a Last.fm user -> (pos, artist, title)."""
     payload = _get(client, {
         "method": "user.gettoptracks", "user": user, "api_key": api_key,
         "limit": min(max(1, limit), 1000), "period": "3month",
@@ -81,7 +81,7 @@ def get_top_tracks(user: str, api_key: str, limit: int,
 
 def get_similar_tracks(seed_artist: str, seed_title: str, api_key: str,
                        limit: int, client: httpx.Client) -> list[tuple[str, str]]:
-    """Aehnliche Tracks zu einem Seed-Song -> [(artist, title), ...]."""
+    """Tracks similar to a seed song -> [(artist, title), ...]."""
     try:
         payload = _get(client, {
             "method": "track.getsimilar", "artist": seed_artist,
@@ -111,11 +111,11 @@ def fetch_recommendations(mode: str, user: str, api_key: str,
                           seeds: list[tuple[str, str]],
                           limit: int) -> list[tuple[int, str, str]]:
     """
-    Liefert Last.fm-Empfehlungen als (pos, artist, title).
+    Return Last.fm recommendations as (pos, artist, title).
 
-    mode "top":     user.getTopTracks (braucht LASTFM_USER mit Hoerverlauf).
-    mode "similar": track.getSimilar ausgehend von den Seeds (oder, wenn user
-                    gesetzt, von dessen Top-Tracks als Seeds). Dedupliziert.
+    mode "top":     user.getTopTracks (needs LASTFM_USER with listening history).
+    mode "similar": track.getSimilar based on the seeds (or, if user is set, on
+                    that user's top tracks as seeds). Deduplicated.
     """
     if not api_key:
         logger.info(t("recommend.lastfm.no_api_key"))
@@ -132,7 +132,7 @@ def fetch_recommendations(mode: str, user: str, api_key: str,
             # mode == "similar"
             seed_list = list(seeds)
             if not seed_list and user:
-                # Seeds aus den Top-Tracks des Users ableiten.
+                # Derive seeds from the user's top tracks.
                 seed_list = [(a, t) for _p, a, t in
                              get_top_tracks(user, api_key, 20, client)]
             if not seed_list:
@@ -155,8 +155,8 @@ def fetch_recommendations(mode: str, user: str, api_key: str,
                         return out
             return out
     except httpx.HTTPError as e:
-        # Transport-Fehler NACH allen Wiederholungen -> als Fehler nach oben
-        # melden (frueher wurde hier still [] zurueckgegeben). Ein leeres, aber
-        # erfolgreiches Ergebnis (kein Exception) bleibt KEIN Fehler.
+        # Transport error AFTER all retries -> report upward as an error
+        # (previously [] was returned silently here). An empty but successful
+        # result (no exception) remains NOT an error.
         logger.error(t("recommend.lastfm.api_error", error=e))
         raise FetchError(t("recommend.lastfm.fetch_failed", error=e)) from e

@@ -1,6 +1,6 @@
 """
-Konfiguration fuer charts-dashboard (Status-UI).
-Alle Werte aus Umgebungsvariablen (siehe .env.example).
+Configuration for charts-dashboard (status UI).
+All values from environment variables (see .env.example).
 """
 
 import os
@@ -13,17 +13,17 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
-# --- Status-Dateien (von den charts-Diensten geschrieben) ---
-# Verzeichnis mit den <dienst>.json-Statusdateien. Zeigt auf denselben
-# physischen Ordner wie STATUS_DIR der anderen Dienste (/volume2/music/Charts/
-# .charts-status), hier read-only gemountet.
+# --- Status files (written by the charts services) ---
+# Directory with the <service>.json status files. Points to the same physical
+# folder as STATUS_DIR of the other services (/volume2/music/Charts/
+# .charts-status), mounted read-only here.
 STATUS_DIR = os.environ.get("STATUS_DIR", "/charts/.charts-status")
 
-# --- Ordner fuer die Speicher-/Bestandsanzeige (read-only) ---
+# --- Folders for the storage/inventory display (read-only) ---
 CHARTS_DIR = os.environ.get("CHARTS_DIR", "/charts")
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music/Music")
 
-# --- Welche Container ueberwacht werden (Docker-Status) ---
+# --- Which containers are monitored (Docker status) ---
 WATCH_CONTAINERS = os.environ.get(
     "WATCH_CONTAINERS",
     "slskd charts-sync charts-hitparade charts-flashback charts-download "
@@ -31,57 +31,57 @@ WATCH_CONTAINERS = os.environ.get(
     "charts-digest charts-watchdog charts-dashboard",
 ).split()
 
-# --- slskd (Verbindungsstatus + Transfer-Zahlen) ---
+# --- slskd (connection status + transfer numbers) ---
 SLSKD_HOST = os.environ.get("SLSKD_HOST", "http://slskd:5030")
 SLSKD_API_KEY = os.environ.get("SLSKD_API_KEY", "").strip()
 
-# --- Lidarr (Erreichbarkeits-Check) ---
+# --- Lidarr (reachability check) ---
 LIDARR_URL = os.environ.get("LIDARR_URL", "").strip()
 LIDARR_API_KEY = os.environ.get("LIDARR_API_KEY", "").strip()
 
-# --- Last.fm (optionaler Live-Erreichbarkeits-Check der externen Quelle) ---
-# Nur fuer den Last.fm-Live-Ping genutzt. Leer = Last.fm-Kachel bleibt "muted"
-# (nicht konfiguriert), nie rot. Last.fm hat keinen key-freien Ping.
+# --- Last.fm (optional live reachability check of the external source) ---
+# Used only for the Last.fm live ping. Empty = Last.fm tile stays "muted"
+# (not configured), never red. Last.fm has no key-free ping.
 LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "").strip()
 
-# --- FLASHBACK FM (GraphQL-Live-Check der externen Quelle) ---
-# Persisted-Query-Hash; leer = FLASHBACK-Kachel bleibt "muted" (nicht
-# konfiguriert). Ein toter Hash -> Kachel rot (Signal: Hash neu holen).
+# --- FLASHBACK FM (GraphQL live check of the external source) ---
+# Persisted query hash; empty = FLASHBACK tile stays "muted" (not configured).
+# A dead hash -> tile red (signal: fetch a new hash).
 FLASHBACK_HASH = os.environ.get("FLASHBACK_HASH", "").strip()
 
-# --- TTL-Cache fuer die externen Live-Checks (Sekunden) ---
-# Das Dashboard pollt alle 15s; die externen Pings gehen aber ueber WAN zu
-# Drittanbietern. Darum gecacht (Default 2 min), entkoppelt vom 15s-Poll.
+# --- TTL cache for the external live checks (seconds) ---
+# The dashboard polls every 15s; the external pings, however, go over WAN to
+# third parties. Hence cached (default 2 min), decoupled from the 15s poll.
 EXTERNAL_TTL = _get_int("DASHBOARD_EXTERNAL_TTL", 120)
 
-# --- TTL-Cache fuer die Deezer-Genre-Liste des Quellen-Finders (Sekunden) ---
-# Die Genre-Liste aendert sich selten. Der Quellen-Finder laedt sie beim ersten
-# Seitenaufruf und frischt sie erst nach Ablauf dieser TTL (Default 24 h) beim
-# naechsten Aufruf - das deckt den "taeglich aktualisieren"-Wunsch ab (kein
-# Cronjob). Konsistent zum DASHBOARD_*_TTL-Stil.
+# --- TTL cache for the source finder's Deezer genre list (seconds) ---
+# The genre list rarely changes. The source finder loads it on the first page
+# view and only refreshes it after this TTL expires (default 24h) on the next
+# call - this covers the "refresh daily" wish (no cronjob). Consistent with the
+# DASHBOARD_*_TTL style.
 DASHBOARD_GENRE_CACHE_TTL = _get_int("DASHBOARD_GENRE_CACHE_TTL", 86400)
 
-# --- Pushover (fuer den Live-validate-Check in _external_status) ---
-# Beide gesetzt -> echter POST /1/users/validate.json (kein Nachrichten-Budget).
-# Leer -> Kachel "muted" (nicht konfiguriert), nie rot.
+# --- Pushover (for the live validate check in _external_status) ---
+# Both set -> real POST /1/users/validate.json (no message budget).
+# Empty -> tile "muted" (not configured), never red.
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
 
-# --- Auto-Refresh der Seite (Sekunden) ---
+# --- Page auto-refresh (seconds) ---
 REFRESH_SECONDS = _get_int("DASHBOARD_REFRESH_SECONDS", 15)
 
-# --- Dezenter Spenden-Footer (PayPal/Revolut) ---
-# Standardmaessig AN. Mit DASHBOARD_DONATE=0/false/no abschaltbar; dann wird der
-# Footer serverseitig gar nicht erst in die Seite gerendert.
+# --- Discreet donate footer (PayPal/Revolut) ---
+# ON by default. Can be turned off with DASHBOARD_DONATE=0/false/no; then the
+# footer is not rendered into the page server-side at all.
 DASHBOARD_DONATE = os.environ.get(
     "DASHBOARD_DONATE", "1").strip() not in ("0", "false", "no")
 
-# --- Web-UI / Auth ---
-# Das Dashboard hat einen EIGENEN Login (getrennt von charts-songrequest), weil
-# es interne Zustaende zeigt. Fester Benutzer "admin" + DASHBOARD_PASSWORD.
-# Benutzername ueber DASHBOARD_USERNAME aenderbar (Default "admin").
-# Fallback: ist DASHBOARD_PASSWORD leer, werden die gemeinsamen
-# APP_USERS/APP_PASSWORD genutzt (damit nichts bricht, wenn nichts gesetzt ist).
+# --- Web UI / auth ---
+# The dashboard has its OWN login (separate from charts-songrequest) because it
+# shows internal state. Fixed user "admin" + DASHBOARD_PASSWORD. Username
+# changeable via DASHBOARD_USERNAME (default "admin").
+# Fallback: if DASHBOARD_PASSWORD is empty, the shared APP_USERS/APP_PASSWORD
+# are used (so nothing breaks when nothing is set).
 DASHBOARD_USERNAME = os.environ.get("DASHBOARD_USERNAME", "admin").strip()
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "").strip()
 
@@ -91,10 +91,10 @@ APP_PASSWORD_USERNAME = os.environ.get("APP_PASSWORD_USERNAME", "youruser").stri
 
 def _parse_users() -> dict:
     """
-    Benutzer->Passwort-Map. Vorrang:
-      1. DASHBOARD_PASSWORD gesetzt -> NUR {DASHBOARD_USERNAME: DASHBOARD_PASSWORD}
-         (eigener, getrennter Dashboard-Login).
-      2. sonst Fallback auf die gemeinsamen APP_USERS + APP_PASSWORD.
+    User->password map. Precedence:
+      1. DASHBOARD_PASSWORD set -> ONLY {DASHBOARD_USERNAME: DASHBOARD_PASSWORD}
+         (own, separate dashboard login).
+      2. otherwise fall back to the shared APP_USERS + APP_PASSWORD.
     """
     if DASHBOARD_PASSWORD:
         return {DASHBOARD_USERNAME: DASHBOARD_PASSWORD}

@@ -1,13 +1,12 @@
 """
-Unit-Tests fuer die Quellen-Finder-Funktionen in collector.py.
+Unit tests for the source finder functions in collector.py.
 
-httpx wird vollstaendig gemockt (kein echtes Netz). Geprueft werden Erfolg,
-Deezer-error-bei-HTTP-200, leere Trefferlisten, Timeout/Exception (fail-open),
-ungueltiges/leeres q, fehlender Last.fm-Key sowie der 24-h-Genre-Cache.
-Zusaetzlich: jeder snippet-String ist gueltiges JSON und entspricht dem
-dokumentierten CHARTS-Quell-Schema.
+httpx is fully mocked (no real network). Tested are success, Deezer error at
+HTTP 200, empty result lists, timeout/exception (fail-open), invalid/empty q,
+missing Last.fm key as well as the 24h genre cache. Additionally: every snippet
+string is valid JSON and matches the documented CHARTS source schema.
 
-Ausfuehren (aus charts-dashboard/):
+Run (from charts-dashboard/):
     /tmp/charts-venv/bin/python -m pytest tests/ -q
 """
 
@@ -32,7 +31,7 @@ def _german_lang():
     i18n.setup()
 
 
-# --- Mini-Fake fuer httpx-Responses ---------------------------------------
+# --- Mini fake for httpx responses ----------------------------------------
 
 class _FakeResp:
     def __init__(self, status_code=200, payload=None):
@@ -44,7 +43,7 @@ class _FakeResp:
 
 
 def _patch_get(monkeypatch, resp=None, exc=None, capture=None):
-    """Ersetzt httpx.get. Entweder liefert es resp oder wirft exc."""
+    """Replace httpx.get. Either returns resp or raises exc."""
     def fake_get(url, **kwargs):
         if capture is not None:
             capture.append((url, kwargs))
@@ -71,14 +70,14 @@ def test_deezer_playlists_success(monkeypatch):
     assert first["title"] == "Pop Hits"
     assert first["nb_tracks"] == 50
     assert first["user"] == "deezer"
-    # snippet ist gueltiges JSON + entspricht dem Schema.
+    # snippet is valid JSON + matches the schema.
     snip = json.loads(first["snippet"])
     assert snip == {"service": "deezer", "type": "playlist",
                     "source": "123", "limit": "all", "enabled": True}
 
 
 def test_deezer_playlists_error_on_200(monkeypatch):
-    # Deezer meldet Fehler als HTTP 200 + error-Feld.
+    # Deezer reports errors as HTTP 200 + error field.
     _patch_get(monkeypatch, resp=_FakeResp(200, {"error": {"code": 4}}))
     out = collector.search_deezer_playlists("pop")
     assert out["ok"] is False
@@ -93,7 +92,7 @@ def test_deezer_playlists_empty(monkeypatch):
 
 
 def test_deezer_playlists_empty_query(monkeypatch):
-    # Leeres q -> kein Netz-Call.
+    # Empty q -> no network call.
     calls = []
     _patch_get(monkeypatch, resp=_FakeResp(200, {"data": []}), capture=calls)
     out = collector.search_deezer_playlists("   ")
@@ -132,7 +131,7 @@ def test_deezer_artists_success(monkeypatch):
     assert first["id"] == "789"
     assert first["name"] == "Gölä"
     assert first["nb_fan"] == 12345
-    # snippet ist gueltiges JSON + entspricht dem Schema (limit:50 als Zahl).
+    # snippet is valid JSON + matches the schema (limit:50 as a number).
     snip = json.loads(first["snippet"])
     assert snip == {"service": "deezer", "type": "artist",
                     "source": "789", "limit": 50, "enabled": True}
@@ -164,7 +163,7 @@ def test_deezer_genres_cache(monkeypatch):
     calls = []
     _patch_get(monkeypatch, resp=_FakeResp(200, payload), capture=calls)
     collector.deezer_genres()
-    collector.deezer_genres()   # innerhalb der TTL -> kein zweiter Netz-Call
+    collector.deezer_genres()   # within the TTL -> no second network call
     assert len(calls) == 1
 
 
@@ -206,7 +205,7 @@ def test_lastfm_tag_success(monkeypatch):
 
 
 def test_lastfm_tag_multiword_allowed(monkeypatch):
-    # Mehrwortige Tags (classic country) sind zulaessig.
+    # Multi-word tags (classic country) are allowed.
     monkeypatch.setattr(config, "LASTFM_API_KEY", "KEY")
     payload = {"tracks": {"track": [{"name": "X", "artist": {"name": "Y"}}]}}
     _patch_get(monkeypatch, resp=_FakeResp(200, payload))
@@ -237,7 +236,7 @@ def test_lastfm_tag_invalid(monkeypatch):
     monkeypatch.setattr(config, "LASTFM_API_KEY", "KEY")
     calls = []
     _patch_get(monkeypatch, resp=_FakeResp(200, {}), capture=calls)
-    out = collector.lastfm_tag_check("pop; drop")   # ';' nicht erlaubt
+    out = collector.lastfm_tag_check("pop; drop")   # ';' not allowed
     assert out["ok"] is False
     assert out["detail"] == "ungültiges Tag"
     assert calls == []
