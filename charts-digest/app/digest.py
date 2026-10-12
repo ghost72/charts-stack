@@ -1,15 +1,14 @@
 """
-Sammel- und Gruppierlogik fuer die taegliche Zusammenfassung.
+Collection and grouping logic for the daily summary.
 
-Liest das von charts-import gefuehrte Import-Log (JSON Lines, eine Zeile pro
-einsortiertem Song: {ts, source, artist, title}), filtert auf das Rueckblick-
-Fenster (Default 24 h) und gruppiert nach Quelle. Dampft das Log dabei auf
-LOG_RETENTION_DAYS ein (kompakt neu schreiben), damit es nicht unbegrenzt
-waechst.
+Reads the import log kept by charts-import (JSON Lines, one line per filed
+song: {ts, source, artist, title}), filters to the look-back window
+(default 24 h) and groups by source. In the process it trims the log to
+LOG_RETENTION_DAYS (rewrite compactly) so it does not grow unbounded.
 
-Vertrauenswuerdig: Datengrundlage ist das, was charts-import beim Import
-tatsaechlich geschrieben hat (korrekte source, kanonischer Name) - KEINE
-mtime-/Titel-Heuristik, die durch Cover-Backfill/Retag verfaelscht wuerde.
+Trustworthy: the data basis is what charts-import actually wrote at import time
+(correct source, canonical name) - NO mtime/title heuristic that would be
+distorted by cover backfill/retag.
 """
 
 import json
@@ -23,9 +22,9 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# Emoji + Label-Key je Quelle (source aus dem Manifest/Import-Log). Das Emoji
-# taucht vor der Gruppen-Ueberschrift in der Pushover-Meldung auf; das Label
-# wird erst zur Laufzeit uebersetzt (t(label_key)), damit CHARTS_LANG greift.
+# Emoji + label key per source (source from the manifest/import log). The emoji
+# appears before the group heading in the Pushover message; the label is only
+# translated at runtime (t(label_key)) so CHARTS_LANG takes effect.
 _SOURCE_LABELS = {
     "charts": ("🔥", "digest.source.charts"),
     "mundart": ("🇨🇭", "digest.source.mundart"),
@@ -39,13 +38,13 @@ _SOURCE_LABELS = {
 
 
 def _parse_ts(s: str) -> float | None:
-    """ISO-8601 (mit TZ-Offset) -> Unix-Zeit. None bei Parse-Fehler."""
+    """ISO-8601 (with TZ offset) -> Unix time. None on parse error."""
     if not s:
         return None
     try:
         return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S%z").timestamp()
     except ValueError:
-        # Fallback: ohne Offset (sollte nicht vorkommen, aber robust bleiben).
+        # Fallback: without offset (should not happen, but stay robust).
         try:
             return datetime.strptime(s[:19], "%Y-%m-%dT%H:%M:%S").timestamp()
         except ValueError:
@@ -53,7 +52,7 @@ def _parse_ts(s: str) -> float | None:
 
 
 def _read_log() -> list[dict]:
-    """Liest alle Log-Zeilen (robust gegen kaputte Zeilen)."""
+    """Reads all log lines (robust against broken lines)."""
     path = config.IMPORT_LOG_FILE
     out = []
     try:
@@ -75,15 +74,15 @@ def _read_log() -> list[dict]:
 
 def _prune_log(records: list[dict]) -> None:
     """
-    Schreibt das Log kompakt neu und verwirft Eintraege aelter als
-    LOG_RETENTION_DAYS. Haelt das Log klein, ohne Datenverlust fuers Fenster.
-    Fehler sind nicht fatal (nur Log).
+    Rewrites the log compactly and discards entries older than
+    LOG_RETENTION_DAYS. Keeps the log small without data loss for the window.
+    Errors are not fatal (log only).
     """
     cutoff = time.time() - config.LOG_RETENTION_DAYS * 86400
     kept = [r for r in records
             if (_parse_ts(r.get("ts", "")) or 0) >= cutoff]
     if len(kept) == len(records):
-        return  # nichts zu kuerzen
+        return  # nothing to trim
     path = config.IMPORT_LOG_FILE
     try:
         tmp = path + ".tmp"
@@ -99,8 +98,8 @@ def _prune_log(records: list[dict]) -> None:
 
 def collect() -> "tuple[dict[str, list[dict]], int]":
     """
-    Sammelt die Importe im Rueckblick-Fenster, gruppiert nach source.
-    Rueckgabe: ({source: [eintrag, ...]}, gesamtanzahl). Dampft das Log ein.
+    Collects the imports in the look-back window, grouped by source.
+    Return: ({source: [entry, ...]}, total count). Trims the log.
     """
     records = _read_log()
     cutoff = time.time() - config.DIGEST_WINDOW_HOURS * 3600
@@ -113,13 +112,13 @@ def collect() -> "tuple[dict[str, list[dict]], int]":
         src = (r.get("source") or "").strip()
         groups.setdefault(src, []).append(r)
         total += 1
-    # Aufraeumen (nach dem Lesen, damit das Fenster vollstaendig war).
+    # Clean up (after reading, so the window was complete).
     _prune_log(records)
     return groups, total
 
 
 def _dedup(entries: list[dict]) -> list[tuple[str, str]]:
-    """(artist, title)-Paare, Duplikate entfernt, Reihenfolge erhalten."""
+    """(artist, title) pairs, duplicates removed, order preserved."""
     out = []
     seen = set()
     for e in entries:
@@ -134,22 +133,22 @@ def _dedup(entries: list[dict]) -> list[tuple[str, str]]:
 
 
 def _shorten_title(title: str, max_len: int) -> str:
-    """Kuerzt einen langen Titel am ENDE: "Anfang…".
+    """Shortens a long title at the END: "start…".
 
-    Ziel: kuerzere Zeilen, damit mehr Songs ins Pushover-Zeichenbudget passen.
-    Der Artist wird NIE gekuerzt - nur der Titel. Es bleibt der ANFANG des
-    Titels stehen (an einer Wortgrenze geschnitten, damit nicht mitten im Wort),
-    gefolgt von "…". Artist + Songanfang reichen, um den Song zu erkennen.
-    max_len <= 0 oder kurzer Titel -> unveraendert zurueck.
+    Goal: shorter lines so more songs fit the Pushover character budget. The
+    artist is NEVER shortened - only the title. The START of the title is kept
+    (cut at a word boundary so not mid-word), followed by "…". Artist + title
+    start are enough to recognize the song.
+    max_len <= 0 or short title -> returned unchanged.
     """
     t = title.strip()
     if max_len <= 0 or len(t) <= max_len:
         return t
     ell = "…"
-    keep = max_len - len(ell)          # Zeichen fuer den Anfang
+    keep = max_len - len(ell)          # characters for the start
     head = t[:keep]
-    # An der letzten Wortgrenze schneiden, wenn dadurch nicht zu viel wegfaellt
-    # (sonst - z.B. ein einziges sehr langes Wort - hart bei keep).
+    # Cut at the last word boundary if not too much is lost that way (otherwise
+    # - e.g. a single very long word - hard at keep).
     space = head.rfind(" ")
     if space >= keep // 2:
         head = head[:space]
@@ -158,14 +157,14 @@ def _shorten_title(title: str, max_len: int) -> str:
 
 def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
     """
-    Baut (titel, nachricht, unique_total) fuer Pushover. Gruppen nach Groesse
-    sortiert; pro Gruppe bis MAX_PER_SOURCE Songs, Rest als '... und N weitere'.
+    Builds (title, message, unique_total) for Pushover. Groups sorted by size;
+    per group up to MAX_PER_SOURCE songs, rest as '... and N more'.
     """
     yesterday = (datetime.now() - timedelta(hours=config.DIGEST_WINDOW_HOURS)
                  ).strftime("%d.%m.")
     today = datetime.now().strftime("%d.%m.")
 
-    # pro Quelle deduplizieren und zaehlen
+    # deduplicate and count per source
     per_source = []
     unique_total = 0
     for src, entries in groups.items():
@@ -175,7 +174,7 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
             unique_total += len(pairs)
     per_source.sort(key=lambda x: len(x[1]), reverse=True)
 
-    # Titel mit Song-Zahl; dezente Variation im Emoji je nach Ausbeute.
+    # Title with song count; subtle variation in the emoji depending on yield.
     if unique_total >= 20:
         head_emoji = "🚀"
     elif unique_total >= 5:
@@ -190,15 +189,15 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
               "➖➖➖➖➖➖➖➖"]
     footer = ["", t("digest.notify.footer")]
 
-    # Pushover kappt eine 'message' hart bei PUSHOVER_MESSAGE_LIMIT Zeichen
-    # (sonst bricht ein Titel mitten ab und der Footer fehlt). Darum budget-
-    # bewusst aufbauen: Der Footer ist RESERVIERT und wird immer angehaengt;
-    # laeuft der Body voll, schliessen wir die aktuelle Quelle sauber mit
-    # "... und N weitere" ab und brechen den Rest ab. Laenge zaehlt auf dem
-    # fertigen (per \n verbundenen) HTML-Rohtext - genau das sieht Pushover.
+    # Pushover truncates a 'message' hard at PUSHOVER_MESSAGE_LIMIT characters
+    # (otherwise a title breaks off mid-way and the footer is missing). So build
+    # budget-aware: the footer is RESERVED and always appended; if the body
+    # fills up, we close the current source cleanly with "... and N more" and
+    # cut off the rest. Length counts on the finished (\n-joined) HTML raw text
+    # - exactly what Pushover sees.
     limit = config.PUSHOVER_MESSAGE_LIMIT
     footer_text = "\n".join(footer)
-    budget = limit - len(footer_text) - 1  # -1 fuer das \n vor dem Footer
+    budget = limit - len(footer_text) - 1  # -1 for the \n before the footer
 
     body = list(header)
 
@@ -213,12 +212,12 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         if label_entry is not None:
             emoji, label = label_entry[0], t(label_entry[1])
         else:
-            # Unbekannte Quelle: Rohwert als Label, sonst uebersetztes Fallback.
+            # Unknown source: raw value as label, otherwise translated fallback.
             emoji, label = "🎵", src or t("digest.source.unknown")
         shown = pairs[:config.MAX_PER_SOURCE]
         rest = len(pairs) - len(shown)
 
-        # Kopf der Quelle probehalber anhaengen; passt nicht mal der, abbrechen.
+        # Append the source header as a trial; if even that does not fit, stop.
         trial = body + ["", t("digest.notify.group_header",
                               emoji=emoji, label=label, count=len(pairs))]
         if _len(trial) > budget:
@@ -227,20 +226,21 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         body = trial
 
         for i, (a, title_txt) in enumerate(shown):
-            # Artist bleibt voll, nur der Titel wird bei Bedarf am Ende gekuerzt
-            # ("Anfang…") - Artist + Songanfang reichen zur Erkennung. Kompaktes
-            # Zeilenformat (keine Einrueckung) spart Platz -> mehr Songs passen.
+            # Artist stays full, only the title is shortened at the end if
+            # needed ("start…") - artist + title start are enough to recognize
+            # it. Compact line format (no indentation) saves space -> more songs
+            # fit.
             song = t("digest.notify.song",
                      artist=a, title=_shorten_title(title_txt, config.TITLE_MAX_LEN))
             remaining = len(shown) - i + (1 if rest else 0)
-            # Reserve fuer eine moegliche "... und N weitere"-Zeile einplanen,
-            # solange noch Songs/Rest folgen (sonst koennte die Abschlusszeile
-            # selbst das Budget sprengen).
+            # Reserve space for a possible "... and N more" line as long as more
+            # songs/rest follow (otherwise the closing line itself could blow
+            # the budget).
             more_hint = t("digest.notify.more", count=rest + (len(shown) - i))
             need_hint = remaining > 1
             projected = _len(body + [song] + ([more_hint] if need_hint else []))
             if projected > budget:
-                # Dieser Song passt nicht mehr -> alles ab hier zusammenfassen.
+                # This song no longer fits -> summarize everything from here.
                 left = rest + (len(shown) - i)
                 body.append(t("digest.notify.more", count=left))
                 truncated = True

@@ -1,10 +1,10 @@
 """
-Konfiguration fuer charts-digest (aus Umgebungsvariablen).
+Configuration for charts-digest (from environment variables).
 
-charts-digest schickt einmal taeglich eine Pushover-Zusammenfassung der am
-VORTAG neu in die Library einsortierten Songs, gruppiert nach Quelle
-(charts/mundart/flashback/manuell/upgrade ...). Datengrundlage ist das von
-charts-import gefuehrte Import-Log (JSON Lines) - KEINE mtime-/Titel-Heuristik.
+charts-digest sends a Pushover summary once a day of the songs newly filed into
+the library the PREVIOUS day, grouped by source
+(charts/mundart/flashback/manuell/upgrade ...). The data basis is the import
+log kept by charts-import (JSON Lines) - NO mtime/title heuristic.
 """
 
 import os
@@ -21,66 +21,66 @@ def _get_bool(name: str, default: bool) -> bool:
     return os.environ.get(name, "1" if default else "0") == "1"
 
 
-# --- Zeitplan -------------------------------------------------------------
-# Uhrzeit (lokale Zeit) der taeglichen Zusammenfassung. Default 09:00. Der
-# Dienst laeuft als Scheduler-Loop und wartet bis zum naechsten Zielzeitpunkt.
+# --- Schedule -------------------------------------------------------------
+# Time (local) of the daily summary. Default 09:00. The service runs as a
+# scheduler loop and waits until the next target time.
 DIGEST_HOUR = _get_int("DIGEST_HOUR", 9)
 DIGEST_MINUTE = _get_int("DIGEST_MINUTE", 0)
 
-# Beim Start sofort eine Zusammenfassung senden (zum Testen). Default aus -
-# sonst kaeme bei jedem Container-Neustart eine Meldung.
+# Send a summary immediately on start (for testing). Default off - otherwise a
+# message would come on every container restart.
 RUN_ON_START = _get_bool("RUN_ON_START", False)
 
-# --- Zeitfenster ----------------------------------------------------------
-# Rueckblick-Fenster in Stunden. Default 24 = "seit gestern zur selben Zeit".
-# Bei DIGEST_HOUR=9 deckt 24h sauber den Vortag 09:00 -> heute 09:00 ab.
+# --- Time window ----------------------------------------------------------
+# Look-back window in hours. Default 24 = "since yesterday at the same time".
+# With DIGEST_HOUR=9, 24h cleanly covers the previous day 09:00 -> today 09:00.
 DIGEST_WINDOW_HOURS = _get_int("DIGEST_WINDOW_HOURS", 24)
 
-# --- Pfade (im Container gemountet) --------------------------------------
-# Geteilter Charts-Ordner: hier liegt das von charts-import geschriebene
-# Import-Log. Muss derselbe Ordner sein wie DOWNLOADS_DIR von charts-import.
+# --- Paths (mounted in the container) ------------------------------------
+# Shared charts folder: this holds the import log written by charts-import.
+# Must be the same folder as DOWNLOADS_DIR of charts-import.
 CHARTS_DIR = os.environ.get("CHARTS_DIR", "/charts")
 IMPORT_LOG_FILE = os.environ.get(
     "IMPORT_LOG_FILE", os.path.join(CHARTS_DIR, ".charts-imported-log.jsonl"))
 
-# Log-Aufbewahrung: Beim Lesen werden Eintraege aelter als so viele Tage
-# verworfen und das Log kompakt neu geschrieben (sonst waechst es unbegrenzt).
+# Log retention: on read, entries older than this many days are discarded and
+# the log is rewritten compactly (otherwise it grows unbounded).
 LOG_RETENTION_DAYS = _get_int("LOG_RETENTION_DAYS", 7)
 
-# Max. Anzahl Songs, die pro Quelle in der Nachricht aufgelistet werden. Ziel
-# ist, moeglichst ALLE Songs zu listen - der eigentliche Deckel ist das
-# Zeichenbudget (PUSHOVER_MESSAGE_LIMIT), nicht diese Zahl. Hoch gesetzt, damit
-# sie im Normalfall nicht greift; nur als Sicherheitsnetz gegen Extremfaelle.
-# Rest je Quelle wird als "... und N weitere" zusammengefasst.
+# Max. number of songs listed per source in the message. The goal is to list
+# ALL songs if possible - the actual cap is the character budget
+# (PUSHOVER_MESSAGE_LIMIT), not this number. Set high so it normally does not
+# kick in; only a safety net against extreme cases. The rest per source is
+# summarized as "... and N more".
 MAX_PER_SOURCE = _get_int("MAX_PER_SOURCE", 100)
 
-# Lange Songtitel werden am ENDE gekuerzt ("Anfang…"), damit mehr Songs ins
-# Zeichenbudget passen. Der Artist bleibt IMMER voll; Artist + Songanfang
-# reichen zur Erkennung. Greift erst ab dieser Titellaenge (Zeichen); 0
-# schaltet die Kuerzung aus.
+# Long song titles are shortened at the END ("start…") so more songs fit the
+# character budget. The artist always stays full; artist + title start are
+# enough to recognize it. Only kicks in from this title length (characters); 0
+# turns the shortening off.
 TITLE_MAX_LEN = _get_int("TITLE_MAX_LEN", 34)
 
-# Hartes Zeichenbudget der Pushover-Nachricht. Pushover kappt eine 'message'
-# bei 1024 Zeichen KOMMENTARLOS (dann fehlt z.B. der Footer / ein Song bricht
-# mitten im Titel ab). Deshalb bauen wir die Nachricht budgetbewusst auf und
-# ersetzen den Ueberlauf durch ein sauberes "... und N weitere". Etwas Reserve
-# unter 1024 fuer den garantierten Footer.
+# Hard character budget of the Pushover message. Pushover truncates a 'message'
+# at 1024 characters SILENTLY (then e.g. the footer is missing / a song breaks
+# off mid-title). So we build the message budget-aware and replace the overflow
+# with a clean "... and N more". A little reserve under 1024 for the guaranteed
+# footer.
 PUSHOVER_MESSAGE_LIMIT = _get_int("PUSHOVER_MESSAGE_LIMIT", 1024)
 
-# Auch dann eine Meldung senden, wenn es NICHTS Neues gab (Default aus - kein
-# "0 neue Songs"-Spam; der Dienst meldet nur, wenn wirklich etwas dazukam).
+# Also send a message when there was NOTHING new (default off - no "0 new
+# songs" spam; the service only reports when something was actually added).
 NOTIFY_WHEN_EMPTY = _get_bool("NOTIFY_WHEN_EMPTY", False)
 
 # --- Pushover -------------------------------------------------------------
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
-# Pushover fuer diesen Dienst global stummschalten (ohne Token/User zu loeschen).
+# Mute Pushover for this service globally (without deleting token/user).
 PUSHOVER_ENABLED = os.environ.get("PUSHOVER_ENABLED", "1") == "1"
 PUSHOVER_DEVICE = os.environ.get("PUSHOVER_DEVICE", "").strip()
 PUSHOVER_DEVICES_TTL = _get_int("PUSHOVER_DEVICES_TTL", 3600)
-# Pushover-Benachrichtigungston. Leer = Account-Default (kein sound-Feld im
-# Request). Default fuer charts-digest: "magic".
+# Pushover notification sound. Empty = account default (no sound field in the
+# request). Default for charts-digest: "magic".
 PUSHOVER_SOUND = os.environ.get("PUSHOVER_SOUND", "magic").strip()
 
-# --- Status (Dashboard-Anbindung) ----------------------------------------
+# --- Status (dashboard integration) --------------------------------------
 TZ = os.environ.get("TZ", "Europe/Zurich")

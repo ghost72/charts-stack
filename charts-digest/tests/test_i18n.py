@@ -1,17 +1,17 @@
 """
-i18n-Tests fuer charts-digest (Phase 2).
+i18n tests for charts-digest (Phase 2).
 
-Der i18n-Loader (app/i18n.py) ist byte-identisch zu charts-sync; die zentrale
-Key-Set-/Platzhalter-Parity ueber die geteilten lang/*.json-Dateien ist bereits
-in charts-sync/tests/test_i18n.py abgedeckt (und deckt damit auch die neuen
-digest.*-Keys mit ab). Dieser Satz ergaenzt den Phase-1-Pilot um einen
-de-Golden-Check: mit CHARTS_LANG=de muss die Ausgabe der neuen digest.*-Keys
-byte-identisch zur frueheren Hardcode-Ausgabe sein (Regressions-Anker).
+The i18n loader (app/i18n.py) is byte-identical to charts-sync; the central
+key-set/placeholder parity over the shared lang/*.json files is already covered
+in charts-sync/tests/test_i18n.py (and thereby also covers the new digest.*
+keys). This set extends the Phase 1 pilot with a de golden check: with
+CHARTS_LANG=de the output of the new digest.* keys must be byte-identical to
+the former hardcoded output (regression anchor).
 
-Zusaetzlich eine lokale Parity-Garantie als zweite Verteidigungslinie, damit
-die drei zentralen Dateien auch beim Erweitern dieses Dienstes synchron bleiben.
+In addition a local parity guarantee as a second line of defense, so the three
+central files also stay in sync when this service is extended.
 
-Alle Tests laufen OHNE Netzwerk/Docker.
+All tests run WITHOUT network/Docker.
 """
 
 import json
@@ -21,7 +21,7 @@ import string
 from app import i18n
 
 
-# Zentrale, ueber alle Dienste geteilte Sprachdateien:
+# Central language files shared across all services:
 # app -> charts-digest -> charts-stack/lang.
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 _SHIPPED = ("en", "de", "fr")
@@ -37,25 +37,25 @@ def _placeholders(template):
             if name is not None}
 
 
-# --- de-Golden: CHARTS_LANG=de reproduziert die frueheren Hardcodes byte-exakt --
+# --- de golden: CHARTS_LANG=de reproduces the former hardcodes byte-exactly --
 
 def test_de_golden_digest_strings():
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
-    # Lauf-Start mit Fenster + optionalem "manuell"-Suffix (frueher:
+    # Run start with window + optional "manuell" suffix (formerly:
     # "=== charts-digest-Lauf gestartet (Fenster: %dh%s) ===").
     assert (i18n.t("digest.run.start", hours=24,
                    manual=i18n.t("digest.run.manual_suffix"))
             == "=== charts-digest-Lauf gestartet (Fenster: 24h, manuell) ===")
-    # Pushover-Titel mit Emoji + Song-Zahl (frueher:
+    # Pushover title with emoji + song count (formerly:
     # f"{head_emoji} {unique_total} neue Songs in deiner Library").
     assert (i18n.t("digest.notify.title", emoji="\U0001f389", count=7)
             == "\U0001f389 7 neue Songs in deiner Library")
-    # Gruppen-Kopf im Summary-Body (frueher: f"{emoji} <b>{label}</b> \u00b7 {n}";
-    # label kam aus _SOURCE_LABELS, hier "Aktuelle Charts").
+    # Group header in the summary body (formerly: f"{emoji} <b>{label}</b> \u00b7 {n}";
+    # label came from _SOURCE_LABELS, here "Aktuelle Charts").
     assert (i18n.t("digest.notify.group_header", emoji="\U0001f525",
                    label=i18n.t("digest.source.charts"), count=12)
             == "\U0001f525 <b>Aktuelle Charts</b> \u00b7 12")
-    # Scheduler-Start mit Zeit-Formatspecs (frueher: "charts-digest gestartet |
+    # Scheduler start with time format specs (formerly: "charts-digest gestartet |
     # taeglich %02d:%02d | Fenster %dh | Log: %s").
     assert (i18n.t("digest.scheduler.started", hour=9, minute=0, hours=24,
                    log="/charts/.charts-imported-log.jsonl")
@@ -64,13 +64,13 @@ def test_de_golden_digest_strings():
 
 
 def test_de_golden_more_line():
-    # "... und N weitere" (frueher f"\u2026 und {n} weitere") - der Ueberlauf-
-    # Marker in der budgetbewussten Nachricht.
+    # "... und N weitere" (formerly f"\u2026 und {n} weitere") - the overflow
+    # marker in the budget-aware message.
     i18n.setup(lang="de", lang_dir=_LANG_DIR)
     assert i18n.t("digest.notify.more", count=5) == "\u2026 und 5 weitere"
 
 
-# --- Lokale Parity-Garantie (zweite Verteidigungslinie) ---------------------
+# --- Local parity guarantee (second line of defense) ------------------------
 
 def test_shipped_key_sets_are_identical():
     key_sets = {c: set(_load_shipped(c)) for c in _SHIPPED}

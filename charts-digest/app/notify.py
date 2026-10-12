@@ -1,8 +1,8 @@
 """
-Optionale Pushover-Benachrichtigung.
+Optional Pushover notification.
 
-Wird nur aktiv, wenn PUSHOVER_TOKEN und PUSHOVER_USER gesetzt sind.
-KOPIE aus charts-import (keine Laufzeit-Abhaengigkeit zwischen den Diensten).
+Only becomes active if PUSHOVER_TOKEN and PUSHOVER_USER are set.
+COPY from charts-import (no runtime dependency between the services).
 """
 
 import logging
@@ -20,12 +20,12 @@ _pushover_devices_ts: float = 0.0
 
 
 def _valid_pushover_devices(client: httpx.Client):
-    """Liefert die gueltigen Geraetenamen des Pushover-Accounts (gecacht).
+    """Returns the valid device names of the Pushover account (cached).
 
-    Grund: Pushover verwirft einen Request mit UNBEKANNTEM device-Namen nicht,
-    sondern stellt ihn an ALLE Geraete zu -> Doppel-Push. Daher vor dem Senden
-    gegen die echte Geraeteliste filtern. Rueckgabe: Set gueltiger Namen oder
-    None (dann NICHT filtern - fail-open)."""
+    Reason: Pushover does not discard a request with an UNKNOWN device name but
+    delivers it to ALL devices -> double push. So filter against the real device
+    list before sending. Return: set of valid names or None (then do NOT filter
+    - fail-open)."""
     global _pushover_devices_cache, _pushover_devices_ts
     now = time.time()
     if _pushover_devices_cache is not None and (now - _pushover_devices_ts) < config.PUSHOVER_DEVICES_TTL:
@@ -60,7 +60,7 @@ def _escape_html_keep_tags(text: str) -> str:
 
 
 def send(title: str, message: str, device: "str | None" = None) -> None:
-    """Sendet eine Pushover-Nachricht, falls konfiguriert."""
+    """Sends a Pushover message if configured."""
     if not config.PUSHOVER_ENABLED:
         return
     if not config.PUSHOVER_TOKEN or not config.PUSHOVER_USER:
@@ -74,7 +74,7 @@ def send(title: str, message: str, device: "str | None" = None) -> None:
         "message": _escape_html_keep_tags(message),
         "html": 1,
     }
-    # Ton nur mitschicken, wenn gesetzt - sonst Account-Default (kein sound-Feld).
+    # Only send the sound if set - otherwise account default (no sound field).
     if config.PUSHOVER_SOUND:
         payload["sound"] = config.PUSHOVER_SOUND
     device_src = config.PUSHOVER_DEVICE if device is None else device

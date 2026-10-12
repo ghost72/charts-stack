@@ -1,13 +1,13 @@
 """
-charts-digest - taegliche Pushover-Zusammenfassung der neu einsortierten Songs.
+charts-digest - daily Pushover summary of the newly filed songs.
 
-Scheduler-Loop: wartet bis zum naechsten Zielzeitpunkt (DIGEST_HOUR:DIGEST_MINUTE,
-Default 09:00 lokale Zeit), sammelt dann aus dem charts-import-Import-Log die
-Songs der letzten DIGEST_WINDOW_HOURS (Default 24 h, = Rueckblick auf den
-Vortag), gruppiert sie nach Quelle und sendet eine Pushover-Meldung.
+Scheduler loop: waits until the next target time (DIGEST_HOUR:DIGEST_MINUTE,
+default 09:00 local time), then collects from the charts-import import log the
+songs of the last DIGEST_WINDOW_HOURS (default 24 h, = look-back on the
+previous day), groups them by source and sends a Pushover message.
 
-Datengrundlage: das von charts-import gefuehrte Import-Log (vertrauenswuerdig,
-keine mtime-/Titel-Heuristik). Siehe digest.py.
+Data basis: the import log kept by charts-import (trustworthy, no mtime/title
+heuristic). See digest.py.
 """
 
 import argparse
@@ -26,7 +26,7 @@ logger = logging.getLogger("charts-digest")
 
 
 def _next_run_dt(now: datetime) -> datetime:
-    """Naechster Zielzeitpunkt (heute DIGEST_HOUR:MINUTE, sonst morgen)."""
+    """Next target time (today DIGEST_HOUR:MINUTE, otherwise tomorrow)."""
     target = now.replace(hour=config.DIGEST_HOUR, minute=config.DIGEST_MINUTE,
                          second=0, microsecond=0)
     if target <= now:
@@ -36,12 +36,12 @@ def _next_run_dt(now: datetime) -> datetime:
 
 def run_once(force_notify: bool = False) -> None:
     """
-    Einen Zusammenfassungs-Lauf ausfuehren.
+    Run one summary pass.
 
-    force_notify: Wenn True, wird auch bei 0 neuen Songs eine Meldung gesendet
-    (fuer die MANUELLE Ausloesung via `--now` - dann will man eine Rueckmeldung,
-    dass es lief, auch wenn nichts Neues da ist). Beim regulaeren Scheduler-Lauf
-    greift stattdessen NOTIFY_WHEN_EMPTY (Default: still bei 0).
+    force_notify: if True, a message is sent even with 0 new songs (for the
+    MANUAL trigger via `--now` - then you want feedback that it ran, even if
+    there is nothing new). On the regular scheduler run NOTIFY_WHEN_EMPTY
+    applies instead (default: silent at 0).
     """
     status.start()
     manual_suffix = t("digest.run.manual_suffix") if force_notify else ""
@@ -62,8 +62,8 @@ def run_once(force_notify: bool = False) -> None:
             return
 
         if unique == 0:
-            # Manuell ausgeloest (oder NOTIFY_WHEN_EMPTY=1): ehrliche
-            # "nichts Neues"-Rueckmeldung statt der Song-Liste.
+            # Manually triggered (or NOTIFY_WHEN_EMPTY=1): honest "nothing new"
+            # feedback instead of the song list.
             title = t("digest.notify.empty_title")
             message = t("digest.notify.empty_body", hours=config.DIGEST_WINDOW_HOURS)
 
@@ -94,8 +94,8 @@ def main() -> None:
 
     status.init("charts-digest")
 
-    # Manuelle Einmal-Ausloesung: jetzt senden und raus (kein Scheduler-Loop).
-    # Aufruf z.B.: docker exec charts-digest python -m app.main --now
+    # Manual one-off trigger: send now and exit (no scheduler loop).
+    # Call e.g.: docker exec charts-digest python -m app.main --now
     if args.now:
         logger.info(t("digest.scheduler.manual_trigger"))
         run_once(force_notify=True)
@@ -116,8 +116,8 @@ def main() -> None:
         next_iso = target.strftime("%Y-%m-%dT%H:%M:%S%z")
         status.set_next_run(next_iso)
         logger.info(t("digest.scheduler.next_run", next=next_iso, hours=wait_s / 3600))
-        # In Haeppchen schlafen, damit set_next_run/Signale nicht ewig blockieren
-        # und ein Neustart zeitnah greift.
+        # Sleep in chunks so set_next_run/signals do not block forever and a
+        # restart takes effect promptly.
         while wait_s > 0:
             chunk = min(wait_s, 3600)
             time.sleep(chunk)

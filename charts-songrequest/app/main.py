@@ -1,16 +1,16 @@
 """
-charts-songrequest – Web-UI + API zum manuellen Anfordern von Songs.
+charts-songrequest – web UI + API for manually requesting songs.
 
-Ablauf pro Request (Artist + Titel):
-  1. In slskd suchen (dieselbe Logik/Filter wie charts-download:
-     MP3 >= MIN_BITRATE, keine Remixe/Live/Compilations).
-  2. Bestes Ergebnis per slskd-API zum Download anstossen.
-  3. Sauberen Chart-Metadaten-Eintrag ins MANIFEST schreiben (source="manuell").
-  4. charts-import holt die fertige Datei beim naechsten Lauf automatisch in die
-     Library (Tags, Cover, Lidarr, Navidrome) - kein weiterer Handgriff noetig.
+Flow per request (artist + title):
+  1. Search in slskd (same logic/filters as charts-download:
+     MP3 >= MIN_BITRATE, no remixes/live/compilations).
+  2. Trigger the download of the best result via the slskd API.
+  3. Write a clean chart-metadata entry into the MANIFEST (source="manuell").
+  4. charts-import automatically pulls the finished file into the library on
+     its next run (tags, cover, Lidarr, Navidrome) - no further action needed.
 
-Einfacher Passwortschutz (ein Passwort aus der .env) via Session-Cookie, damit
-die von aussen (Reverse Proxy) erreichbare Seite nicht offen ist.
+Simple password protection (one password from the .env) via a session cookie
+so the externally reachable page (reverse proxy) is not open.
 """
 
 import json
@@ -38,20 +38,19 @@ logger.info(t("songrequest.login.active",
               users=", ".join(sorted(config.APP_USERS))))
 
 _SESSION_SECRET = config.SESSION_SECRET or secrets.token_hex(32)
-# Gueltige Sessions im Speicher: token -> benutzername (nach Neustart neu
-# einloggen).
+# Valid sessions in memory: token -> user name (log in again after a restart).
 _sessions: dict[str, str] = {}
 
-# Status/Dashboard: dieser Dienst ist ereignisgesteuert (kein Scheduler). Wir
-# zaehlen bediente Requests und schreiben nach jedem einen Status (heartbeat +
-# kumulativer Zaehler), damit das Dashboard "zuletzt aktiv / X Requests" zeigt.
+# Status/dashboard: this service is event-driven (no scheduler). We count
+# served requests and write a status after each one (heartbeat + cumulative
+# counter) so the dashboard shows "last active / X requests".
 status.init("charts-songrequest")
 status.heartbeat(t("songrequest.status.ready"))
 _request_count = 0
 
 
 def _record_request(label: str) -> None:
-    """Schreibt einen Status-Eintrag nach einem bedienten Request."""
+    """Writes a status entry after a served request."""
     global _request_count
     _request_count += 1
     try:
@@ -81,7 +80,7 @@ def _ui_strings() -> dict[str, str]:
 
 
 def _current_user(request: Request) -> str | None:
-    """Benutzername der aktuellen Session, oder None wenn nicht angemeldet."""
+    """User name of the current session, or None if not logged in."""
     token = request.cookies.get("session")
     if not token:
         return None
@@ -93,10 +92,10 @@ def _is_authed(request: Request) -> bool:
 
 
 def _check_login(username: str, password: str) -> bool:
-    """Prueft Benutzer+Passwort gegen die konfigurierte Map (zeitkonstant)."""
+    """Checks user+password against the configured map (constant-time)."""
     expected = config.APP_USERS.get(username)
     if expected is None:
-        # Trotzdem einen Vergleich machen, um Timing-Unterschiede zu daempfen.
+        # Still do a comparison to dampen timing differences.
         secrets.compare_digest(password, password)
         return False
     return secrets.compare_digest(password, expected)
@@ -154,7 +153,7 @@ async def logout(request: Request):
     return resp
 
 
-# --- Hauptseite ---
+# --- Main page ---
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -167,7 +166,7 @@ async def index(request: Request):
     return HTMLResponse(html)
 
 
-# --- API: Song anfordern ---
+# --- API: request a song ---
 
 @app.post("/api/request")
 async def api_request(request: Request, artist: str = Form(""), title: str = Form("")):
@@ -184,7 +183,7 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
 
     logger.info(t("songrequest.request.received", user=user, artist=artist, title=title))
 
-    # 0. Vorhandene Version (falls da) + deren Bitrate ermitteln.
+    # 0. Determine the existing version (if any) + its bitrate.
     existing = library.find_existing(config.MUSIC_DIR, artist, title)
     existing_bitrate = library.read_bitrate(existing) if existing else 0
     if existing:
@@ -192,7 +191,7 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
                       bitrate=existing_bitrate,
                       path=os.path.relpath(existing, config.MUSIC_DIR)))
 
-    # 1. Verbindung + Suche (immer, um die beste verfuegbare Qualitaet zu kennen).
+    # 1. Connect + search (always, to know the best available quality).
     try:
         client = slsk.connect()
     except slsk.SlskdError as e:
@@ -207,13 +206,13 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": t("songrequest.ui.search_failed")})
 
-    # Bester Treffer bestimmt Qualitaetsvergleich + Metadaten; die restlichen
-    # Kandidaten sind Fallbacks fuer den Retry, falls der beste Anbieter
-    # (Soulseek-Peer) den Download nicht liefert.
+    # The best hit determines the quality comparison + metadata; the remaining
+    # candidates are fallbacks for the retry in case the best provider
+    # (Soulseek peer) does not deliver the download.
     result = candidates[0] if candidates else None
 
     if not result:
-        # Nichts gefunden. Wenn der Song schon da ist, ist das ok - sonst Fehler.
+        # Nothing found. If the song is already there, that's ok - otherwise error.
         if existing:
             return JSONResponse(content={
                 "ok": True, "already": True, "artist": artist, "title": title,
@@ -226,23 +225,24 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
             "error": t("songrequest.ui.no_match", min=config.MIN_BITRATE),
         })
 
-    # Qualitaetsvergleich anhand des BESTEN Treffers (die Kandidatenliste ist
-    # nach Qualitaet sortiert). Der tatsaechlich geladene Kandidat wird spaeter
-    # in der Retry-Schleife bestimmt.
+    # Quality comparison based on the BEST hit (the candidate list is sorted by
+    # quality). The candidate actually downloaded is determined later in the
+    # retry loop.
     _best_user, best_file, _best_score = result
     new_bitrate = best_file.get("bitRate", 0) or 0
 
-    # 2. Qualitaetsvergleich: Ist der Song schon da UND der Treffer NICHT besser?
-    #    Dann nichts laden. WICHTIG: slskd meldet die Bitrate im Suchergebnis
-    #    nicht immer (dann new_bitrate=0). Da der Treffer aber den MIN_BITRATE-
-    #    Filter passiert hat, ist er real >= MIN_BITRATE. Wir behandeln einen
-    #    fehlenden Wert daher als "mindestens MIN_BITRATE" fuer den Vergleich.
+    # 2. Quality comparison: is the song already there AND the hit NOT better?
+    #    Then download nothing. IMPORTANT: slskd does not always report the
+    #    bitrate in the search result (then new_bitrate=0). But since the hit
+    #    passed the MIN_BITRATE filter, it is really >= MIN_BITRATE. We
+    #    therefore treat a missing value as "at least MIN_BITRATE" for the
+    #    comparison.
     effective_new = new_bitrate if new_bitrate > 0 else config.MIN_BITRATE
     if existing and effective_new <= existing_bitrate:
         logger.info(t("songrequest.request.existing_equal_or_better",
                       existing=existing_bitrate, new=new_bitrate, effective=effective_new))
-        # Nur "beste Qualitaet" sagen, wenn die vorhandene wirklich >= MIN_BITRATE
-        # ist. Sonst ehrlich: es gibt (aktuell) nichts Besseres im Netz.
+        # Only say "best quality" if the existing one is really >= MIN_BITRATE.
+        # Otherwise be honest: there is (currently) nothing better on the net.
         if existing_bitrate >= config.MIN_BITRATE:
             msg = t("songrequest.ui.good_quality", bitrate=existing_bitrate)
         else:
@@ -254,15 +254,15 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
             "message": msg,
         })
 
-    # 3. Download anstossen (Neuzugang ODER echtes Upgrade). Retry ueber
-    #    mehrere Anbieter: Soulseek ist P2P - der beste Treffer kann von einem
-    #    Peer stammen, der gerade offline ist / den Upload ablehnt. Darum die
-    #    Kandidaten der Reihe nach abhaken, bis ein enqueue klappt.
+    # 3. Trigger download (new addition OR real upgrade). Retry across multiple
+    #    providers: Soulseek is P2P - the best hit may come from a peer that is
+    #    currently offline / rejects the upload. So go through the candidates
+    #    one by one until an enqueue succeeds.
     chosen = None  # (username, file_dict, bitrate)
     for cand_user, cand_file, _score in candidates:
         cand_bitrate = cand_file.get("bitRate", 0) or 0
-        # Beim Upgrade nur Kandidaten nehmen, die auch wirklich besser sind als
-        # die vorhandene Version (sonst waere es kein Upgrade). effective wie oben.
+        # On an upgrade only take candidates that are really better than the
+        # existing version (otherwise it would be no upgrade). effective as above.
         cand_effective = cand_bitrate if cand_bitrate > 0 else config.MIN_BITRATE
         if existing and cand_effective <= existing_bitrate:
             continue
@@ -282,14 +282,14 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
     username, file_dict, new_bitrate = chosen
     fname = file_dict.get("filename", "?")
 
-    # 4. Kanonische Schreibweise bestimmen (statt der evtl. klein getippten
-    #    Eingabe). Kuenstler: der Basename des bereits vorhandenen Kuenstler-
-    #    Ordners (z.B. 'rod stewart' -> 'Rod Stewart'), sonst Eingabe. Titel:
-    #    beim Upgrade die vorhandene Datei-Schreibweise, sonst Title-Case der
-    #    Eingabe. Diese Werte landen in Manifest, UI-Antwort und Pushover; die
-    #    slskd-Suche oben lief bewusst mit der ORIGINAL-Eingabe (das Matching
-    #    normalisiert ohnehin, geaenderte Suchbegriffe koennten die Trefferquote
-    #    verschlechtern).
+    # 4. Determine the canonical spelling (instead of the possibly lowercased
+    #    input). Artist: the basename of the already existing artist folder
+    #    (e.g. 'rod stewart' -> 'Rod Stewart'), otherwise the input. Title: on
+    #    an upgrade the existing file spelling, otherwise title-case of the
+    #    input. These values go into the manifest, UI response and Pushover; the
+    #    slskd search above deliberately ran with the ORIGINAL input (the
+    #    matching normalizes anyway, changed search terms could worsen the hit
+    #    rate).
     is_upgrade = bool(existing)
     canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
     if is_upgrade:
@@ -297,11 +297,11 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
     else:
         canon_title = library.title_case(title)
 
-    # 5. Manifest-Eintrag. Bei einem Upgrade (Song schon da, neue Bitrate hoeher)
-    #    das replace-Flag setzen -> charts-import ersetzt die vorhandene Datei.
-    #    notify_device = Pushover-Geraet des eingeloggten Users (nur wenn er in
-    #    USER_PUSHOVER_DEVICES gelistet ist). Steht er NICHT drin, bleibt es leer
-    #    -> charts-import schickt dann KEINE Verfuegbarkeits-Meldung (nie an alle).
+    # 5. Manifest entry. On an upgrade (song already there, new bitrate higher)
+    #    set the replace flag -> charts-import replaces the existing file.
+    #    notify_device = Pushover device of the logged-in user (only if listed
+    #    in USER_PUSHOVER_DEVICES). If NOT listed, it stays empty -> charts-import
+    #    then sends NO availability message (never to everyone).
     notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
     manifest.record(fname, canon_artist, canon_title, config.MANUAL_SOURCE_LABEL,
                     replace=is_upgrade, notify_device=notify_device)
@@ -313,7 +313,7 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
 
     _record_request(f"{canon_artist} - {canon_title}")
 
-    # slskd meldet die Bitrate nicht immer -> dann "≥ MIN_BITRATE" statt "0 kbps".
+    # slskd does not always report the bitrate -> then "≥ MIN_BITRATE" instead of "0 kbps".
     new_br_label = f"{new_bitrate} kbps" if new_bitrate > 0 else f"≥ {config.MIN_BITRATE} kbps"
     if is_upgrade:
         msg = t("songrequest.ui.upgrade_started",
@@ -333,7 +333,7 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
 
 @app.get("/favicon.ico")
 async def favicon():
-    # Browser fragen /favicon.ico hart an (ignorieren teils <link rel=icon>).
+    # Browsers request /favicon.ico hard (some ignore <link rel=icon>).
     return RedirectResponse(url="/static/icon.svg", status_code=307)
 
 

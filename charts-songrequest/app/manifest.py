@@ -1,15 +1,15 @@
 """
-Manifest fuer die Uebergabe der sauberen Chart-Metadaten an charts-import.
+Manifest for handing the clean chart metadata over to charts-import.
 
-Problem: slskd-Downloads haben oft schlechte oder fehlende Tags. charts-import
-wuerde sie dann als "Unknown Artist/Unknown Album" einsortieren, und charts-sync
-kann sie nicht gegen die Charts matchen.
+Problem: slskd downloads often have poor or missing tags. charts-import would
+then file them as "Unknown Artist/Unknown Album", and charts-sync cannot match
+them against the charts.
 
-Loesung: charts-download kennt beim Download den ECHTEN Chart-Kuenstler und
--Titel. Diese Zuordnung wird hier in eine gemeinsame JSON-Datei geschrieben
-(im /charts-Ordner, den auch charts-import sieht). Schluessel ist der Basename
-der heruntergeladenen Datei - der bleibt erhalten, egal wie slskd den Pfad
-verschachtelt. charts-import schlaegt darin nach und taggt die Datei sauber.
+Solution: at download time charts-download knows the REAL chart artist and
+title. That mapping is written here into a shared JSON file (in the /charts
+folder, which charts-import also sees). The key is the basename of the
+downloaded file - it stays stable no matter how slskd nests the path.
+charts-import looks it up there and tags the file cleanly.
 
 Format:
 {
@@ -20,14 +20,15 @@ Format:
   }
 }
 
-"source" ist das Playlist-Label (aus der missing-Datei, z.B. "charts",
-"mundart", "80er-90er"), damit charts-import in seiner Import-Meldung die
-Herkunft anzeigen kann. Optional - aeltere Eintraege ohne "source" sind ok.
+"source" is the playlist label (from the missing file, e.g. "charts",
+"mundart", "80er-90er") so charts-import can show the origin in its import
+message. Optional - older entries without "source" are fine.
 
-"notify_device" (optional) ist der Pushover-Geraetename des Users, der den Song
-manuell via charts-songrequest angefordert hat. charts-import schickt nach dem
-Import eine Verfuegbarkeits-Meldung an genau dieses Geraet. Fehlt das Feld (alle
-Nicht-manuellen Downloads sowie alte Eintraege), gibt es keine solche Meldung.
+"notify_device" (optional) is the Pushover device name of the user who
+requested the song manually via charts-songrequest. After the import
+charts-import sends an availability message to exactly this device. If the
+field is missing (all non-manual downloads and old entries), there is no such
+message.
 """
 
 import json
@@ -63,7 +64,7 @@ def _save(path: str, data: dict) -> None:
 
 
 def _basename_key(filename: str) -> str:
-    """Normalisierter Schluessel: reiner Dateiname, kleingeschrieben."""
+    """Normalized key: plain file name, lowercased."""
     base = os.path.basename(filename.replace("\\", "/"))
     return base.lower()
 
@@ -71,21 +72,21 @@ def _basename_key(filename: str) -> str:
 def record(filename: str, artist: str, title: str, source: str = "",
            replace: bool = False, notify_device: str = "") -> None:
     """
-    Vermerkt fuer die heruntergeladene Datei die sauberen Chart-Metadaten.
-    Album wird auf den Titel gesetzt (Chart-Songs sind Singles), damit
-    charts-import nicht auf "Unknown Album" zurueckfaellt.
+    Records the clean chart metadata for the downloaded file.
+    Album is set to the title (chart songs are singles) so charts-import does
+    not fall back to "Unknown Album".
 
-    source = Playlist-Label (z.B. "charts", "mundart"), damit charts-import in
-    der Import-Meldung die Herkunft anzeigen kann.
+    source = playlist label (e.g. "charts", "mundart") so charts-import can show
+    the origin in the import message.
 
-    replace = True signalisiert charts-import einen QUALITAETS-UPGRADE: der Song
-    ist evtl. schon in der Library, soll aber ersetzt werden, WENN die neue
-    Datei eine hoehere Bitrate hat. Wird bei "Trotzdem laden" im UI gesetzt.
+    replace = True signals a QUALITY UPGRADE to charts-import: the song may
+    already be in the library but should be replaced IF the new file has a
+    higher bitrate. Set on "download anyway" in the UI.
 
-    notify_device = Pushover-Geraet des anfordernden Users (nur bei manuellen
-    Requests via charts-songrequest). Ist es gesetzt, schickt charts-import nach
-    dem erfolgreichen Import eine Verfuegbarkeits-Meldung an GENAU dieses Geraet.
-    Leer -> kein Feld geschrieben -> keine Meldung (nie an alle senden).
+    notify_device = Pushover device of the requesting user (only for manual
+    requests via charts-songrequest). If set, charts-import sends an
+    availability message to EXACTLY this device after a successful import.
+    Empty -> no field written -> no message (never send to everyone).
     """
     data = _load(config.MANIFEST_FILE)
     entry = {

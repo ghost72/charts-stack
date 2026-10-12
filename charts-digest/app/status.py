@@ -1,11 +1,11 @@
 """
-Gemeinsames Status-Modul fuer alle charts-Dienste (Dashboard-Anbindung).
+Shared status module for all charts services (dashboard integration).
 
-Jeder Dienst schreibt am Ende eines Laufs eine kleine JSON-Statusdatei nach
-STATUS_DIR/<service>.json. Das charts-dashboard liest diese Dateien und zeigt
-sie an. KOPIE (wie in den anderen Diensten) - keine Laufzeit-Abhaengigkeit.
+Each service writes a small JSON status file to STATUS_DIR/<service>.json at
+the end of a run. The charts-dashboard reads these files and displays them.
+COPY (like in the other services) - no runtime dependency.
 
-Schema: siehe charts-import/app/status.py.
+Schema: see charts-import/app/status.py.
 """
 
 import json

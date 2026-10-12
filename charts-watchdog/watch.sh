@@ -1,82 +1,81 @@
 #!/bin/sh
-# charts-watchdog - ueberwacht ALLE Container des charts-stack und meldet per
-# Pushover, wenn einer in einen schlechten Zustand wechselt (und wenn er sich
-# wieder erholt). Reines Shell-Skript, kein Build.
+# charts-watchdog - monitors ALL containers of the charts-stack and reports via
+# Pushover when one switches into a bad state (and when it recovers again).
+# Pure shell script, no build.
 #
-# Was gemeldet wird (pro Container):
-#   - unhealthy      : Healthcheck schlaegt an (aktuell nur slskd hat einen;
-#                      kuenftige Healthchecks werden automatisch mitueberwacht).
-#   - restarting     : Container haengt in einer Neustart-Schleife (echtes
-#                      Dauerproblem - restart:unless-stopped kommt nicht hoch).
-#   - exited/dead    : Container ist (unerwartet) gestoppt und bleibt es.
-#   - Erholung       : zurueck auf running+healthy -> Entwarnung.
+# What is reported (per container):
+#   - unhealthy      : healthcheck fires (currently only slskd has one; future
+#                      healthchecks are monitored automatically).
+#   - restarting     : container is stuck in a restart loop (a real persistent
+#                      problem - restart:unless-stopped does not come up).
+#   - exited/dead    : container is (unexpectedly) stopped and stays that way.
+#   - recovery       : back to running+healthy -> all-clear.
 #
-# Anti-Spam / Anti-Flapping (wichtig!): Pro Problem-Episode gibt es GENAU EINE
-# Problem-Meldung und GENAU EINE Entwarnung. Konkret:
-#   - Problem wird erst nach DEBOUNCE anhaltenden schlechten Polls gemeldet.
-#   - Nach einer Problem-Meldung gilt ein COOLDOWN: in dem Fenster keine zweite
-#     Problem-Meldung fuer dieselbe App - egal wie oft sie flippert.
-#   - Entwarnung kommt erst, wenn die App RECOVER_POLLS am Stueck ok ist. Eine
-#     flippernde App (ok/problem/ok/...) erreicht das nie -> keine Entwarnung
-#     und damit auch keine erneute Problem-Meldung. Du bekommst also NICHT
-#     dauernd Nachrichten, wenn eine App instabil ist.
+# Anti-spam / anti-flapping (important!): per problem episode there is EXACTLY
+# ONE problem message and EXACTLY ONE all-clear. Concretely:
+#   - A problem is only reported after DEBOUNCE consecutive bad polls.
+#   - After a problem message a COOLDOWN applies: in that window no second
+#     problem message for the same app - no matter how often it flaps.
+#   - An all-clear only comes once the app is RECOVER_POLLS consecutive polls
+#     ok. A flapping app (ok/problem/ok/...) never reaches that -> no all-clear
+#     and therefore no repeated problem message. So you do NOT get constant
+#     messages when an app is unstable.
 #
-# Was NICHT gemeldet werden kann: ein Container, der LAEUFT, dessen interne
-# Logik aber haengt. Das wuerde pro Dienst einen eigenen Healthcheck brauchen.
-# Fuer die Scheduler-Dienste (laufen in einer Schleife) ist der Lauf-/Health-
-# Zustand das aussagekraeftige Signal.
+# What CANNOT be reported: a container that is RUNNING but whose internal logic
+# is stuck. That would need a dedicated healthcheck per service. For the
+# scheduler services (run in a loop) the run/health state is the meaningful
+# signal.
 #
-# Laeuft in einem docker:cli-Container mit read-only Docker-Socket und pollt
-# den Zustand ueber die lokale Docker-Engine.
+# Runs in a docker:cli container with a read-only Docker socket and polls the
+# state via the local Docker engine.
 
 set -eu
 
-# Zu ueberwachende Container (Leerzeichen-getrennt). Default: der ganze Stack.
-# Ueber WATCH_CONTAINERS in der .env/compose anpassbar.
+# Containers to monitor (space-separated). Default: the whole stack.
+# Adjustable via WATCH_CONTAINERS in the .env/compose.
 CONTAINERS="${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest}"
 INTERVAL="${WATCH_INTERVAL_SECONDS:-30}"
 
 PUSHOVER_TOKEN="${PUSHOVER_TOKEN:-}"
 PUSHOVER_USER="${PUSHOVER_USER:-}"
 PUSHOVER_DEVICE="${PUSHOVER_DEVICE:-}"
-# Pushover-Benachrichtigungston. Leer = Account-Default (kein sound-Feld im
-# Request). Default fuer charts-watchdog: "siren".
+# Pushover notification sound. Empty = account default (no sound field in the
+# request). Default for charts-watchdog: "siren".
 PUSHOVER_SOUND="${PUSHOVER_SOUND:-siren}"
-# Cache-Dauer (Sekunden) fuer die vom Pushover-Account abgerufene Geraeteliste
-# (siehe _valid_pushover_devices). Dagegen wird PUSHOVER_DEVICE vor dem Senden
-# gefiltert, damit ein ungueltiger/deaktivierter Geraetename nicht Pushovers
-# "an alle"-Fallback ausloest (Doppel-Push). Standard 3600s = 1h.
+# Cache duration (seconds) for the device list fetched from the Pushover
+# account (see _valid_pushover_devices). PUSHOVER_DEVICE is filtered against it
+# before sending so an invalid/disabled device name does not trigger Pushover's
+# "to everyone" fallback (double push). Default 3600s = 1h.
 PUSHOVER_DEVICES_TTL="${PUSHOVER_DEVICES_TTL:-3600}"
-# Pushover fuer diesen Dienst global stummschalten (0 = aus). Default: an.
+# Mute Pushover for this service globally (0 = off). Default: on.
 PUSHOVER_ENABLED="${PUSHOVER_ENABLED:-1}"
 
-# --- Externe/abhaengige Dienste --------------------------------------------
-# Erreichbarkeits-Checks fuer die Dienste, von denen der charts-stack abhaengt
-# (slskd, Lidarr, ListenBrainz, Deezer, Last.fm, iTunes, Pushover). Kriterien
-# 1:1 wie im charts-dashboard (collector.py _slskd_status/_lidarr_status/
-# _external_status). Lidarr + Last.fm werden nur ueberwacht, wenn konfiguriert.
+# --- External/dependent services -------------------------------------------
+# Reachability checks for the services the charts-stack depends on
+# (slskd, Lidarr, ListenBrainz, Deezer, Last.fm, iTunes, Pushover). Criteria
+# 1:1 as in charts-dashboard (collector.py _slskd_status/_lidarr_status/
+# _external_status). Lidarr + Last.fm are only monitored when configured.
 SLSKD_HOST="${SLSKD_HOST:-http://slskd:5030}"
 SLSKD_API_KEY="${SLSKD_API_KEY:-}"
 LIDARR_URL="${LIDARR_URL:-}"
 LIDARR_API_KEY="${LIDARR_API_KEY:-}"
 LASTFM_API_KEY="${LASTFM_API_KEY:-}"
 
-# --- i18n (uebersetzbare Ausgabetexte, geteilter lang/-Satz) ----------------
-# charts-watchdog ist der einzige nicht-Python-Dienst; t() spiegelt die Semantik
-# des Python-Loaders (Pfadsuche, gewaehlte Sprache -> en -> Key-Name, nie
-# crashen), bleibt aber BusyBox-tauglich (nur grep/sed/printf). Die
-# watchdog.*-Keys nutzen positionale %s + printf (NICHT benannte {name}).
+# --- i18n (translatable output texts, shared lang/ set) ---------------------
+# charts-watchdog is the only non-Python service; t() mirrors the semantics of
+# the Python loader (path search, chosen language -> en -> key name, never
+# crash) but stays BusyBox-capable (only grep/sed/printf). The watchdog.* keys
+# use positional %s + printf (NOT named {name}).
 #
-# EINMALIGE Normalisierung beim Skriptstart (set -u-sicher): CHARTS_LANG und
-# LANGDIR werden hier top-level in Variablen festgelegt und danach pro t()-Aufruf
-# nur noch gelesen - kein bares $CHARTS_LANG, kein tr je Aufruf. MUSS vor dem
-# ersten t()-Nutzer laufen (Start-Banner liegt in main_loop(), also sicher nach
-# dieser Zeile).
+# ONE-TIME normalization at script start (set -u-safe): CHARTS_LANG and LANGDIR
+# are set here top-level in variables and after that only read per t() call -
+# no bare $CHARTS_LANG, no tr per call. MUST run before the first t() user (the
+# start banner is in main_loop(), so safely after this line).
 CHARTS_LANG="$(printf '%s' "${CHARTS_LANG:-}" | tr '[:upper:]' '[:lower:]' 2>/dev/null || true)"
-# Sprachverzeichnis in Python-Prioritaet: $CHARTS_LANG_DIR -> /lang -> $0-relativ
-# (../lang, ./lang). Erster existierender Treffer gewinnt; Default /lang (t()
-# degradiert dann sauber zum Key-Namen). $0-Kandidaten sind nur fuer den Dev-/
-# Standalone-Fall relevant (im Container ist $0=/watch.sh -> ../lang=./lang=/lang).
+# Language directory in Python priority: $CHARTS_LANG_DIR -> /lang -> $0-relative
+# (../lang, ./lang). The first existing hit wins; default /lang (t() then
+# degrades cleanly to the key name). The $0 candidates are only relevant for the
+# dev/standalone case (in the container $0=/watch.sh -> ../lang=./lang=/lang).
 LANGDIR="/lang"
 _wd_scriptdir="$(dirname "$0" 2>/dev/null || echo .)"
 for _wd_cand in "${CHARTS_LANG_DIR:-}" "/lang" "${_wd_scriptdir}/../lang" "${_wd_scriptdir}/lang"; do
@@ -87,13 +86,13 @@ for _wd_cand in "${CHARTS_LANG_DIR:-}" "/lang" "${_wd_scriptdir}/../lang" "${_wd
   fi
 done
 
-# _lookup KEY LANG -> Template zu KEY aus LANG.json, sonst leer. Jeder Schritt
-# mit `|| true` (set -eu-sicher). Zwei-Schritt grep->sed:
-#   Schritt 1: die EINE Key-Zeile per grep -F "<key>": isolieren (Begrenzer mit
-#     schliessendem Quote UND Doppelpunkt gegen Prefix-Kollision, z.B.
-#     watchdog.notify.problem vs. ...problem_title) + head -n1 (Ein-Zeilen-Vertrag).
-#   Schritt 2: den Value zwischen den Value-Quotes greedy ausschneiden (Anker auf
-#     dem letzten " der Zeile; optionales Trailing-Komma erlaubt).
+# _lookup KEY LANG -> template for KEY from LANG.json, otherwise empty. Every
+# step with `|| true` (set -eu-safe). Two-step grep->sed:
+#   Step 1: isolate the ONE key line via grep -F "<key>": (delimiter with a
+#     closing quote AND colon against prefix collision, e.g.
+#     watchdog.notify.problem vs. ...problem_title) + head -n1 (one-line contract).
+#   Step 2: greedily cut out the value between the value quotes (anchored on the
+#     last " of the line; an optional trailing comma is allowed).
 _lookup() {
   _lf="$LANGDIR/$2.json"
   [ -f "$_lf" ] || { echo ""; return 0; }
@@ -104,28 +103,28 @@ _lookup() {
     2>/dev/null || true
 }
 
-# t KEY [arg ...] -> uebersetzter, mit %s befuellter String auf stdout.
-# Crasht NIE (set -eu-sicher). Fallback-Kette: gewaehlte Sprache -> en -> Key-Name.
+# t KEY [arg ...] -> translated string filled with %s, on stdout.
+# NEVER crashes (set -eu-safe). Fallback chain: chosen language -> en -> key name.
 t() {
   _key="$1"
-  shift 2>/dev/null || true           # Rest ($@) sind die %s-Werte (0..n)
-  _tpl="$(_lookup "$_key" "$CHARTS_LANG")"   # gewaehlte Sprache
-  [ -n "$_tpl" ] || _tpl="$(_lookup "$_key" en)"   # Fallback en
-  [ -n "$_tpl" ] || _tpl="$_key"      # Fallback: Key-Name selbst
-  # Substitution. Schlaegt printf fehl (kaputtes Template), explizit das ROHE
-  # Template ausgeben (printf '%s' = literal, NICHT echo wg. fuehrendem -n/-e).
+  shift 2>/dev/null || true           # the rest ($@) are the %s values (0..n)
+  _tpl="$(_lookup "$_key" "$CHARTS_LANG")"   # chosen language
+  [ -n "$_tpl" ] || _tpl="$(_lookup "$_key" en)"   # fallback en
+  [ -n "$_tpl" ] || _tpl="$_key"      # fallback: the key name itself
+  # Substitution. If printf fails (broken template), explicitly output the RAW
+  # template (printf '%s' = literal, NOT echo because of a leading -n/-e).
   printf "$_tpl" "$@" 2>/dev/null || printf '%s' "$_tpl"
 }
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [charts-watchdog] $*"; }
 
-# URL-Encoding fuer die Pushover-POST-Felder (title/message). BYTE-weise
-# nach RFC 3986: unreservierte Zeichen (A-Z a-z 0-9 - . _ ~) bleiben, alles
-# andere wird %XX. Byte-weise (ueber od -tx1), NICHT zeichenweise - sonst
-# landen deutsche Umlaute (ae/oe/ue/ss, in UTF-8 je zwei Bytes) roh/kaputt im
-# POST-Body. So kommen "ueber"->"über", "gueltig"->"gültig" etc. korrekt auf
-# dem Handy an. (Ersetzt das fruehere reine Leerzeichen->%20; der alte
-# Container-Meldungstext war ASCII und wird davon identisch kodiert.)
+# URL encoding for the Pushover POST fields (title/message). BYTE-wise per
+# RFC 3986: unreserved characters (A-Z a-z 0-9 - . _ ~) stay, everything else
+# becomes %XX. Byte-wise (via od -tx1), NOT character-wise - otherwise German
+# umlauts (ae/oe/ue/ss, two bytes each in UTF-8) end up raw/broken in the POST
+# body. This way "ueber"->"über", "gueltig"->"gültig" etc. arrive correctly on
+# the phone. (Replaces the former plain space->%20; the old container message
+# text was ASCII and is encoded identically by this.)
 enc() {
   printf '%s' "$1" | od -An -tx1 | tr ' ' '\n' | sed '/^$/d' | while IFS= read -r _b; do
     case "$_b" in
@@ -136,15 +135,15 @@ enc() {
   done
 }
 
-# Sendet genau EINEN Pushover-Request mit dem fertigen POST-Body ($1) und
-# loggt mit Titel ($2)/Text ($3) wie bisher inkl. Cert-Fallback.
+# Sends exactly ONE Pushover request with the finished POST body ($1) and logs
+# with title ($2)/text ($3) as before, incl. cert fallback.
 _post() {
   _data="$1"
   _url="https://api.pushover.net/1/messages.json"
-  # Erst normal (mit Zertifikatspruefung). Falls das Minimal-Image (Alpine/
-  # BusyBox) kein CA-Bundle hat, scheitert HTTPS - dann als Fallback ohne
-  # Zertifikatspruefung erneut versuchen (Pushover-Zertifikat ist gueltig; der
-  # Fallback deckt nur das fehlende CA-Bundle ab, die Daten sind unkritisch).
+  # First normally (with certificate verification). If the minimal image
+  # (Alpine/BusyBox) has no CA bundle, HTTPS fails - then retry as a fallback
+  # without certificate verification (the Pushover certificate is valid; the
+  # fallback only covers the missing CA bundle, the data is uncritical).
   if wget -q -O /dev/null --post-data "$_data" "$_url" 2>/dev/null; then
     log "$(t watchdog.pushover.sent "$2" "$3")"
   elif wget -q -O /dev/null --no-check-certificate --post-data "$_data" "$_url" 2>/dev/null; then
@@ -154,38 +153,37 @@ _post() {
   fi
 }
 
-# Haelt die gueltigen Pushover-Gerätenamen des Accounts gecacht in
-# /tmp/wd/.pushover-devices (eine pro Zeile) + Zeitstempel in
-# /tmp/wd/.pushover-devices.ts. Grund: Pushover verwirft einen Request mit
-# einem UNBEKANNTEN/deaktivierten device-Namen NICHT, sondern stellt ihn
-# ersatzweise an ALLE Geräte zu -> ein toter Name in der Liste erzeugt bei
-# jedem Empfänger einen Doppel-Push. Daher filtern wir vor dem Senden gegen
-# diese Liste.
-# Echo: "ok" wenn eine gueltige Liste bereitsteht (Cache frisch ODER frisch
-# geholt + geparst), sonst "fail" (FAIL-OPEN: der Aufrufer filtert dann NICHT).
-# set -eu-sicher: jeder Schritt mit `|| true`, kein Abbruch. Der Validate-Call
-# verbraucht KEIN Nachrichten-Budget und stoert das uebrige Monitoring nicht
-# (eigene Merker-Dateien, keine Beruehrung der .alarm/.bad/.good-Zustaende).
+# Keeps the valid Pushover device names of the account cached in
+# /tmp/wd/.pushover-devices (one per line) + timestamp in
+# /tmp/wd/.pushover-devices.ts. Reason: Pushover does NOT discard a request
+# with an UNKNOWN/disabled device name but delivers it to ALL devices instead
+# -> a dead name in the list produces a double push for every recipient. So we
+# filter against this list before sending.
+# Echo: "ok" if a valid list is available (cache fresh OR freshly fetched +
+# parsed), otherwise "fail" (FAIL-OPEN: the caller then does NOT filter).
+# set -eu-safe: every step with `|| true`, no abort. The validate call consumes
+# NO message budget and does not disturb the rest of the monitoring (own marker
+# files, no touching of the .alarm/.bad/.good states).
 _valid_pushover_devices() {
   mkdir -p /tmp/wd 2>/dev/null || true
   _devf="/tmp/wd/.pushover-devices"
   _devts="/tmp/wd/.pushover-devices.ts"
   _now="$(date +%s 2>/dev/null || echo 0)"
-  # Cache noch frisch? Dann die vorhandene Liste nutzen.
+  # Cache still fresh? Then use the existing list.
   _ts="$(cat "$_devts" 2>/dev/null || echo 0)"
   case "$_ts" in ''|*[!0-9]*) _ts=0 ;; esac
   if [ -s "$_devf" ] && [ "$((_now - _ts))" -lt "$PUSHOVER_DEVICES_TTL" ]; then
     echo ok
     return 0
   fi
-  # Frisch holen (gleiche Aufrufform wie der Credential-Check am Schleifenende).
+  # Fetch fresh (same call form as the credential check at the loop end).
   _vf="/tmp/wd/.pov-dev.hdr.$$"
   _out="$(wget -q -S -O - --timeout=8 \
     --post-data "token=${PUSHOVER_TOKEN}&user=${PUSHOVER_USER}" \
     "https://api.pushover.net/1/users/validate.json" 2>"$_vf" || true)"
   _code="$(awk 'tolower($0) ~ /^ *http\// {c=$2} END {print c}' "$_vf" 2>/dev/null || true)"
   rm -f "$_vf" 2>/dev/null || true
-  # Fehlendes CA-Bundle: einmal ohne Zertifikatspruefung erneut (wie in _post).
+  # Missing CA bundle: retry once without certificate verification (as in _post).
   if [ -z "$_code" ] || [ "$_code" != "200" ]; then
     _vf="/tmp/wd/.pov-dev.hdr.$$"
     _out="$(wget -q -S -O - --timeout=8 --no-check-certificate \
@@ -195,16 +193,16 @@ _valid_pushover_devices() {
     rm -f "$_vf" 2>/dev/null || true
   fi
   [ "$_code" = "200" ] || { echo fail; return 0; }
-  # JSON-Feld "devices":[ "A","B",... ] ohne jq parsen: den Teil zwischen
-  # "devices":[ und dem ersten ] ausschneiden, dann die gequoteten Namen
-  # zeilenweise extrahieren.
+  # Parse the JSON field "devices":[ "A","B",... ] without jq: cut out the part
+  # between "devices":[ and the first ], then extract the quoted names line by
+  # line.
   _arr="$(printf '%s' "$_out" | tr -d '\n' \
     | sed -n 's/.*"devices"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p' 2>/dev/null || true)"
-  # Kein devices-Feld gefunden -> nicht sauber parsbar -> fail-open.
+  # No devices field found -> not cleanly parsable -> fail-open.
   case "$_out" in *'"devices"'*) : ;; *) echo fail; return 0 ;; esac
   _names="$(printf '%s' "$_arr" | grep -o '"[^"]*"' 2>/dev/null | tr -d '"' || true)"
-  # Liste (auch leer) + Zeitstempel speichern. Eine leere, aber sauber
-  # geparste Liste ist ein gueltiger Zustand (Account ohne Geräte).
+  # Store the list (even empty) + timestamp. An empty but cleanly parsed list
+  # is a valid state (account without devices).
   printf '%s\n' "$_names" > "$_devf" 2>/dev/null || true
   printf '%s\n' "$_now" > "$_devts" 2>/dev/null || true
   echo ok
@@ -212,7 +210,7 @@ _valid_pushover_devices() {
 }
 
 notify() {
-  # $1 = Titel (Klartext), $2 = Text (Klartext)
+  # $1 = title (plain text), $2 = text (plain text)
   [ "$PUSHOVER_ENABLED" = "0" ] && return 0
   if [ -z "$PUSHOVER_TOKEN" ] || [ -z "$PUSHOVER_USER" ]; then
     log "$(t watchdog.pushover.not_configured "$1")"
@@ -222,21 +220,21 @@ notify() {
   _m="$(enc "$2")"
   _base="token=${PUSHOVER_TOKEN}&user=${PUSHOVER_USER}"
   _tail="&title=${_t}&message=${_m}"
-  # Ton nur anhaengen, wenn gesetzt - sonst Account-Default (kein sound-Feld).
-  # Wie title/message durch enc() URL-encoden (konsistent + robust gegen
-  # ungewoehnliche Custom-Sound-Namen; bei den Standard-Toenen a-z unkritisch).
+  # Only append the sound if set - otherwise account default (no sound field).
+  # URL-encode via enc() like title/message (consistent + robust against
+  # unusual custom sound names; for the standard a-z tones uncritical).
   [ -n "$PUSHOVER_SOUND" ] && _tail="${_tail}&sound=$(enc "$PUSHOVER_SOUND")"
-  # PUSHOVER_DEVICE darf eine kommagetrennte Liste sein. Die Pushover-API
-  # akzeptiert im device-Feld nur EINEN Gerätenamen pro Request, deshalb pro
-  # Gerät ein eigener POST. Alle Geräte gehören zum selben Pushover-Account.
-  # Leer => ein Request ohne device-Feld => alle Geräte des Accounts.
+  # PUSHOVER_DEVICE may be a comma-separated list. The Pushover API accepts only
+  # ONE device name per request in the device field, so one POST per device.
+  # All devices belong to the same Pushover account.
+  # Empty => one request without a device field => all devices of the account.
   if [ -z "$PUSHOVER_DEVICE" ]; then
     _post "${_base}${_tail}" "$1" "$2"
     return 0
   fi
 
-  # Gueltige Geräteliste holen (gecacht). Nur filtern, wenn sie bereitsteht
-  # (FAIL-OPEN: bei "fail" wie bisher an alle angefragten Geräte senden).
+  # Fetch the valid device list (cached). Only filter if it is available
+  # (FAIL-OPEN: on "fail" send to all requested devices as before).
   _devok="$(_valid_pushover_devices || true)"
   _devf="/tmp/wd/.pushover-devices"
   _sent=0
@@ -247,7 +245,7 @@ notify() {
     IFS="$_OLDIFS"
     [ -n "$_dev" ] || { IFS=,; continue; }
     if [ "$_devok" = "ok" ]; then
-      # Exakter Zeilen-Match gegen die gueltige Liste.
+      # Exact line match against the valid list.
       if grep -qxF "$_dev" "$_devf" 2>/dev/null; then
         _post "${_base}&device=${_dev}${_tail}" "$1" "$2"
         _sent=$((_sent + 1))
@@ -255,7 +253,7 @@ notify() {
         _dropped="${_dropped:+$_dropped, }$_dev"
       fi
     else
-      # Liste nicht abrufbar -> ungefiltert senden (fail-open).
+      # List not retrievable -> send unfiltered (fail-open).
       _post "${_base}&device=${_dev}${_tail}" "$1" "$2"
       _sent=$((_sent + 1))
     fi
@@ -263,23 +261,23 @@ notify() {
   done
   IFS="$_OLDIFS"
   [ -n "$_dropped" ] && log "$(t watchdog.pushover.devices_skipped "$_dropped")"
-  # Es wurde gefiltert UND kein gueltiges Gerät blieb uebrig: NICHT device-los
-  # senden (das ginge an alle) - lieber nichts senden.
+  # Filtering happened AND no valid device remained: do NOT send device-less
+  # (that would go to everyone) - rather send nothing.
   if [ "$_devok" = "ok" ] && [ "$_sent" -eq 0 ]; then
     log "$(t watchdog.pushover.devices_none_valid "$1")"
   fi
   return 0
 }
 
-# Fuehrt EINEN GET aus und befuellt HTTP_CODE (3-stellig; "000" = keine
-# Antwort/Netz-/TLS-Fehler) und HTTP_BODY. FAIL-OPEN: scheitert NIE das Skript
-# (wichtig, da `set -eu` aktiv ist - ein nicht-erreichbarer Dienst darf das
-# Skript nicht beenden; daher ueberall `|| true`).
-# BusyBox-wget (Alpine-Image docker:28-cli, kein curl) schreibt die Header
-# inkl. Statuszeile mit -S auf stderr UND beendet sich bei HTTP 4xx/5xx mit
-# Exit != 0 - darum lesen wir den Code aus der Statuszeile, NICHT aus dem
-# Exit-Code (ListenBrainz 400 / iTunes 429 gelten als erreichbar). Timeout 8s.
-# $1=URL, $2=optional ein Header ("Key: Wert").
+# Runs ONE GET and fills HTTP_CODE (3-digit; "000" = no response/network/TLS
+# error) and HTTP_BODY. FAIL-OPEN: NEVER fails the script (important, since
+# `set -eu` is active - an unreachable service must not terminate the script;
+# hence `|| true` everywhere).
+# BusyBox wget (Alpine image docker:28-cli, no curl) writes the headers incl.
+# status line with -S to stderr AND exits with a non-zero code on HTTP 4xx/5xx
+# - so we read the code from the status line, NOT from the exit code
+# (ListenBrainz 400 / iTunes 429 count as reachable). Timeout 8s.
+# $1=URL, $2=optional one header ("Key: value").
 http_probe() {
   _url="$1"; _hdr="${2:-}"
   _errf="/tmp/wd/.probe.hdr.$$"
@@ -289,16 +287,16 @@ http_probe() {
   else
     HTTP_BODY="$(wget -q -S -O - --timeout=8 "$_url" 2>"$_errf" || true)"
   fi
-  # Letzte HTTP/-Statuszeile aus den Headern (letzte wg. evtl. Redirects).
+  # Last HTTP/ status line from the headers (last one because of possible redirects).
   _code="$(awk 'tolower($0) ~ /^ *http\// {c=$2} END {print c}' "$_errf" 2>/dev/null || true)"
   rm -f "$_errf" 2>/dev/null || true
   case "$_code" in
     [1-5][0-9][0-9]) HTTP_CODE="$_code" ;;
     *) HTTP_CODE="000" ;;
   esac
-  # TLS-/CA-Fallback NUR, wenn gar keine Statuszeile kam (echter Netz-/TLS-
-  # Fehler, kein 4xx). Deckt ein evtl. fehlendes CA-Bundle ab - genau wie der
-  # Fallback in _post. Bei einem reinen 4xx wird NICHT erneut probiert.
+  # TLS/CA fallback ONLY if no status line came at all (a real network/TLS
+  # error, not a 4xx). Covers a possibly missing CA bundle - just like the
+  # fallback in _post. On a plain 4xx it is NOT retried.
   if [ "$HTTP_CODE" = "000" ]; then
     if [ -n "$_hdr" ]; then
       HTTP_BODY="$(wget -q -S -O - --timeout=8 --no-check-certificate --header "$_hdr" "$_url" 2>"$_errf" || true)"
@@ -314,14 +312,14 @@ http_probe() {
   fi
 }
 
-# Erreichbarkeit EINES externen Dienstes. Echo: "ok", "problem" oder "skip"
-# (= nicht konfiguriert -> nicht ueberwachen). Kriterien 1:1 aus collector.py.
-# Fail-open: eine fehlende Antwort (HTTP_CODE=000) ist "problem" fuer DIESEN
-# Poll (erst die Debounce-Maschine macht daraus ggf. eine Meldung).
+# Reachability of ONE external service. Echo: "ok", "problem" or "skip"
+# (= not configured -> do not monitor). Criteria 1:1 from collector.py.
+# Fail-open: a missing response (HTTP_CODE=000) is "problem" for THIS poll
+# (only the debounce machine may turn it into a message).
 ext_reachable() {
   case "$1" in
     slskd)
-      # GET {SLSKD_HOST}/api/v0/server mit X-API-Key -> Body "isLoggedIn":true.
+      # GET {SLSKD_HOST}/api/v0/server with X-API-Key -> body "isLoggedIn":true.
       [ -n "$SLSKD_API_KEY" ] || { echo skip; return; }
       http_probe "${SLSKD_HOST%/}/api/v0/server" "X-API-Key: $SLSKD_API_KEY"
       case "$HTTP_BODY" in
@@ -329,37 +327,37 @@ ext_reachable() {
         *) echo problem ;;
       esac ;;
     lidarr)
-      # Nur wenn URL+Key gesetzt. GET /api/v1/system/status -> HTTP 2xx.
+      # Only if URL+key set. GET /api/v1/system/status -> HTTP 2xx.
       { [ -n "$LIDARR_URL" ] && [ -n "$LIDARR_API_KEY" ]; } || { echo skip; return; }
       http_probe "${LIDARR_URL%/}/api/v1/system/status" "X-Api-Key: $LIDARR_API_KEY"
       case "$HTTP_CODE" in 2[0-9][0-9]) echo ok ;; *) echo problem ;; esac ;;
     listenbrainz)
-      # validate-token OHNE Token -> JEDE Antwort (auch 400) = erreichbar;
-      # nur ein echter Netz-/TLS-Fehler (kein Code) ist "problem".
+      # validate-token WITHOUT a token -> ANY response (even 400) = reachable;
+      # only a real network/TLS error (no code) is "problem".
       http_probe "https://api.listenbrainz.org/1/validate-token"
       case "$HTTP_CODE" in 000) echo problem ;; *) echo ok ;; esac ;;
     deezer)
-      # HTTP 200 UND Body ohne "error"-Feld (Deezer meldet Fehler als 200+error).
+      # HTTP 200 AND body without "error" field (Deezer reports errors as 200+error).
       http_probe "https://api.deezer.com/chart/0/tracks?limit=1"
       if [ "$HTTP_CODE" = "200" ]; then
         case "$HTTP_BODY" in *'"error"'*) echo problem ;; *) echo ok ;; esac
       else echo problem; fi ;;
     lastfm)
-      # Nur mit API-Key. HTTP 200 UND Body ohne "error"-Feld.
+      # Only with an API key. HTTP 200 AND body without "error" field.
       [ -n "$LASTFM_API_KEY" ] || { echo skip; return; }
       http_probe "https://ws.audioscrobbler.com/2.0/?method=chart.gettoptracks&limit=1&format=json&api_key=${LASTFM_API_KEY}"
       if [ "$HTTP_CODE" = "200" ]; then
         case "$HTTP_BODY" in *'"error"'*) echo problem ;; *) echo ok ;; esac
       else echo problem; fi ;;
     itunes)
-      # 200 = ok; 429/403 = gedrosselt, TROTZDEM erreichbar (kein Alarm).
+      # 200 = ok; 429/403 = throttled, STILL reachable (no alarm).
       http_probe "https://itunes.apple.com/search?term=test&limit=1"
       case "$HTTP_CODE" in 200|429|403) echo ok ;; *) echo problem ;; esac ;;
     *) echo skip ;;
   esac
 }
 
-# Menschlicher Name eines externen Dienstes fuer Log-/Meldungstexte.
+# Human name of an external service for log/message texts.
 ext_label() {
   case "$1" in
     slskd)        echo "slskd" ;;
@@ -372,31 +370,31 @@ ext_label() {
   esac
 }
 
-# Kombinierter Zustand eines Containers als ein Wort:
+# Combined state of a container as one word:
 #   running-healthy | running-unhealthy | running-starting | running
 #   restarting | exited | dead | paused | missing
 state() {
   _c="$1"
-  # .State.Status (running/exited/restarting/...) + ggf. .State.Health.Status.
+  # .State.Status (running/exited/restarting/...) + optionally .State.Health.Status.
   docker inspect --format \
     '{{.State.Status}}{{if .State.Health}}-{{.State.Health.Status}}{{end}}' \
     "$_c" 2>/dev/null || echo "missing"
 }
 
-# Klassifiziert einen Zustand:
-#   ok          -> alles gut (kein Alarm)
-#   transient   -> Uebergang (created/starting/restarting) - noch KEIN Alarm,
-#                  erst wenn es anhaelt (siehe Entprellung unten)
-#   problem     -> echtes Problem (unhealthy/exited/dead/paused/missing)
+# Classifies a state:
+#   ok          -> all good (no alarm)
+#   transient   -> transition (created/starting/restarting) - NO alarm yet,
+#                  only once it persists (see debounce below)
+#   problem     -> real problem (unhealthy/exited/dead/paused/missing)
 classify() {
   case "$1" in
-    running-healthy|running) echo "ok" ;;        # running ohne Healthcheck = ok
+    running-healthy|running) echo "ok" ;;        # running without a healthcheck = ok
     running-starting|starting|created|restarting) echo "transient" ;;
     *) echo "problem" ;;
   esac
 }
 
-# Menschliche Kurzbeschreibung fuer die Meldung.
+# Human short description for the message.
 describe() {
   case "$1" in
     running-unhealthy) t watchdog.state.unhealthy ;;
@@ -409,43 +407,43 @@ describe() {
   esac
 }
 
-# --- Anti-Spam-/Anti-Flapping-Parameter -----------------------------------
-# DEBOUNCE: Problem erst melden, wenn ein nicht-ok Zustand so viele Polls am
-#   Stueck anhaelt (gegen kurze Start-/Recreate-Zucker 'created'->'running').
+# --- Anti-spam / anti-flapping parameters ----------------------------------
+# DEBOUNCE: only report a problem once a non-ok state persists for this many
+#   polls in a row (against short start/recreate hiccups 'created'->'running').
 DEBOUNCE="${WATCH_DEBOUNCE_POLLS:-2}"
-# RECOVER_POLLS: Entwarnung erst nach so vielen OK-Polls am Stueck. Flippert
-#   eine App (ok/problem/ok/...), wird dieser Zaehler staendig zurueckgesetzt
-#   -> es kommt KEINE Entwarnung und damit auch keine erneute Problem-Meldung.
+# RECOVER_POLLS: all-clear only after this many OK polls in a row. If an app
+#   flaps (ok/problem/ok/...), this counter is reset constantly -> NO all-clear
+#   and therefore no repeated problem message.
 RECOVER_POLLS="${WATCH_RECOVER_POLLS:-3}"
-# COOLDOWN: Nach einer Problem-Meldung fuer diese App mindestens so viele
-#   Sekunden KEINE weitere Problem-Meldung - egal wie oft sie in der Zeit
-#   flippert. Default 1800 = 30 min.
+# COOLDOWN: after a problem message for this app, NO further problem message for
+#   at least this many seconds - no matter how often it flaps during that time.
+#   Default 1800 = 30 min.
 COOLDOWN="${WATCH_COOLDOWN_SECONDS:-1800}"
 
-# Externe Dienste: Debounce in SEKUNDEN (Default 600 = 10 min), in Polls
-# umgerechnet (aufgerundet, mind. 1). Erst wenn ein externer Dienst so lange
-# DURCHGEHEND nicht erreichbar ist, kommt EINE Meldung - kurze transiente
-# Timeouts/einzelne Poll-Aussetzer melden so NIE sofort (kein Spam).
+# External services: debounce in SECONDS (default 600 = 10 min), converted to
+# polls (rounded up, min. 1). Only once an external service is UNREACHABLE
+# continuously for that long does ONE message come - short transient
+# timeouts/single poll dropouts thus NEVER report immediately (no spam).
 EXT_DEBOUNCE_SECONDS="${WATCH_EXTERNAL_DEBOUNCE_SECONDS:-600}"
 
 read_num() { cat "$1" 2>/dev/null || echo 0; }
 
-# Haupt-Ablauf: Start-Banner, Zustandsverzeichnis, Dauer-Schleife. Hinter dem
-# Lib-Only-Schalter (siehe Dateiende), damit das Skript im Test gesourct werden
-# kann, ohne die Schleife zu starten oder eine Streulog-Zeile / /tmp/wd zu
-# erzeugen. Die EXT_DEBOUNCE_POLLS-Arithmetik haengt an INTERVAL und bleibt hier
-# (laeuft erst beim echten Start, nicht beim Sourcen).
+# Main flow: start banner, state directory, continuous loop. Behind the
+# lib-only switch (see end of file) so the script can be sourced in tests
+# without starting the loop or producing a stray log line / /tmp/wd. The
+# EXT_DEBOUNCE_POLLS arithmetic depends on INTERVAL and stays here (only runs on
+# a real start, not when sourced).
 main_loop() {
   EXT_DEBOUNCE_POLLS=$(( (EXT_DEBOUNCE_SECONDS + INTERVAL - 1) / INTERVAL ))
   [ "$EXT_DEBOUNCE_POLLS" -lt 1 ] && EXT_DEBOUNCE_POLLS=1
 
   log "$(t watchdog.start.banner "$CONTAINERS" "$INTERVAL" "$DEBOUNCE" "$RECOVER_POLLS" "$COOLDOWN" "$EXT_DEBOUNCE_SECONDS" "$EXT_DEBOUNCE_POLLS")"
 
-  # Zustandsmaschine je Container, Merker als Dateien unter /tmp/wd:
-  #   <c>.alarm   : "1" solange ein Problem als GEMELDET gilt (bis Entwarnung)
-  #   <c>.bad     : Zaehler aufeinanderfolgender nicht-ok Polls  (fuer DEBOUNCE)
-  #   <c>.good    : Zaehler aufeinanderfolgender ok-Polls        (fuer RECOVER)
-  #   <c>.last    : Unix-Zeit der letzten Problem-Meldung        (fuer COOLDOWN)
+  # State machine per container, markers as files under /tmp/wd:
+  #   <c>.alarm   : "1" while a problem counts as REPORTED (until all-clear)
+  #   <c>.bad     : counter of consecutive non-ok polls   (for DEBOUNCE)
+  #   <c>.good    : counter of consecutive ok polls        (for RECOVER)
+  #   <c>.last    : Unix time of the last problem message  (for COOLDOWN)
   mkdir -p /tmp/wd
 
   while true; do
@@ -460,8 +458,8 @@ main_loop() {
         good="$(read_num "/tmp/wd/$c.good")"
         good=$((good + 1))
         echo "$good" > "/tmp/wd/$c.good"
-        # Entwarnung NUR, wenn ein Alarm offen ist UND die App jetzt STABIL ok
-        # ist (RECOVER_POLLS am Stueck). Flippern erreicht diese Schwelle nie.
+        # All-clear ONLY if an alarm is open AND the app is now STABLY ok
+        # (RECOVER_POLLS in a row). Flapping never reaches this threshold.
         if [ "$alarmed" = "1" ] && [ "$good" -ge "$RECOVER_POLLS" ]; then
           log "$(t watchdog.log.recovered "$c" "$cur" "$good")"
           notify "$(t watchdog.notify.recovered_title "$c")" "$(t watchdog.notify.recovered_msg "$c" "$cur")"
@@ -472,19 +470,19 @@ main_loop() {
         bad="$(read_num "/tmp/wd/$c.bad")"
         bad=$((bad + 1))
         echo "$bad" > "/tmp/wd/$c.bad"
-        # Alarm nur, wenn: lange genug schlecht (DEBOUNCE), noch kein offener
-        # Alarm, UND der Cooldown seit der letzten Meldung abgelaufen ist.
+        # Alarm only if: bad for long enough (DEBOUNCE), no open alarm yet, AND
+        # the cooldown since the last message has expired.
         if [ "$bad" -ge "$DEBOUNCE" ] && [ "$alarmed" != "1" ]; then
           last="$(read_num "/tmp/wd/$c.last")"
-          # Cooldown nur anwenden, wenn ueberhaupt schon mal gemeldet wurde
-          # (last > 0). Der ERSTE Alarm darf nie unterdrueckt werden.
+          # Only apply the cooldown if something was ever reported at all
+          # (last > 0). The FIRST alarm must never be suppressed.
           if [ "$last" -eq 0 ] || [ "$((now - last))" -ge "$COOLDOWN" ]; then
             log "$(t watchdog.log.problem "$c" "$cur" "$bad")"
             notify "$(t watchdog.notify.problem_title "$c")" "$(t watchdog.notify.problem_msg "$c" "$(describe "$cur")")"
             echo 1 > "/tmp/wd/$c.alarm"
             echo "$now" > "/tmp/wd/$c.last"
           else
-            # Im Cooldown: still vermerken, nicht melden.
+            # In cooldown: record quietly, do not report.
             log "$(t watchdog.log.problem_cooldown "$c" "$cur")"
             echo 1 > "/tmp/wd/$c.alarm"
           fi
@@ -492,15 +490,15 @@ main_loop() {
       fi
     done
 
-    # --- Externe/abhaengige Dienste ----------------------------------------
-    # Gleiche Anti-Spam-/Anti-Flapping-Maschine wie bei den Containern, aber mit
-    # EIGENEM Namespace /tmp/wd/ext-* (sonst kollidiert z.B. der Container
-    # "slskd" mit dem externen slskd-Check). Debounce = EXT_DEBOUNCE_POLLS
-    # (= WATCH_EXTERNAL_DEBOUNCE_SECONDS, Default 10 min), Erholung RECOVER_POLLS,
-    # Cooldown COOLDOWN - wiederverwendet aus dem Container-Teil.
+    # --- External/dependent services ---------------------------------------
+    # Same anti-spam / anti-flapping machine as for the containers, but with its
+    # OWN namespace /tmp/wd/ext-* (otherwise e.g. the container "slskd" would
+    # collide with the external slskd check). Debounce = EXT_DEBOUNCE_POLLS
+    # (= WATCH_EXTERNAL_DEBOUNCE_SECONDS, default 10 min), recovery RECOVER_POLLS,
+    # cooldown COOLDOWN - reused from the container part.
     for e in slskd lidarr listenbrainz deezer lastfm itunes; do
       res="$(ext_reachable "$e")"
-      [ "$res" = "skip" ] && continue   # nicht konfiguriert -> nicht ueberwachen
+      [ "$res" = "skip" ] && continue   # not configured -> do not monitor
       label="$(ext_label "$e")"
       alarmed="$(read_num "/tmp/wd/ext-$e.alarm")"
 
@@ -509,7 +507,7 @@ main_loop() {
         good="$(read_num "/tmp/wd/ext-$e.good")"
         good=$((good + 1))
         echo "$good" > "/tmp/wd/ext-$e.good"
-        # Entwarnung nur bei offenem Alarm UND stabil wieder erreichbar.
+        # All-clear only on an open alarm AND stably reachable again.
         if [ "$alarmed" = "1" ] && [ "$good" -ge "$RECOVER_POLLS" ]; then
           log "$(t watchdog.log.ext_recovered "$label" "$good")"
           notify "$(t watchdog.notify.ext_recovered_title "$label")" "$(t watchdog.notify.ext_recovered_msg "$label")"
@@ -520,8 +518,8 @@ main_loop() {
         bad="$(read_num "/tmp/wd/ext-$e.bad")"
         bad=$((bad + 1))
         echo "$bad" > "/tmp/wd/ext-$e.bad"
-        # Problem erst nach EXT_DEBOUNCE_POLLS durchgehend schlechten Polls
-        # (= 10 min), kein offener Alarm, Cooldown seit letzter Meldung abgelaufen.
+        # Problem only after EXT_DEBOUNCE_POLLS continuous bad polls (= 10 min),
+        # no open alarm, cooldown since the last message expired.
         if [ "$bad" -ge "$EXT_DEBOUNCE_POLLS" ] && [ "$alarmed" != "1" ]; then
           last="$(read_num "/tmp/wd/ext-$e.last")"
           if [ "$last" -eq 0 ] || [ "$((now - last))" -ge "$COOLDOWN" ]; then
@@ -537,15 +535,14 @@ main_loop() {
       fi
     done
 
-    # Pushover: wird mit beruecksichtigt (geprueft + ins Container-Log), aber
-    # BEWUSST NIEMALS per Pushover-Alarm gemeldet - eine Pushover-Stoerung per
-    # Pushover melden zu wollen waere zirkulaer (vom Nutzer bestaetigte
-    # Entscheidung). Daher KEINE .alarm/.bad/.good-Zustandsmaschine und KEIN
-    # notify() fuer Pushover - nur ein log()-Eintrag pro Poll bei Problemen.
-    # Der validate-Call (POST /1/users/validate.json) verbraucht KEIN Nachrichten-
-    # Budget. Nur pruefen, wenn beide Credentials gesetzt sind. POST per
-    # --post-data (NICHT als GET-Query), damit die Credentials nicht im
-    # Request-Pfad/Log landen.
+    # Pushover: is taken into account (checked + into the container log) but
+    # DELIBERATELY NEVER reported via a Pushover alarm - wanting to report a
+    # Pushover outage via Pushover would be circular (user-confirmed decision).
+    # Hence NO .alarm/.bad/.good state machine and NO notify() for Pushover -
+    # only one log() entry per poll on problems. The validate call
+    # (POST /1/users/validate.json) consumes NO message budget. Only check when
+    # both credentials are set. POST via --post-data (NOT as a GET query) so the
+    # credentials do not end up in the request path/log.
     if [ -n "$PUSHOVER_TOKEN" ] && [ -n "$PUSHOVER_USER" ]; then
       _povf="/tmp/wd/.pov.hdr.$$"
       _povout="$(wget -q -S -O - --timeout=8 \
@@ -556,7 +553,7 @@ main_loop() {
       case "$_povcode" in
         200)
           case "$_povout" in
-            *'"status":1'*) : ;;  # Credentials gültig -> alles ok, nichts loggen
+            *'"status":1'*) : ;;  # credentials valid -> all ok, log nothing
             *) log "$(t watchdog.pushover.cred_invalid)" ;;
           esac ;;
         "") log "$(t watchdog.pushover.unreachable)" ;;
@@ -568,8 +565,8 @@ main_loop() {
   done
 }
 
-# Lib-Only-Schalter: beim Sourcen fuer Tests (WATCHDOG_LIB_ONLY=1) wird die
-# Hauptschleife NICHT gestartet - nur die Funktionen/Variablen stehen bereit
-# (t(), _lookup(), LANGDIR, CHARTS_LANG). In Produktion ist der Schalter nie
-# gesetzt -> main_loop laeuft wie bisher.
+# Lib-only switch: when sourced for tests (WATCHDOG_LIB_ONLY=1) the main loop
+# is NOT started - only the functions/variables are available (t(), _lookup(),
+# LANGDIR, CHARTS_LANG). In production the switch is never set -> main_loop runs
+# as before.
 [ "${WATCHDOG_LIB_ONLY:-}" = 1 ] || main_loop

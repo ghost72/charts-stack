@@ -1,28 +1,28 @@
 """
-Pruefung, ob ein Song bereits in der Navidrome-Library liegt.
+Check whether a song already exists in the Navidrome library.
 
-Vor der slskd-Suche wird geprueft, ob der angeforderte Song schon unter
-MUSIC_DIR/<Artist>/ existiert - egal in welchem Album-Ordner und egal ob als
-Single oder Lidarr-Album-Track. So wird kein Duplikat geladen und das UI kann
-sofort "schon vorhanden" melden.
+Before the slskd search it is checked whether the requested song already
+exists under MUSIC_DIR/<Artist>/ - regardless of which album folder and
+regardless of whether it is a single or a Lidarr album track. This way no
+duplicate is downloaded and the UI can immediately report "already present".
 
-Die Logik ist bewusst identisch zu charts-import (_song_present_for_artist /
-_title_key / _extract_title_from_filename), damit beide Dienste denselben Song
-als "vorhanden" erkennen.
+The logic is deliberately identical to charts-import (_song_present_for_artist /
+_title_key / _extract_title_from_filename) so both services recognize the same
+song as "present".
 """
 
 import os
 import re
 
-# Als Audio erkannte Endungen (wie charts-import).
+# Extensions recognized as audio (like charts-import).
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".wma"}
 
-# Ungueltige Zeichen fuer Ordnernamen (wie tags._clean_component in charts-import).
+# Invalid characters for folder names (like tags._clean_component in charts-import).
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def _clean_component(value: str, fallback: str) -> str:
-    """Bereinigt einen Pfad-Bestandteil (Artist-Ordnername) - wie charts-import."""
+    """Sanitizes a path component (artist folder name) - like charts-import."""
     value = (value or "").strip()
     if not value:
         value = fallback
@@ -33,7 +33,7 @@ def _clean_component(value: str, fallback: str) -> str:
 
 
 def _title_key(title: str) -> str:
-    """Normalisierter Songtitel fuer den Vergleich (identisch zu charts-import)."""
+    """Normalized song title for the comparison (identical to charts-import)."""
     t = (title or "").lower()
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
     t = re.sub(r"\[(?:feat|ft|with)\.?[^\]]*\]", " ", t)
@@ -42,31 +42,31 @@ def _title_key(title: str) -> str:
 
 
 def _extract_title_from_filename(filename: str) -> str:
-    """Holt den Songtitel aus einem Dateinamen (identisch zu charts-import)."""
+    """Gets the song title from a file name (identical to charts-import)."""
     base = os.path.splitext(os.path.basename(filename))[0]
     base = re.sub(r"\s*\(\d+\)\s*$", "", base)   # (2), (3)
-    base = re.sub(r"_\d{6,}$", "", base)          # slskd-Suffix
+    base = re.sub(r"_\d{6,}$", "", base)          # slskd suffix
     if " - " in base:
         base = base.rsplit(" - ", 1)[-1]
-    base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # fuehrende Tracknr.
+    base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # leading track no.
     return base.strip()
 
 
 def _find_artist_dir(music_dir: str, artist: str) -> str | None:
     """
-    Findet den Kuenstler-Ordner unter music_dir - CASE-INSENSITIV. Auf ext4
-    (Linux) sind Ordnernamen case-sensitiv, d.h. 'dermot kennedy' wuerde den
-    Ordner 'Dermot Kennedy' sonst verfehlen. Wir vergleichen daher normalisiert
-    (bereinigt + lowercase), damit die Eingabe-Schreibweise egal ist.
+    Finds the artist folder under music_dir - CASE-INSENSITIVELY. On ext4
+    (Linux) folder names are case-sensitive, i.e. 'dermot kennedy' would
+    otherwise miss the folder 'Dermot Kennedy'. We therefore compare normalized
+    (sanitized + lowercase) so the input casing does not matter.
     """
     safe_artist = _clean_component(artist, "")
     if not safe_artist:
         return None
-    # 1. Schneller Weg: exakter Ordner existiert.
+    # 1. Fast path: the exact folder exists.
     exact = os.path.join(music_dir, safe_artist)
     if os.path.isdir(exact):
         return exact
-    # 2. Case-insensitiver Vergleich ueber alle Kuenstler-Ordner.
+    # 2. Case-insensitive comparison across all artist folders.
     target = safe_artist.lower()
     try:
         for name in os.listdir(music_dir):
@@ -79,15 +79,15 @@ def _find_artist_dir(music_dir: str, artist: str) -> str | None:
 
 def read_bitrate(path: str) -> int:
     """
-    Liest die Bitrate (kbps) einer Audiodatei. 0, wenn nicht lesbar.
-    Fuer den Qualitaetsvergleich vorhandene Datei vs. slskd-Treffer.
+    Reads the bitrate (kbps) of an audio file. 0 if not readable.
+    For the quality comparison existing file vs. slskd hit.
     """
     try:
         from mutagen import File as MutagenFile
         audio = MutagenFile(path)
         if audio is not None and audio.info is not None:
             br = getattr(audio.info, "bitrate", 0) or 0
-            return int(br / 1000)  # mutagen liefert bit/s -> kbps
+            return int(br / 1000)  # mutagen returns bit/s -> kbps
     except Exception:
         pass
     return 0
@@ -95,10 +95,10 @@ def read_bitrate(path: str) -> int:
 
 def find_existing(music_dir: str, artist: str, title: str) -> str | None:
     """
-    Gibt den Pfad zurueck, wenn der Song bereits unter MUSIC_DIR/<Artist>/
-    existiert (egal welches Album), sonst None. Vergleich ueber den
-    normalisierten Songtitel; der Kuenstler-Ordner wird case-insensitiv
-    gesucht, damit die Eingabe-Schreibweise keine Rolle spielt.
+    Returns the path if the song already exists under MUSIC_DIR/<Artist>/
+    (regardless of which album), otherwise None. Comparison via the normalized
+    song title; the artist folder is looked up case-insensitively so the input
+    casing does not matter.
     """
     if not music_dir or not os.path.isdir(music_dir):
         return None
@@ -126,24 +126,24 @@ def find_existing(music_dir: str, artist: str, title: str) -> str | None:
 
 def canonical_artist(music_dir: str, artist: str) -> str | None:
     """
-    Liefert die KANONISCHE Schreibweise des Kuenstlers = der echte Basename des
-    bereits vorhandenen Kuenstler-Ordners (z.B. Eingabe 'rod stewart' ->
-    'Rod Stewart'), oder None, wenn der Kuenstler noch nicht in der Library ist.
+    Returns the CANONICAL artist spelling = the real basename of the already
+    existing artist folder (e.g. input 'rod stewart' -> 'Rod Stewart'), or None
+    if the artist is not yet in the library.
 
-    Grund: Der Ordner wird case-insensitiv gefunden, aber der neue Song soll mit
-    der bereits etablierten Schreibweise getaggt/abgelegt werden statt mit der
-    (evtl. klein getippten) User-Eingabe.
+    Reason: the folder is found case-insensitively, but the new song should be
+    tagged/stored with the already established spelling rather than the
+    (possibly lowercased) user input.
     """
     if not music_dir or not os.path.isdir(music_dir):
         return None
     artist_dir = _find_artist_dir(music_dir, artist)
     if not artist_dir:
         return None
-    # WICHTIG: Den ECHTEN Ordnernamen vom Dateisystem holen, nicht den von
-    # _find_artist_dir evtl. konstruierten Pfad. Auf case-INSENSITIVEN FS
-    # (z.B. macOS/SMB) wuerde dessen Schnellpfad os.path.join(dir, eingabe)
-    # treffen und die klein getippte Eingabe zurueckgeben. Darum den Parent
-    # scannen und den real existierenden Namen case-insensitiv auswaehlen.
+    # IMPORTANT: get the REAL folder name from the filesystem, not the path
+    # possibly constructed by _find_artist_dir. On case-INSENSITIVE FS
+    # (e.g. macOS/SMB) its fast path os.path.join(dir, input) would match and
+    # return the lowercased input. So scan the parent and pick the actually
+    # existing name case-insensitively.
     want = os.path.basename(artist_dir)
     try:
         for name in os.listdir(music_dir):
@@ -157,21 +157,21 @@ def canonical_artist(music_dir: str, artist: str) -> str | None:
 
 def canonical_title_from_file(path: str) -> str:
     """
-    Holt den kanonischen Songtitel aus dem Dateinamen einer VORHANDENEN Datei
-    (fuer den Upgrade-Fall: die vorhandene Schreibweise beibehalten statt der
-    User-Eingabe). Nutzt dieselbe Extraktion wie das Vorhanden-Matching.
+    Gets the canonical song title from the file name of an EXISTING file (for
+    the upgrade case: keep the existing spelling instead of the user input).
+    Uses the same extraction as the present-check matching.
     """
     return _extract_title_from_filename(path)
 
 
 def title_case(title: str) -> str:
     """
-    Konservative Title-Case-Normalisierung fuer NEU angeforderte Songs (kein
-    vorhandener Datei-Anker): jeder durch Leerzeichen getrennte Wortteil bekommt
-    einen grossen Anfangsbuchstaben, der Rest des Wortes bleibt unveraendert
-    (so bleibt z.B. 'all for love' -> 'All For Love', aber bereits gesetzte
-    Binnengrossschreibung wie 'iTunes' wird nicht zerstoert). Bewusst simpel -
-    keine Sonderfall-Behandlung von Fuellwoertern.
+    Conservative title-case normalization for NEWLY requested songs (no
+    existing file anchor): every space-separated word part gets a capital
+    first letter, the rest of the word stays unchanged (so e.g.
+    'all for love' -> 'All For Love', but already set intra-word capitals
+    like 'iTunes' are not destroyed). Deliberately simple - no special-case
+    handling of filler words.
     """
     t = (title or "").strip()
     if not t:
