@@ -11,6 +11,7 @@ Metadata sources in this order:
 Target path scheme: Music/<Artist>/<Album>/<Track>.<ext>.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -22,6 +23,56 @@ from . import config
 from .i18n import t
 
 logger = logging.getLogger(__name__)
+
+
+# --- mtime preservation -----------------------------------------------------
+# Navidrome derives a song's "date added" from the file mtime. Any content
+# write into an existing library file (retag, cover embed, ReplayGain) rewrites
+# the file and bumps the mtime, which would wrongly surface the song as
+# "recently added". These helpers snapshot the mtime before such a write and
+# restore it afterwards. Gated by config.PRESERVE_MTIME (default on).
+
+
+def restore_mtime(path: str, times) -> None:
+    """
+    Restore (atime, mtime) onto path via os.utime. Never fatal - matches the
+    service's fail-open style (a failed restore only means the file keeps its
+    fresh mtime, the import still succeeds).
+    """
+    try:
+        os.utime(path, times)
+    except Exception:
+        # Fail-open: a failed restore only means the file keeps its fresh
+        # mtime. No new i18n string is introduced for this rare debug case.
+        pass
+
+
+@contextlib.contextmanager
+def preserve_mtime(path: str):
+    """
+    Context manager that keeps a file's (atime, mtime) stable across a content
+    write. On enter it snapshots the CURRENT (atime, mtime); on exit it restores
+    exactly that value. Deliberately a no-op when PRESERVE_MTIME is off or when
+    the file does not exist on enter.
+
+    Key semantics: it restores whatever mtime the file had WHEN THE CONTEXT WAS
+    ENTERED. A brand-new import therefore keeps its fresh download/copy mtime
+    (the just-stamped value is snapshotted and restored) - it never invents an
+    older timestamp. Only a deliberate in-place upgrade carries an OLD mtime,
+    and that is handled explicitly in importer.py, not here.
+    """
+    times = None
+    if config.PRESERVE_MTIME:
+        try:
+            st = os.stat(path)
+            times = (st.st_atime, st.st_mtime)
+        except OSError:
+            times = None  # file not present on enter -> no-op
+    try:
+        yield
+    finally:
+        if times is not None:
+            restore_mtime(path, times)
 
 # --- Provenance/encoder tags removed from chart downloads ---
 # These frames reveal the SOURCE (Soulseek uploader/release-group signatures
@@ -90,7 +141,8 @@ def strip_provenance_tags(path: str) -> bool:
                 del tags[k]
             except Exception:
                 pass
-        tags.save(path)
+        with preserve_mtime(path):
+            tags.save(path)
         return True
     except Exception as e:
         logger.warning(t("import.tags.strip_failed", path=path, error=e))
@@ -239,25 +291,30 @@ def write_tags(path: str, artist: str, title: str, album: str,
     tags stay untouched -> behavior as before (no overwriting of existing years
     with an empty value).
     """
-    try:
-        audio = MutagenFile(path, easy=True)
-        if audio is None:
-            logger.debug(t("import.tags.not_writable", path=path))
-            return
-        audio["artist"] = artist
-        audio["albumartist"] = artist
-        audio["title"] = title
-        audio["album"] = album
-        if year:
-            audio["date"] = str(year)
-            audio["originaldate"] = str(year)
-        audio.save()
-    except Exception as e:
-        logger.warning(t("import.tags.write_failed", path=path, error=e))
-    # Remove provenance/encoder frames (fre:ac comment, TENC/TSSE/TXXX ...) so
-    # no source traces land in the library. Separate, after the easy-save,
-    # because the easy mode cannot delete these frames.
-    strip_provenance_tags(path)
+    # Preserve the mtime the file had on entry (fresh copy mtime for a new
+    # import, or the original for a retouch) across both the easy-save and the
+    # internal strip_provenance_tags save, so a retag never changes "date
+    # added" in Navidrome.
+    with preserve_mtime(path):
+        try:
+            audio = MutagenFile(path, easy=True)
+            if audio is None:
+                logger.debug(t("import.tags.not_writable", path=path))
+                return
+            audio["artist"] = artist
+            audio["albumartist"] = artist
+            audio["title"] = title
+            audio["album"] = album
+            if year:
+                audio["date"] = str(year)
+                audio["originaldate"] = str(year)
+            audio.save()
+        except Exception as e:
+            logger.warning(t("import.tags.write_failed", path=path, error=e))
+        # Remove provenance/encoder frames (fre:ac comment, TENC/TSSE/TXXX ...)
+        # so no source traces land in the library. Separate, after the
+        # easy-save, because the easy mode cannot delete these frames.
+        strip_provenance_tags(path)
 
 
 def canonical_artist(music_dir: str, artist: str) -> str | None:

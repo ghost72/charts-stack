@@ -38,7 +38,7 @@ any Subsonic client works, on any platform.
 | **charts-hitparade** | Fetches the official Swiss charts (Top 100) weekly, writes `hitparade.m3u` + `missing-hitparade.txt` | Sun 20:00 |
 | **charts-flashback** | Collects the FLASHBACK FM main stream rotation (all decades mixed) and grows the library (downloads, no playlist; year tag for the decade NSPs) | 2 h |
 | **charts-download** | Reads `missing-*.txt`, searches/downloads via slskd, writes the **manifest** | 60 min |
-| **charts-import** | Imports finished downloads into the library (tags, cover, ReplayGain, optional Lidarr unmonitor) | 30 min |
+| **charts-import** | Imports finished downloads into the library (tags, cover, ReplayGain, optional Lidarr unmonitor; keeps Navidrome "date added" stable on retag/upgrade via `PRESERVE_MTIME`, default on) | 30 min |
 | **charts-digest** | Sends a daily Pushover summary of songs newly added to the library (grouped by source) | daily 09:00 |
 | **charts-recommend** | Grows the shared library from the public listening taste of several ListenBrainz users (downloads, no playlist) | 24 h |
 | **charts-upgrade** | Replaces low-bitrate songs with better versions | on-demand |
@@ -294,7 +294,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 | **charts-hitparade** | Holt wöchentlich die offizielle Schweizer Hitparade (Top-100), schreibt `hitparade.m3u` + `missing-hitparade.txt` | So 20:00 |
 | **charts-flashback** | Sammelt die Rotation vom FLASHBACK-FM-Hauptstream (alle Dekaden gemischt) und lässt die Library wachsen (Nachladen, keine Playlist; Jahr-Tag für die Dekaden-NSP) | 2 h |
 | **charts-download** | Liest `missing-*.txt`, sucht/lädt via slskd, schreibt das **Manifest** | 60 min |
-| **charts-import** | Sortiert fertige Downloads in die Library ein (Tags, Cover, ReplayGain, optional Lidarr-Unmonitor) | 30 min |
+| **charts-import** | Sortiert fertige Downloads in die Library ein (Tags, Cover, ReplayGain, optional Lidarr-Unmonitor; hält Navidromes „date added" bei Retag/Upgrade stabil über `PRESERVE_MTIME`, Default an) | 30 min |
 | **charts-digest** | Schickt täglich eine Pushover-Zusammenfassung der neu in die Library gekommenen Songs (nach Quelle gruppiert) | täglich 09:00 |
 | **charts-recommend** | Lässt die gemeinsame Library aus dem öffentlichen Hörgeschmack mehrerer ListenBrainz-User wachsen (Nachladen, keine Playlist) | 24 h |
 | **charts-upgrade** | Ersetzt Songs mit niedriger Bitrate durch bessere Versionen | on-demand |

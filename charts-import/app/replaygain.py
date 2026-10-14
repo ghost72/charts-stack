@@ -23,6 +23,7 @@ from mutagen.id3 import ID3NoHeaderError
 
 from . import config
 from .i18n import t
+from .tags import preserve_mtime
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,10 @@ def apply_track_gain(path: str, overwrite: bool = False) -> bool:
                       text=[f"{gain_db:.2f} dB"]))
         tags.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_PEAK",
                       text=[f"{peak_linear:.6f}"]))
-        tags.save(path)
+        # Preserve the file's mtime across the save so writing ReplayGain tags
+        # does not change Navidrome's "date added".
+        with preserve_mtime(path):
+            tags.save(path)
         return True
     except Exception as e:
         logger.debug(t("import.replaygain.write_failed", path=path, error=e))
