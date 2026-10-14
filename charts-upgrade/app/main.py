@@ -224,6 +224,7 @@ def _notify_summary(planned: list[dict], upgraded: list[dict],
         for s in planned[:15]:
             lines.append(t("upgrade.notify.song_entry", artist=s['artist'], title=s['title']))
             lines.append(t("upgrade.notify.reason", reason=s['reason']))
+            lines.append("")  # blank line between songs for readability
         if len(planned) > 15:
             lines.append(t("upgrade.notify.more", count=len(planned) - 15))
         notify.send(t("upgrade.notify.title_dry"), "\n".join(lines))
@@ -237,6 +238,7 @@ def _notify_summary(planned: list[dict], upgraded: list[dict],
             lines.append(t("upgrade.notify.song_entry", artist=s['artist'], title=s['title']))
             lines.append(t("upgrade.notify.reason_bitrate", reason=s['reason'],
                            bitrate=s.get('new_bitrate', '?')))
+            lines.append("")  # blank line between songs for readability
         if len(upgraded) > 15:
             lines.append(t("upgrade.notify.more", count=len(upgraded) - 15))
         notify.send(t("upgrade.notify.title_live"), "\n".join(lines))
