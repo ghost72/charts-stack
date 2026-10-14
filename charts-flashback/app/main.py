@@ -229,7 +229,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
                   channels=counters["channels"], new=counters["new"],
                   matched=counters["matched"], missing=counters["missing"],
                   suffix=suffix))
-    _notify(counters)
+    _notify(counters, missing)
     return counters, fetch_errors, transport_attempts, transport_failures
 
 
@@ -257,7 +257,7 @@ def _base_msg(counters: dict) -> str:
     return ", ".join(parts) if parts else t("flashback.status.nothing_new")
 
 
-def _notify(counters: dict) -> None:
+def _notify(counters: dict, missing: list[tuple[int, str, str, str]]) -> None:
     new = counters["new"]
     miss = counters["missing"]
     if new == 0:
@@ -267,7 +267,41 @@ def _notify(counters: dict) -> None:
         head = t("flashback.notify.new_to_load", missing=miss, new=new)
     else:
         head = t("flashback.notify.all_present", new=new)
-    notify.send(t("flashback.notify.title", service="charts-flashback"), head)
+
+    lines = [head]
+    # List the songs that will actually be downloaded (the `missing` set), the
+    # way charts-sync lists its songs - one line per song, with the resolved
+    # release year when available. flashback has no chart position, so no #pos.
+    if missing:
+        lines.append("")
+        lines.append(t("flashback.notify.to_load_header", count=len(missing)))
+        for _pos, artist, title, yr in missing:
+            if yr:
+                lines.append(t("flashback.notify.song_entry",
+                               artist=artist, title=title, year=yr))
+            else:
+                lines.append(t("flashback.notify.song_entry_no_year",
+                               artist=artist, title=title))
+
+    message = "\n".join(lines)
+    # Pushover limits a message to 1024 characters. On overflow we cut at the
+    # last complete line and append a note (same pattern as charts-sync).
+    message = _truncate_for_pushover(message)
+    notify.send(t("flashback.notify.title", service="charts-flashback"), message)
+
+
+def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
+    """Truncate the message to Pushover's 1024-character limit (at a line boundary)."""
+    if len(message) <= max_len:
+        return message
+    suffix = "\n" + t("notify.truncated")
+    budget = max_len - len(suffix)
+    cut = message[:budget]
+    # Cut at the last complete line so no song is left half-shown.
+    nl = cut.rfind("\n")
+    if nl > 0:
+        cut = cut[:nl]
+    return cut + suffix
 
 
 def _next_run_iso() -> str:
