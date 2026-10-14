@@ -261,6 +261,15 @@ REPLAYGAIN = _get_bool("REPLAYGAIN", True)
 # Default -14 (streaming level, ~+4 dB louder than the old -18 reference).
 REPLAYGAIN_TARGET_LUFS = _get_float("REPLAYGAIN_TARGET_LUFS", -14.0)
 
+# PRESERVE_MTIME=1 (default): keep a library file's mtime stable when
+# charts-import only RETOUCHES an existing file (retag, cover embed, ReplayGain
+# write) and when a song is UPGRADED in place. Navidrome derives "date added"
+# from the mtime, so without this an old song would wrongly jump to the top of
+# a "recently added" playlist after a backfill/retag. First-time imports keep
+# their fresh download mtime (correct date added). 0 = let every write bump the
+# mtime (old behavior).
+PRESERVE_MTIME = _get_bool("PRESERVE_MTIME", True)
+
 # Subfolder in DOWNLOADS_DIR into which rejected files are moved.
 REJECTED_DIR = os.environ.get(
     "REJECTED_DIR", os.path.join(DOWNLOADS_DIR, "_rejected")

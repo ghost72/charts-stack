@@ -370,6 +370,7 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
         _m = tags.manifest_lookup(src)
         want_replace = bool(_m and _m.get("replace"))
         is_upgrade = False   # becomes True when an existing file is replaced
+        upgrade_old_times = None  # (atime, mtime) of the replaced file on upgrade
 
         # Only import songs specifically requested by charts-download
         # (REQUIRE_MANIFEST). The downloads folder often contains whole sampler/
@@ -432,6 +433,17 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
                               new_q=f"{new_q:.0f}",
                               path=os.path.relpath(existing, config.MUSIC_DIR)))
                 target = existing            # write to the same location
+                # Capture the OLD file's (atime, mtime) BEFORE it is trashed, so
+                # the in-place upgrade can inherit it. An upgrade is the SAME
+                # song at a better bitrate, not a new addition - it must not
+                # jump to the top of Navidrome's "recently added". This is the
+                # one place a new file deliberately keeps an OLD mtime.
+                if config.PRESERVE_MTIME:
+                    try:
+                        _st = os.stat(existing)
+                        upgrade_old_times = (_st.st_atime, _st.st_mtime)
+                    except OSError:
+                        upgrade_old_times = None
                 _trash(existing)             # move the old version aside
                 is_upgrade = True            # skip _unique_target
                 # the new file is copied to `target` further below
@@ -503,6 +515,13 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             if unresolved_upper:
                 flagged_upper.append((artist, title))
                 logger.info(t("import.file.flagged_upper", artist=artist, title=title))
+            # On an in-place upgrade: stamp the replacement with the OLD file's
+            # mtime, LAST of all - after copy + tag/cover/ReplayGain writes - so
+            # nothing re-bumps it. The upgraded song keeps its original "date
+            # added" instead of looking freshly imported. (First-time imports
+            # have upgrade_old_times=None and keep their fresh copy mtime.)
+            if is_upgrade and upgrade_old_times is not None:
+                tags.restore_mtime(target, upgrade_old_times)
         except Exception as e:
             logger.error(t("import.file.failed", path=src, error=e))
 

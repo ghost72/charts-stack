@@ -26,6 +26,7 @@ from mutagen.id3 import ID3, APIC, error as ID3Error
 
 from . import config
 from .i18n import t
+from .tags import preserve_mtime
 
 logger = logging.getLogger(__name__)
 
@@ -419,7 +420,10 @@ def fetch_and_embed(path: str, artist: str, title: str) -> bool:
             desc="Cover",
             data=data,
         ))
-        tags.save(path)
+        # Preserve the file's mtime across the save so embedding a cover does
+        # not change Navidrome's "date added".
+        with preserve_mtime(path):
+            tags.save(path)
         return True
     except Exception as e:
         logger.warning(t("import.cover.embed_failed", path=path, error=e))
