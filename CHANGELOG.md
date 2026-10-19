@@ -10,6 +10,48 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.2.0] - 2026-10-19
+
+Reliability and usability pass: fair download scheduling so hard-to-find
+sources can no longer starve the findable chart songs, a file-mtime guard so
+retagging no longer disturbs Navidrome's "date added", richer notifications,
+and a Navidrome setup example in the README.
+
+### Added
+- **Per-source download fairness budget.** charts-download now interleaves the
+  missing sources round-robin and caps searches per source (`MAX_PER_SOURCE`,
+  default 10) within a larger combined `MAX_PER_RUN` (default raised to 40). A
+  long, hard-to-find source (e.g. the 100+ Mundart titles Soulseek rarely has)
+  can no longer fill every slot and permanently starve the findable chart
+  songs - every source now gets a turn each run.
+- **File-mtime preservation in charts-import** (`PRESERVE_MTIME`, default on).
+  Writing tags / embedding covers / applying ReplayGain to an existing library
+  file no longer bumps its filesystem mtime, so old songs stop wrongly
+  surfacing as "recently added" in Navidrome smart playlists; an upgraded file
+  inherits the replaced file's original date.
+- **charts-flashback notification lists the songs** - both the to-download set
+  and the already-in-library set - instead of only a count.
+- **Navidrome setup example** in the README (a ready `compose.yml` mounting the
+  same Music + Charts folders and running as the same uid/gid), plus a list of
+  free/paid Subsonic client apps for iPhone and Android.
+- Dashboard screenshots in the README.
+
+### Changed
+- **Dashboard source finder tables are sortable** - default descending by the
+  numeric column (Tracks/Fans), click a header to sort/toggle; the Last.fm tag
+  check shows the real total instead of a misleading probe count and previews
+  up to 10 example tracks.
+
+### Fixed
+- **Dashboard service tiles can be expanded by tap on wide touch screens
+  (iPad).** They previously only reacted to a mouse-drag handler, leaving
+  touch-on-wide-screen with no way to open a tile.
+- **charts-watchdog no longer false-alarms on rebuilds** - a container briefly
+  in a transient state (`created`/`starting`) during `docker compose up -d
+  --build` no longer triggers a "Problem" alert; the state word is translated.
+- Finder "Tracks" column widened so the sort-direction arrow is not clipped.
+- charts-upgrade notification: a blank line between songs for readability.
+
 ## [1.1.0] - 2026-10-12
 
 Follow-up release: a sortable source finder, honest Last.fm counts, a watchdog
@@ -103,5 +145,6 @@ and a watchdog.
 - Three watchdog debounce/recover/cooldown variables are now actually passed
   through to the container.
 
+[1.2.0]: https://keepachangelog.com/
 [1.1.0]: https://keepachangelog.com/
 [1.0.0]: https://keepachangelog.com/
