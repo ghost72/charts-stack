@@ -35,3 +35,26 @@ Never push to `github` before the user has given the go-ahead from the live
 NAS test. The agent may still commit locally and may push to `origin` only if
 the user explicitly asks; the GitHub push always waits for the user's
 post-deploy confirmation.
+
+### "Tested" means a few days of real operation, not a quick check
+
+A single successful run or a glance at a state file is NOT enough to call a
+change tested. Several services run on scheduled loops (charts-download hourly,
+charts-sync 12 h, charts-flashback 2 h, the Sunday hitparade run, backfills),
+and some bugs only surface after a full cycle under load — e.g. the 1.2.0
+`charts-download` change looked fine in a short check (songs appeared in the
+state file) but actually spun in an infinite loop that only became visible once
+a run had been going for a while. That broken version reached GitHub as "latest"
+and needed an emergency 1.2.1.
+
+Therefore:
+
+- Let a change run on the NAS through **at least one full real cycle of every
+  service it touches** (ideally a couple of days of normal operation), not just
+  one manual trigger.
+- For `charts-download`/`charts-upgrade` changes, confirm a scheduled run
+  actually completes (reaches "Lauf fertig"), CPU returns to idle, and songs are
+  enqueued — do not infer success from the state file alone.
+- The agent must not report a change as "live tested ✓" or push to GitHub on the
+  strength of a quick look. GitHub only ever gets changes that have survived
+  real, multi-run operation and the user's explicit go-ahead.
