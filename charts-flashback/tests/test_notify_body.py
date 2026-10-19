@@ -96,3 +96,25 @@ def test_notify_truncates_large_batch(captured, de_lang):
     assert len(msg) <= 1024
     # The shared truncation note is appended.
     assert "gekürzt" in msg
+
+
+def test_notify_lists_present_songs(captured, de_lang):
+    """When newly-seen songs are already in the library, _notify lists them
+    under the 'already in the library' header (in addition to the summary),
+    using the same '<artist> - <title> (<year>)' per-song format."""
+    counters = {"channels": 1, "new": 2, "matched": 2, "missing": 0}
+    present = [
+        ("Queen", "Don't Stop Me Now", "1978"),
+        ("ABBA", "Lay All Your Love On Me", ""),
+    ]
+    main._notify(counters, [], present)
+
+    msg = captured["message"]
+    # The "already in the library" list header is present.
+    assert "bereits in der Library:" in msg
+    # Per-song lines: with year, and without empty parentheses when no year.
+    assert "Queen - Don't Stop Me Now (1978)" in msg
+    assert "ABBA - Lay All Your Love On Me" in msg
+    assert "ABBA - Lay All Your Love On Me ()" not in msg
+    # Nothing to download in this case.
+    assert "zum Nachladen:" not in msg
