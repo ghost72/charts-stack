@@ -300,6 +300,7 @@
   "flashback.notify.new_to_load": "<b>{missing}</b> new songs to load from the FLASHBACK rotation (out of <b>{new}</b> newly seen).",
   "flashback.notify.all_present": "All <b>{new}</b> newly seen FLASHBACK songs are already in the library.",
   "flashback.notify.to_load_header": "<b>📻 {count} to download:</b>",
+  "flashback.notify.present_header": "<b>✅ {count} already in the library:</b>",
   "flashback.notify.song_entry": "{artist} - {title} ({year})",
   "flashback.notify.song_entry_no_year": "{artist} - {title}",
   "flashback.notify.title": "📻 {service}",

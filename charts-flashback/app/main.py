@@ -165,6 +165,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
     seen_state: dict = state["seen"]
     seen_run: set[str] = set()           # within this run (first channel wins)
     missing: list[tuple[int, str, str, str]] = []
+    present: list[tuple[str, str, str]] = []  # already in library (artist,title,year)
     channels_with_data = 0
     new_count = 0
     matched_count = 0
@@ -208,6 +209,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
                 track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
                 if track:
                     matched_count += 1
+                    present.append((artist, title, yr))
                 else:
                     pos += 1
                     missing.append((pos, artist, title, yr))
@@ -229,7 +231,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
                   channels=counters["channels"], new=counters["new"],
                   matched=counters["matched"], missing=counters["missing"],
                   suffix=suffix))
-    _notify(counters, missing)
+    _notify(counters, missing, present)
     return counters, fetch_errors, transport_attempts, transport_failures
 
 
@@ -257,7 +259,16 @@ def _base_msg(counters: dict) -> str:
     return ", ".join(parts) if parts else t("flashback.status.nothing_new")
 
 
-def _notify(counters: dict, missing: list[tuple[int, str, str, str]]) -> None:
+def _song_line(artist: str, title: str, yr: str) -> str:
+    """One song line, with the resolved year when available (no chart #pos)."""
+    if yr:
+        return t("flashback.notify.song_entry", artist=artist, title=title, year=yr)
+    return t("flashback.notify.song_entry_no_year", artist=artist, title=title)
+
+
+def _notify(counters: dict, missing: list[tuple[int, str, str, str]],
+            present: list[tuple[str, str, str]] | None = None) -> None:
+    present = present or []
     new = counters["new"]
     miss = counters["missing"]
     if new == 0:
@@ -276,12 +287,16 @@ def _notify(counters: dict, missing: list[tuple[int, str, str, str]]) -> None:
         lines.append("")
         lines.append(t("flashback.notify.to_load_header", count=len(missing)))
         for _pos, artist, title, yr in missing:
-            if yr:
-                lines.append(t("flashback.notify.song_entry",
-                               artist=artist, title=title, year=yr))
-            else:
-                lines.append(t("flashback.notify.song_entry_no_year",
-                               artist=artist, title=title))
+            lines.append(_song_line(artist, title, yr))
+
+    # Also list the newly-seen songs that were ALREADY in the library, so the
+    # message is informative even when nothing needs downloading (the user asked
+    # to see which songs are already present, not just a count).
+    if present:
+        lines.append("")
+        lines.append(t("flashback.notify.present_header", count=len(present)))
+        for artist, title, yr in present:
+            lines.append(_song_line(artist, title, yr))
 
     message = "\n".join(lines)
     # Pushover limits a message to 1024 characters. On overflow we cut at the
