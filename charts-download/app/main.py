@@ -60,13 +60,14 @@ def _interleave_by_source(entries: list[tuple[int, str, str, str]]
             buckets[src] = []
             order.append(src)
         buckets[src].append(e)
+    if not order:
+        return entries
     interleaved: list[tuple[int, str, str, str]] = []
-    idx = 0
-    while any(buckets[s] for s in order):
+    max_len = max(len(buckets[s]) for s in order)
+    for idx in range(max_len):
         for s in order:
             if idx < len(buckets[s]):
                 interleaved.append(buckets[s][idx])
-        idx += 1
     return interleaved
 
 
