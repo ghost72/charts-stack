@@ -383,7 +383,8 @@ am Ende `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 | `EXCLUDE_ARTISTS`   | *(leer)* | Global auszuschließende Künstler (kommagetrennt). Songs dieser Künstler werden **nie** geladen – egal aus welcher Chart-Quelle. Ergänzung zum playlist-spezifischen `exclude_artists` in charts-sync. Siehe [Künstler global ausschließen](#künstler-global-ausschließen). |
 | `REJECT_COMPILATIONS` | `0` | `1` = Compilation-/Sampler-Treffer **komplett ablehnen** (Song bleibt „missing", bis eine echte Single/Album-Version auftaucht). `0` = Compilation laden, wenn es nichts Besseres gibt. Siehe [Auswahl-Logik](#auswahl-logik-der-downloads). |
 | `REQUIRE_FREE_SLOT` | `1` | Nur Anbieter mit freiem Upload-Slot. |
-| `MAX_PER_RUN`       | `10` | Max. Songs pro Lauf. |
+| `MAX_PER_RUN`       | `40` | Max. Songs pro Lauf über ALLE Quellen (harte Gesamtgrenze). |
+| `MAX_PER_SOURCE`    | `10` | Max. Songs pro Quelle (Playlist/missing-Datei) pro Lauf. Fairness-Grenze, damit eine lange, schwer findbare Quelle (z. B. Mundart) nicht alle Slots belegt und die findbaren Chart-Songs aushungert. Quellen kommen abwechselnd dran (Round-Robin). `0` = aus (eine kombinierte `MAX_PER_RUN`-Liste). |
 | `DRY_RUN`           | `1` | `1` = nur testen (nichts laden), `0` = wirklich laden. |
 | `SEARCH_TIMEOUT_MS` | `15000` | Timeout einer slskd-Suche. |
 | `SEARCH_WAIT_SECONDS`| `25` | Max. Wartezeit auf Suchabschluss. |

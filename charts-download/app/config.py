@@ -88,9 +88,21 @@ EXCLUDE_ARTISTS = [
 REJECT_COMPILATIONS = _get_bool("REJECT_COMPILATIONS", False)
 
 # --- Volume control / safety ---
-# How many songs are downloaded (or, in dry-run, planned) at most per run.
+# How many songs are downloaded (or, in dry-run, planned) at most per run,
+# ACROSS ALL sources combined (hard cap on total searches per run).
 # Deliberately conservative so things do not all kick off at once.
-MAX_PER_RUN = _get_int("MAX_PER_RUN", 10)
+MAX_PER_RUN = _get_int("MAX_PER_RUN", 40)
+
+# How many songs are searched per SOURCE (playlist / missing file) per run.
+# Fairness cap: without it a long, hard-to-find source (e.g. the Mundart list
+# with 100+ exotic Swiss-dialect titles Soulseek rarely has) fills every one of
+# the MAX_PER_RUN slots and permanently starves the easily-findable chart
+# songs. With a per-source budget each source gets its own quota, so chart
+# songs are always attempted even when another source has a huge backlog.
+# Applied round-robin across sources until each hits its budget or the global
+# MAX_PER_RUN cap is reached.
+# 0 = no per-source limit (old behavior: a single combined MAX_PER_RUN list).
+MAX_PER_SOURCE = _get_int("MAX_PER_SOURCE", 10)
 
 # DRY_RUN=1: NOTHING is downloaded. It only logs/notifies what WOULD be loaded
 #   (to check the matching quality). DEFAULT.

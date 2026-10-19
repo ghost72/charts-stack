@@ -32,6 +32,44 @@ logging.basicConfig(
 logger = logging.getLogger("charts-download")
 
 
+def _interleave_by_source(entries: list[tuple[int, str, str, str]]
+                          ) -> list[tuple[int, str, str, str]]:
+    """
+    Reorders the merged missing list so the sources take turns (round-robin)
+    instead of one long source monopolizing the front of the list.
+
+    Background: load_all() returns every source merged and sorted by chart
+    position only, so a long source (e.g. Mundart with 100+ entries) sits in
+    front and consumes all MAX_PER_RUN slots, starving the chart songs. By
+    interleaving - source A #1, source B #1, source C #1, source A #2, ... -
+    every source gets a fair turn. Combined with MAX_PER_SOURCE (applied in the
+    run loop) this guarantees each source is attempted every run.
+
+    Within a source the original (position-sorted) order is preserved. If
+    MAX_PER_SOURCE is 0 (disabled) the original order is returned unchanged.
+    """
+    if config.MAX_PER_SOURCE <= 0:
+        return entries
+    # Preserve first-seen source order (load_all keeps sources in path order
+    # after the position sort is stable per source).
+    buckets: dict[str, list[tuple[int, str, str, str]]] = {}
+    order: list[str] = []
+    for e in entries:
+        src = e[3]
+        if src not in buckets:
+            buckets[src] = []
+            order.append(src)
+        buckets[src].append(e)
+    interleaved: list[tuple[int, str, str, str]] = []
+    idx = 0
+    while any(buckets[s] for s in order):
+        for s in order:
+            if idx < len(buckets[s]):
+                interleaved.append(buckets[s][idx])
+        idx += 1
+    return interleaved
+
+
 def run_once() -> dict:
     """
     Runs a single search/download pass.
@@ -43,6 +81,10 @@ def run_once() -> dict:
     if not entries:
         logger.info(t("download.run.no_missing"))
         return {"enqueued": 0, "retried": 0, "missing": 0}
+
+    # Fairness: interleave the sources so a long/hard source (Mundart) cannot
+    # monopolize the MAX_PER_RUN slots and starve the findable chart songs.
+    entries = _interleave_by_source(entries)
 
     try:
         client = slsk.connect()
@@ -74,6 +116,7 @@ def run_once() -> dict:
     failed_this_run: list[tuple[str, str]] = []
 
     skipped_cooldown = 0
+    per_source_done: dict[str, int] = {}  # how many searched per source this run
     for pos, artist, title, source in entries:
         if processed >= config.MAX_PER_RUN:
             logger.info(t("download.run.max_per_run", max=config.MAX_PER_RUN))
@@ -81,6 +124,13 @@ def run_once() -> dict:
 
         if state.already_requested(st, artist, title):
             logger.debug(t("download.song.already_requested", artist=artist, title=title))
+            continue
+
+        # Per-source fairness cap: once a source hit its MAX_PER_SOURCE budget
+        # for this run, skip the rest of that source (they are retried next
+        # run) so other sources are not starved. Does not consume a global slot.
+        if config.MAX_PER_SOURCE > 0 \
+                and per_source_done.get(source, 0) >= config.MAX_PER_SOURCE:
             continue
 
         # Recently searched without success? Then skip WITHOUT consuming one of
@@ -92,6 +142,7 @@ def run_once() -> dict:
             continue
 
         processed += 1
+        per_source_done[source] = per_source_done.get(source, 0) + 1
         logger.info(t("download.song.searching", pos=pos, source=source,
                       artist=artist, title=title))
 
