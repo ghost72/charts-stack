@@ -320,6 +320,22 @@ function enableDrag() {
       return;
     }
 
+    // --- Touch on a WIDE screen (iPad, touch laptop): tap to expand, no drag.
+    // The pointerdown drag handler below only runs for a mouse (it returns for
+    // touch/pen), so a wide-screen touch device would otherwise have NO way to
+    // expand a tile. Add a plain tap/click handler for it. Mouse clicks are
+    // handled by the drag logic's "no movement = click" path, so this only
+    // needs to cover non-mouse input.
+    if (tiles.length) {
+      cell.addEventListener("click", (e) => {
+        if (e.target.closest("a, button")) return;
+        // Skip when it was a real mouse interaction (the drag path handles that
+        // and toggles itself); only act on touch/pen taps here.
+        if (e.pointerType === "mouse") return;
+        cell._toggleTile(e.target);
+      });
+    }
+
     // --- Desktop: Drag + Klick-Aufklappen ---------------------------------
     cell.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;        // nur primaere Taste
