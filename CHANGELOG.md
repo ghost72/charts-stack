@@ -10,6 +10,24 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.2.1] - 2026-10-19
+
+Patch release fixing a critical regression in 1.2.0.
+
+### Fixed
+- **Critical: charts-download spun in an infinite loop and never searched.**
+  The per-source fairness interleave introduced in 1.2.0 used a loop condition
+  that never terminated (the source buckets were never drained), so every run
+  pinned the CPU at 100% right after loading the missing list and never reached
+  the search phase - no songs were downloaded at all. Replaced with a bounded
+  loop. Anyone on 1.2.0 should upgrade.
+- **Dashboard service tiles now expand by tap on iPad / wide touch screens.**
+  The 1.1.0 touch handler relied on a `click` event that iOS Safari does not
+  reliably fire on a plain element; it now uses pointer events with a tap/scroll
+  threshold.
+- charts-flashback notification also lists the songs that are already in the
+  library (not just a count).
+
 ## [1.2.0] - 2026-10-19
 
 Reliability and usability pass: fair download scheduling so hard-to-find
@@ -145,6 +163,7 @@ and a watchdog.
 - Three watchdog debounce/recover/cooldown variables are now actually passed
   through to the container.
 
+[1.2.1]: https://keepachangelog.com/
 [1.2.0]: https://keepachangelog.com/
 [1.1.0]: https://keepachangelog.com/
 [1.0.0]: https://keepachangelog.com/
