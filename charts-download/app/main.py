@@ -32,8 +32,8 @@ logging.basicConfig(
 logger = logging.getLogger("charts-download")
 
 
-def _interleave_by_source(entries: list[tuple[int, str, str, str]]
-                          ) -> list[tuple[int, str, str, str]]:
+def _interleave_by_source(entries: list[tuple[int, str, str, list[str]]]
+                          ) -> list[tuple[int, str, str, list[str]]]:
     """
     Reorders the merged missing list so the sources take turns (round-robin)
     instead of one long source monopolizing the front of the list.
@@ -51,18 +51,19 @@ def _interleave_by_source(entries: list[tuple[int, str, str, str]]
     if config.MAX_PER_SOURCE <= 0:
         return entries
     # Preserve first-seen source order (load_all keeps sources in path order
-    # after the position sort is stable per source).
-    buckets: dict[str, list[tuple[int, str, str, str]]] = {}
+    # after the position sort is stable per source). Bucket by the PRIMARY
+    # source (e[3][0]) so fairness is unchanged by the multi-source labels.
+    buckets: dict[str, list[tuple[int, str, str, list[str]]]] = {}
     order: list[str] = []
     for e in entries:
-        src = e[3]
+        src = e[3][0]
         if src not in buckets:
             buckets[src] = []
             order.append(src)
         buckets[src].append(e)
     if not order:
         return entries
-    interleaved: list[tuple[int, str, str, str]] = []
+    interleaved: list[tuple[int, str, str, list[str]]] = []
     max_len = max(len(buckets[s]) for s in order)
     for idx in range(max_len):
         for s in order:
@@ -118,7 +119,12 @@ def run_once() -> dict:
 
     skipped_cooldown = 0
     per_source_done: dict[str, int] = {}  # how many searched per source this run
-    for pos, artist, title, source in entries:
+    for pos, artist, title, sources in entries:
+        # Primary source drives fairness/logging; the full list is used only for
+        # the manifest + message label (so every contributing playlist shows up).
+        source = sources[0]
+        # Combined label for the Pushover messages, e.g. "charts, hitparade".
+        label = ", ".join(sources)
         if processed >= config.MAX_PER_RUN:
             logger.info(t("download.run.max_per_run", max=config.MAX_PER_RUN))
             break
@@ -185,7 +191,7 @@ def run_once() -> dict:
             logger.info(t("download.song.dry_run_would_load",
                           filename=best_file.get("filename", "?"), bitrate=bitrate,
                           score=best_score, user=best_user))
-            planned.append((source, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
+            planned.append((label, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
             # In dry-run do NOT mark it as requested, so it is considered again
             # on the real run.
             continue
@@ -208,8 +214,8 @@ def run_once() -> dict:
             state.clear_failed(st, artist, title)  # successful hit -> drop cooldown
             # Store clean chart metadata for charts-import so the file is tagged
             # and filed correctly (not "Unknown Album").
-            manifest.record(fname, artist, title, source)
-            enqueued.append((source, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
+            manifest.record(fname, artist, title, sources)
+            enqueued.append((label, f"#{pos} {artist} - {title} ({bitrate}kbps)"))
         else:
             logger.warning(t("download.song.no_provider_delivered",
                              artist=artist, title=title))

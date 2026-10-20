@@ -15,14 +15,18 @@ Format:
 {
   "entries": {
     "golden.mp3": {"artist": "HUNTR/X", "title": "Golden", "album": "Golden",
-                   "source": "charts"},
+                   "sources": ["charts", "hitparade"], "source": "charts"},
     ...
   }
 }
 
-"source" is the playlist label (from the missing file, e.g. "charts",
-"mundart", "80er-90er"), so charts-import can show the origin in its import
-message. Optional - older entries without "source" are fine.
+"sources" is the list of playlist labels (from the missing files, e.g.
+"charts", "mundart", "80er-90er", "hitparade") a song belongs to, so
+charts-import can show EVERY origin in its import message. The first entry is
+the primary source. For backward compatibility a single "source" string (the
+primary label) is ALSO written, and readers must handle both shapes: prefer
+"sources" (list) when present, else fall back to the single "source" string.
+Older entries with only "source" (or neither) are fine.
 """
 
 import json
@@ -63,22 +67,42 @@ def _basename_key(filename: str) -> str:
     return base.lower()
 
 
-def record(filename: str, artist: str, title: str, source: str = "") -> None:
+def record(filename: str, artist: str, title: str, sources=None) -> None:
     """
     Record the clean chart metadata for the downloaded file. Album is set to
     the title (chart songs are singles) so charts-import does not fall back to
     "Unknown Album".
 
-    source = playlist label (e.g. "charts", "mundart", "flashback") so
-    charts-import can show the origin in its import message.
+    sources = playlist label(s) (e.g. "charts", "mundart", "flashback") a song
+    belongs to, so charts-import can show EVERY origin in its import message.
+    Accepts a list[str] (preferred) or a single string (wrapped) or None.
+
+    Written on disk as "sources" (JSON array) AND, for backward compatibility
+    with any reader that only knows the old single-string field, as "source"
+    (the first / primary label). Both are omitted when no label is given.
     """
+    if sources is None:
+        sources = []
+    elif isinstance(sources, str):
+        sources = [sources] if sources else []
+    else:
+        # Deduplicate while keeping first-seen order; drop empty labels.
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for s in sources:
+            if s and s not in seen:
+                seen.add(s)
+                cleaned.append(s)
+        sources = cleaned
+
     data = _load(config.MANIFEST_FILE)
     entry = {
         "artist": artist,
         "title": title,
         "album": title,
     }
-    if source:
-        entry["source"] = source
+    if sources:
+        entry["sources"] = list(sources)
+        entry["source"] = sources[0]  # primary label, backward-compat
     data["entries"][_basename_key(filename)] = entry
     _save(config.MANIFEST_FILE, data)
