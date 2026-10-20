@@ -73,21 +73,27 @@ def parse_missing_file(path: str) -> list[tuple[int, str, str]]:
     return entries
 
 
-def load_all(paths: list[str]) -> list[tuple[int, str, str, str]]:
+def load_all(paths: list[str]) -> list[tuple[int, str, str, list[str]]]:
     """
     Reads multiple missing files and merges them (deduplicated by normalized
     "artist|title" so a song in two charts is loaded only once). Order:
     ascending by chart position.
 
-    Returns (position, artist, title, source). "source" is the playlist label
-    derived from the file name (see source_label). If a song appears in several
-    lists, the first occurrence wins (in order of paths); its label is used.
+    Returns (position, artist, title, sources). "sources" is the list of
+    playlist labels (see source_label) a song belongs to. If a song appears in
+    several lists, its label from each file is collected (in order of paths,
+    deduplicated); the FIRST label (index 0) is the primary source (the first
+    file the song appeared in) and keeps driving per-source fairness/logging in
+    main.py. The other services (manifest, Pushover messages) use the full list
+    so every contributing playlist is shown.
     """
     from . import config
     from .matching import is_excluded_artist, normalize
 
-    seen: set[str] = set()
-    result: list[tuple[int, str, str, str]] = []
+    # Map normalized "artist|title" -> index into result, so a later file can
+    # APPEND its label to the existing entry instead of dropping the song.
+    seen: dict[str, int] = {}
+    result: list[tuple[int, str, str, list[str]]] = []
     excluded_count = 0
     for path in paths:
         label = source_label(path)
@@ -100,9 +106,14 @@ def load_all(paths: list[str]) -> list[tuple[int, str, str, str]]:
                 continue
             key = f"{normalize(artist)}|{normalize(title)}"
             if key in seen:
+                # Song already seen in an earlier file: add this file's label
+                # (if new) to its source list, keeping first-seen order.
+                sources = result[seen[key]][3]
+                if label not in sources:
+                    sources.append(label)
                 continue
-            seen.add(key)
-            result.append((pos, artist, title, label))
+            seen[key] = len(result)
+            result.append((pos, artist, title, [label]))
 
     result.sort(key=lambda e: e[0])
     if excluded_count:

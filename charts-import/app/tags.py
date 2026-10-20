@@ -199,6 +199,23 @@ def manifest_lookup(path: str) -> dict | None:
     """Public access to a file's manifest entry (or None)."""
     return _manifest_lookup(path)
 
+
+def manifest_sources(entry: dict | None) -> list[str]:
+    """
+    Reads the playlist label(s) a song belongs to from its manifest entry.
+
+    Backward compatible: prefers the new "sources" list (written by newer
+    charts-download), falls back to the single "source" string for old entries,
+    and returns [] when neither is present. Empty/blank labels are dropped.
+    """
+    if not entry:
+        return []
+    raw = entry.get("sources")
+    if isinstance(raw, list) and raw:
+        return [s for s in raw if s]
+    single = entry.get("source")
+    return [single] if single else []
+
 # Characters that cause problems in file/folder names on most file systems.
 # They are replaced with underscores.
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
