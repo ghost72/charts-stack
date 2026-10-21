@@ -61,6 +61,21 @@ RESYNC_SIGNAL = os.environ.get(
     "RESYNC_SIGNAL", os.path.join(DOWNLOADS_DIR, ".resync-requested")
 )
 
+# Dedicated signal file dropped when a HITPARADE-relevant song is imported, so
+# charts-hitparade re-renders hitparade.m3u promptly instead of only on the next
+# Sunday run. Based on DOWNLOADS_DIR (charts-import has no CHARTS_DIR) so it
+# resolves to the SAME host file as charts-hitparade's CHARTS_DIR-based
+# HITPARADE_RESYNC_SIGNAL. Separate from RESYNC_SIGNAL so each consumer owns and
+# clears its own file (no clear-race).
+HITPARADE_RESYNC_SIGNAL = os.environ.get(
+    "HITPARADE_RESYNC_SIGNAL",
+    os.path.join(DOWNLOADS_DIR, ".hitparade-resync-requested"),
+)
+# Source label whose MEMBERSHIP in a "+"-joined source string (e.g.
+# "charts+hitparade") marks an import as hitparade-relevant. Tested per part,
+# never as a whole-string/substring compare.
+HITPARADE_SOURCE_LABEL = os.environ.get("HITPARADE_SOURCE_LABEL", "hitparade")
+
 # charts-download state: read to release rejected songs (gatekeeper) so
 # charts-download loads them again (and ideally better). Sits in the same
 # shared charts folder. Set empty to disable the release.

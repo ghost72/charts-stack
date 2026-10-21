@@ -58,6 +58,11 @@ def run_once() -> dict:
         _notify_manual_available(imported)
         _unmonitor_in_lidarr(imported)
         _request_resync()
+        # Additionally signal charts-hitparade only when a hitparade-relevant
+        # song landed, so the expensive hitparade library rescan is not run for
+        # imports that cannot change hitparade.m3u.
+        if any(_is_hitparade_source(src) for _t, src, *_rest in imported):
+            _request_hitparade_resync()
 
     if rejected:
         _notify_rejected(rejected)
@@ -114,6 +119,32 @@ def _request_resync() -> None:
         logger.info(t("import.resync.set"))
     except OSError as e:
         logger.warning(t("import.resync.failed", error=e))
+
+
+def _is_hitparade_source(source: str) -> bool:
+    """True if the "+"-joined source label contains the hitparade label.
+
+    A song can carry a combined label (e.g. "charts+hitparade"), so this tests
+    MEMBERSHIP of HITPARADE_SOURCE_LABEL in the "+"-split parts, never a
+    whole-string or substring compare.
+    """
+    return config.HITPARADE_SOURCE_LABEL in [
+        p.strip() for p in (source or "").split("+") if p.strip()
+    ]
+
+
+def _request_hitparade_resync() -> None:
+    """
+    Creates the dedicated hitparade signal file so charts-hitparade re-renders
+    hitparade.m3u promptly (instead of only on the next Sunday run). Copy of
+    _request_resync for the separate hitparade signal.
+    """
+    try:
+        with open(config.HITPARADE_RESYNC_SIGNAL, "w", encoding="utf-8") as fh:
+            fh.write("resync")
+        logger.info(t("import.hitparade_resync.set"))
+    except OSError as e:
+        logger.warning(t("import.hitparade_resync.failed", error=e))
 
 
 def _normalize(text: str) -> str:

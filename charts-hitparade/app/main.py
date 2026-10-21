@@ -20,10 +20,11 @@ Position in the chain (like charts-sync):
 """
 
 import logging
+import os
 import time
 from datetime import date, datetime
 
-from . import config, hitparade, library, notify, playlist, status
+from . import chart_cache, config, hitparade, library, notify, playlist, status
 from .i18n import t
 
 logging.basicConfig(
@@ -62,6 +63,10 @@ def run_once() -> dict:
     results = []
     errors = []        # real scraper errors (0 songs) -> red
     unavailable = []   # hitparade.ch temporarily down (5xx) -> yellow/idle
+    # Parsed chart lists of THIS run, for the resync cache. Only charts that
+    # fetched successfully are collected; failed ones are skipped so a bad run
+    # cannot wipe a previously good cache (see the load+merge+save below).
+    parsed: dict[str, list] = {}
 
     for chart in config.HITPARADE_CHARTS:
         meta = config.CHART_META.get(chart)
@@ -90,6 +95,9 @@ def run_once() -> dict:
         matched, missing = _match_all(lib, songs)
         playlist.write_playlist(matched, meta["playlist"], meta["title"])
         playlist.write_missing(missing, meta["missing"])
+        # Cache the raw parsed chart list (NOT the matched tuples) so the resync
+        # trigger can re-match it against a fresh library scan without fetching.
+        parsed[chart] = songs
 
         logger.info(t("hitparade.run.chart_done", chart=chart, songs=len(songs),
                       matched=len(matched), missing=len(missing)))
@@ -102,6 +110,19 @@ def run_once() -> dict:
                         # Pass through the full missing list (pos, artist,
                         # title) for the Pushover listing (like charts-sync).
                         "missing_songs": missing})
+
+    # Update the resync chart cache. Merge onto the previous cache so a chart
+    # that failed to fetch this run keeps its last good entry (full-file atomic
+    # save would otherwise drop it). Skip entirely when nothing fetched.
+    if parsed:
+        try:
+            merged = chart_cache.load()
+            merged.update(parsed)
+            chart_cache.save(merged)
+        except OSError as e:
+            # Non-fatal: the playlist is already written; only the trigger
+            # optimisation is lost until the next successful run.
+            logger.warning(t("hitparade.chart_cache.write_failed", error=e))
 
     _notify(results)
 
@@ -128,6 +149,41 @@ def run_once() -> dict:
         "missing": total_missing,
         "_error_note": "; ".join(errors) if errors else "",
     }
+
+
+def run_resync() -> dict:
+    """
+    Re-match the CACHED chart against a fresh library scan and re-render the
+    playlists. No network fetch (the chart list is reused from the last
+    scheduled run). Returns the same counter shape as run_once().
+
+    Silent by design: it does NOT send Pushover (the trigger can fire up to
+    hourly; the weekly run keeps the push summary). The no-cache path returns
+    all-zero counters.
+    """
+    logger.info(t("hitparade.resync.requested"))
+    cached = chart_cache.load()
+    if not cached:
+        logger.info(t("hitparade.resync.no_cache"))
+        return {"charts": 0, "songs": 0, "matched": 0, "missing": 0}
+
+    lib = library.build_index(config.MUSIC_DIR)
+    charts = songs_total = matched_total = missing_total = 0
+    for chart, songs in cached.items():          # stored (chart-position) order
+        meta = config.CHART_META.get(chart)
+        if not meta:
+            continue
+        matched, missing = _match_all(lib, songs)
+        playlist.write_playlist(matched, meta["playlist"], meta["title"])
+        playlist.write_missing(missing, meta["missing"])
+        charts += 1
+        songs_total += len(songs)
+        matched_total += len(matched)
+        missing_total += len(missing)
+    logger.info(t("hitparade.resync.done",
+                  matched=matched_total, missing=missing_total))
+    return {"charts": charts, "songs": songs_total,
+            "matched": matched_total, "missing": missing_total}
 
 
 def _notify(results: list[dict]) -> None:
@@ -246,6 +302,43 @@ def _guarded_run() -> None:
         status.finish("error", str(e), {}, next_run)
 
 
+def _guarded_resync() -> None:
+    """Run run_resync() and update the status tile.
+
+    Dedicated wrapper for the trigger (NOT _guarded_run): run_resync does no
+    network fetch, so there is no HitparadeUnavailable/partial-error handling.
+    next_run keeps pointing at the next weekly Sunday run (_next_run_iso), so
+    the trigger never moves the schedule tile.
+    """
+    next_run = _next_run_iso()
+    status.start()
+    try:
+        result = run_resync() or {}
+        counters = {k: v for k, v in result.items() if isinstance(v, (int, float))}
+        parts = [f"{v} {t(_COUNTER_LABEL_KEYS[k])}"
+                 for k, v in counters.items() if k in _COUNTER_LABEL_KEYS and v]
+        msg = ", ".join(parts) if parts else t("hitparade.status.nothing_to_do")
+        status.finish("ok", msg, counters, next_run)
+    except Exception as e:
+        logger.exception(t("hitparade.run.error", error=e))
+        status.finish("error", str(e), {}, next_run)
+
+
+def _hitparade_resync_requested() -> bool:
+    """True when charts-import has left a hitparade resync signal."""
+    return os.path.exists(config.HITPARADE_RESYNC_SIGNAL)
+
+
+def _clear_hitparade_resync_signal() -> None:
+    """Remove the hitparade resync signal after a run (idempotent)."""
+    try:
+        os.remove(config.HITPARADE_RESYNC_SIGNAL)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.debug(t("hitparade.resync.clear_failed", error=e))
+
+
 def main() -> None:
     status.init("charts-hitparade")
     logger.info(t(
@@ -264,8 +357,12 @@ def main() -> None:
 
     if config.RUN_ON_START:
         _guarded_run()
+        _clear_hitparade_resync_signal()  # clear a signal set during the run
 
-    check = max(30, config.CHECK_INTERVAL_SECONDS)
+    # Sleep the shorter of the weekly check and the resync probe so a signal is
+    # seen within ~HITPARADE_RESYNC_CHECK_SECONDS; keep the existing 30s floor.
+    check = max(30, min(config.CHECK_INTERVAL_SECONDS,
+                        config.HITPARADE_RESYNC_CHECK_SECONDS))
     last_run_day: date | None = date.today() if config.RUN_ON_START else None
 
     while True:
@@ -276,6 +373,17 @@ def main() -> None:
         # set_next_run touches ONLY next_run, not the status - so an
         # idle/disabled set by _guarded_run is preserved.
         status.set_next_run(_next_run_iso())
+
+        # Resync trigger (independent of the weekly window): when charts-import
+        # left a signal, re-render from the cached chart. When disabled, do no
+        # work but still clear a stray signal so it does not accumulate.
+        if _hitparade_resync_requested():
+            if config.HITPARADE_ENABLED:
+                logger.info(t("hitparade.scheduler.triggered",
+                              trigger=t("hitparade.scheduler.trigger.resync")))
+                _guarded_resync()
+            _clear_hitparade_resync_signal()
+
         # Run window: correct weekday, hour reached, not yet run today.
         due = (now.weekday() == config.RUN_WEEKDAY
                and now.hour >= config.RUN_HOUR

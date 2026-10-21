@@ -85,6 +85,25 @@ CHECK_INTERVAL_SECONDS = _get_int("HITPARADE_CHECK_SECONDS", 300)
 # Run once immediately at container start (1) or wait for the window (0).
 RUN_ON_START = os.environ.get("RUN_ON_START", "1") == "1"
 
+# --- Resync trigger (from charts-import) ---
+# charts-import drops this signal file after importing a hitparade-relevant
+# song so hitparade.m3u is re-rendered promptly instead of only on the next
+# Sunday run. charts-hitparade polls and clears ITS OWN file (dedicated, not
+# the one charts-sync uses) to avoid a clear-race between the two consumers.
+# Lives in CHARTS_DIR, which resolves to the same host folder charts-import
+# writes to via DOWNLOADS_DIR.
+HITPARADE_RESYNC_SIGNAL = os.environ.get(
+    "HITPARADE_RESYNC_SIGNAL",
+    os.path.join(CHARTS_DIR, ".hitparade-resync-requested"),
+)
+# How often the scheduler loop probes for the signal (seconds). The probe is a
+# cheap os.path.exists; an expensive library rescan only runs when the signal
+# is actually present.
+HITPARADE_RESYNC_CHECK_SECONDS = _get_int("HITPARADE_RESYNC_CHECK_SECONDS", 60)
+# File name (in CHARTS_DIR) of the cached parsed chart. The scheduled run writes
+# it; the resync trigger re-matches against it WITHOUT re-fetching hitparade.ch.
+CHART_CACHE_FILE = os.environ.get("CHART_CACHE_FILE", ".charts-hitparade-chart.json")
+
 # --- HTTP ---
 FETCH_TIMEOUT_SECONDS = _get_int("HITPARADE_TIMEOUT_SECONDS", 15)
 FETCH_RETRIES = _get_int("HITPARADE_RETRIES", 3)
