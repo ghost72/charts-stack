@@ -10,6 +10,29 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.3.0] - 2026-10-21
+
+Clearer notifications and a small dashboard wording improvement.
+
+### Added
+- **Combined per-song source labels in the download and import notifications.**
+  A chart song can belong to several playlists at once (e.g. it is listed in
+  both `missing.txt` → `charts` and `missing-hitparade.txt` → `hitparade`).
+  Previously the per-song label in the charts-download and charts-import
+  Pushover messages showed only the first source, which looked like a bug.
+  Now every contributing playlist is listed as one combined label per song
+  (e.g. "aus charts, hitparade"); the song still appears once, never duplicated
+  per source. `charts-download`'s manifest now records all sources (`sources`
+  list) while keeping the single `source` string for backward compatibility, so
+  older manifest entries keep working. Per-source download fairness is
+  unchanged (it still uses each song's primary source). Playlist writing was
+  already correct and is untouched.
+
+### Changed
+- Dashboard descriptions for the source services (sync, flashback, recommend)
+  now mention that missing songs are fetched hourly by charts-download, matching
+  the existing hitparade wording.
+
 ## [1.2.1] - 2026-10-19
 
 Patch release fixing a critical regression in 1.2.0.
