@@ -10,6 +10,29 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.4.0] - 2026-10-21
+
+Resilient song requests and self-healing stale downloads.
+
+### Added
+- **Provider verification and a dead-peer blocklist in charts-songrequest.**
+  After a download is enqueued, songrequest now actively verifies that the
+  Soulseek provider really starts sending bytes (configurable
+  `VERIFY_SECONDS` / `VERIFY_POLL_SECONDS`). If a provider stalls, the transfer
+  is cancelled and the next candidate is tried. Repeatedly failing providers are
+  remembered in a blocklist (`BLOCKLIST_FILE`, default under `/charts`) and
+  skipped for `PROVIDER_BLOCK_DAYS` (default 14), so a single dead peer no longer
+  blocks a song that other peers can deliver.
+- **Stale-transfer cleanup in charts-download.** A new `STALE_CLEANUP` step
+  removes Soulseek transfers that have been stuck without progress for longer
+  than `STALE_DOWNLOAD_HOURS` (default 6), keeping the slskd queue clean so new
+  requests are not starved by abandoned ones.
+
+### Changed
+- Combined per-song source labels now join with `+` instead of `, ` (e.g.
+  "charts+hitparade"), which is more compact and scales better with three or
+  more sources.
+
 ## [1.3.0] - 2026-10-21
 
 Clearer notifications and a small dashboard wording improvement.
