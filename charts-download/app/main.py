@@ -128,8 +128,8 @@ def run_once() -> dict:
         # Primary source drives fairness/logging; the full list is used only for
         # the manifest + message label (so every contributing playlist shows up).
         source = sources[0]
-        # Combined label for the Pushover messages, e.g. "charts, hitparade".
-        label = ", ".join(sources)
+        # Combined label for the Pushover messages, e.g. "charts+hitparade".
+        label = "+".join(sources)
         if processed >= config.MAX_PER_RUN:
             logger.info(t("download.run.max_per_run", max=config.MAX_PER_RUN))
             break

@@ -4,8 +4,8 @@ labels (Option B).
 
 A song can belong to several playlists at once. charts-import reads the
 combined label from the manifest (via tags.manifest_sources, joined with
-", ") and must render it as ONE line per song under a SINGLE combined group
-heading (e.g. "charts, hitparade") - never once per source.
+"+") and must render it as ONE line per song under a SINGLE combined group
+heading (e.g. "charts+hitparade") - never once per source.
 
 Backward compat: an old manifest entry with only the single "source" string
 still yields that one label.
@@ -31,14 +31,14 @@ def _capture_notify(monkeypatch):
 
 
 def test_combined_label_song_rendered_once(monkeypatch):
-    """A song whose source is the combined 'charts, hitparade' appears in a
+    """A song whose source is the combined 'charts+hitparade' appears in a
     single group, a single breakdown item, and is listed exactly once."""
     monkeypatch.setattr(config, "MUSIC_DIR", "/music/Music")
     sent = _capture_notify(monkeypatch)
 
     imported = [
         ("/music/Music/Ashe/Stop The Wedding!/Ashe - Stop The Wedding!.mp3",
-         "charts, hitparade", "Ashe", "Stop The Wedding!",
+         "charts+hitparade", "Ashe", "Stop The Wedding!",
          "Stop The Wedding!", ""),
     ]
     import_main._notify_imported(imported)
@@ -46,9 +46,9 @@ def test_combined_label_song_rendered_once(monkeypatch):
     assert len(sent) == 1
     _title, body = sent[0]
     # The combined label appears exactly once (one breakdown item + one group
-    # heading both read "charts, hitparade"); the two sub-labels never appear as
+    # heading both read "charts+hitparade"); the two sub-labels never appear as
     # SEPARATE groups.
-    assert "charts, hitparade" in body
+    assert "charts+hitparade" in body
     # The song file is listed exactly once (not once per source).
     assert body.count("Ashe - Stop The Wedding!.mp3") == 1
     # No standalone "hitparade" group heading split off from the combined label.
@@ -62,7 +62,7 @@ def test_two_sources_do_not_split_into_two_groups(monkeypatch):
     sent = _capture_notify(monkeypatch)
 
     imported = [
-        ("/music/Music/A/T/T.mp3", "charts, hitparade", "A", "T", "T", ""),
+        ("/music/Music/A/T/T.mp3", "charts+hitparade", "A", "T", "T", ""),
         ("/music/Music/B/U/U.mp3", "charts", "B", "U", "U", ""),
     ]
     import_main._notify_imported(imported)
@@ -71,8 +71,8 @@ def test_two_sources_do_not_split_into_two_groups(monkeypatch):
     # Header counts 2 imported songs, not 3 (no double counting).
     assert body.count("T.mp3") == 1
     assert body.count("U.mp3") == 1
-    # "charts, hitparade" and "charts" are distinct group labels.
-    assert "charts, hitparade" in body
+    # "charts+hitparade" and "charts" are distinct group labels.
+    assert "charts+hitparade" in body
     assert "charts" in body
 
 
@@ -98,7 +98,7 @@ def test_legacy_single_source_renders_one_label(monkeypatch):
 
     # Simulate the importer having read a legacy entry: manifest_sources
     # collapses it to one label, joined to the same 'source' string shape.
-    source = ", ".join(tags.manifest_sources({"source": "charts"}))
+    source = "+".join(tags.manifest_sources({"source": "charts"}))
     imported = [("/music/Music/A/T/T.mp3", source, "A", "T", "T", "")]
     import_main._notify_imported(imported)
 

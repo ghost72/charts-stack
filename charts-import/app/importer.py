@@ -502,9 +502,9 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             # exactly that device.
             m = tags.manifest_lookup(src)
             # Combined label of EVERY playlist the song belongs to, e.g.
-            # "charts, hitparade" (Option B: one line per song, all sources).
+            # "charts+hitparade" (Option B: one line per song, all sources).
             # manifest_sources handles old single-"source" entries too.
-            source = ", ".join(tags.manifest_sources(m or {}))
+            source = "+".join(tags.manifest_sources(m or {}))
             notify_device = (m or {}).get("notify_device", "") if m else ""
             imported.append((target, source, artist, title, album, notify_device))
             # Trustworthy import log for charts-digest: one line per song that
