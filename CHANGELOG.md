@@ -10,6 +10,27 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.5.0] - 2026-10-21
+
+Hitparade playlist updates promptly when a missing song arrives.
+
+### Added
+- **Resync trigger for charts-hitparade.** The Swiss hitparade playlist
+  (`hitparade.m3u`) was previously only rebuilt by the weekly Sunday 20:00 scan,
+  so a song that was fetched hourly by charts-download and filed in by
+  charts-import could stay missing from the playlist for up to a week even
+  though it was already in the library. charts-hitparade now watches a dedicated
+  resync-signal file (`HITPARADE_RESYNC_SIGNAL`, checked every
+  `HITPARADE_RESYNC_CHECK_SECONDS`, default 60) and re-renders the playlist
+  within about a minute of a relevant import. The re-render re-matches the
+  library against a cached copy of the last parsed chart
+  (`CHART_CACHE_FILE`) — it does NOT re-fetch hitparade.ch, and the weekly
+  scheduled scan is unchanged. charts-import drops the hitparade signal only
+  when an imported song actually belongs to the hitparade chart (membership test
+  on the `+`-joined source label), so the ~90s library scan is not triggered by
+  unrelated imports. A dedicated signal file (separate from the charts-sync
+  `.resync-requested`) avoids a clear-race between the two consumers.
+
 ## [1.4.0] - 2026-10-21
 
 Resilient song requests and self-healing stale downloads.
