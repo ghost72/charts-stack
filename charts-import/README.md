@@ -477,6 +477,7 @@ gefolgt von einer Zusammenfassung wie
 | `TRASH_RETENTION_DAYS` | `30`        | Upgrade-Papierkorb (`MUSIC_DIR/.charts-trash/`) automatisch leeren: ersetzte Versionen älter als so viele Tage werden gelöscht. `0` = nie (manuell leeren). |
 | `MIN_AGE_SECONDS` | `120`            | Datei erst einsortieren, wenn sie so lange unverändert ist. |
 | `INTERVAL_MINUTES`| `30`             | Minuten zwischen zwei Läufen. |
+| `HITPARADE_SOURCE_LABEL` | `hitparade` | Quell-Label, dessen **Mitgliedschaft** in der `+`-verknüpften Source eines Imports (z. B. `charts+hitparade`) ihn als hitparade-relevant markiert. Nur dann legt charts-import zusätzlich das Signal `.hitparade-resync-requested` an, damit `charts-hitparade` `hitparade.m3u` sofort neu rendert (statt erst am nächsten Sonntag). Verglichen wird pro `+`-Teil, nicht als Teilstring. |
 | `RUN_ON_START`    | `1`              | Beim Start sofort einen Lauf machen. |
 | `REJECT_ENABLED`  | `1`              | Türsteher aktiv: verdächtige/unbrauchbare Dateien nach `_rejected` verschieben statt einsortieren. `0` = aus. |
 | `REJECT_UNKNOWN_ARTIST` | `1`        | Ablehnen, wenn kein brauchbarer Artist ermittelbar ist. Album wird nicht geprüft (Singles). |

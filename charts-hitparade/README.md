@@ -59,6 +59,7 @@ sofort auf, statt still eine leere Playlist zu schreiben.
 | `HITPARADE_CHARTS` | `singles` | welche Charts (Komma-getrennt) |
 | `HITPARADE_WEEKDAY` | `6` | Wochentag (0=Mo … 6=So) |
 | `HITPARADE_HOUR` / `HITPARADE_MINUTE` | `20` / `0` | Uhrzeit des Laufs |
+| `HITPARADE_RESYNC_CHECK_SECONDS` | `60` | Wie oft der Loop zwischen den Sonntagsläufen prüft, ob `charts-import` einen **Resync** ausgelöst hat (nur Datei-Check, günstig). Liegt ein Signal vor und wurde ein hitparade-relevanter Song importiert, wird `hitparade.m3u` sofort aus der gecachten Hitparade neu gerendert (ohne hitparade.ch erneut abzurufen; der Sonntagslauf bleibt unverändert). Signal-Datei `.hitparade-resync-requested` und Chart-Cache `.charts-hitparade-chart.json` liegen im `CHARTS_DIR`. |
 | `MATCH_THRESHOLD` | `87` | Match-Schwelle (wie charts-sync) |
 | `ARTIST_MIN_SCORE` | `60` | Künstler-Mindest-Score |
 | `IGNORE_COMPILATIONS` | `1` | Compilation-Tracks beim Match ignorieren |

@@ -59,6 +59,7 @@ silently writing an empty playlist.
 | `HITPARADE_CHARTS` | `singles` | which charts (comma-separated) |
 | `HITPARADE_WEEKDAY` | `6` | weekday (0=Mon … 6=Sun) |
 | `HITPARADE_HOUR` / `HITPARADE_MINUTE` | `20` / `0` | run time |
+| `HITPARADE_RESYNC_CHECK_SECONDS` | `60` | How often the loop checks between the Sunday runs whether `charts-import` triggered a **resync** (just a file check, cheap). When a signal is present and a hitparade-relevant song was imported, `hitparade.m3u` is re-rendered immediately from the cached chart (without re-fetching hitparade.ch; the Sunday run stays unchanged). The signal file `.hitparade-resync-requested` and the chart cache `.charts-hitparade-chart.json` live in `CHARTS_DIR`. |
 | `MATCH_THRESHOLD` | `87` | match threshold (like charts-sync) |
 | `ARTIST_MIN_SCORE` | `60` | artist minimum score |
 | `IGNORE_COMPILATIONS` | `1` | ignore compilation tracks when matching |
