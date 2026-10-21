@@ -361,3 +361,71 @@ def cleanup_failed(client, to_cleanup: list[tuple[str, dict]]) -> None:
             )
         except Exception as e:
             logger.debug(t("download.slsk.cleanup_failed", error=e))
+
+
+def _find_transfer(client, username: str, filename: str) -> dict | None:
+    """Return the current slskd transfer dict for (username, filename) or None."""
+    for f in _all_downloads(client):
+        if f.get("username") == username and f.get("filename") == filename:
+            return f
+    return None
+
+
+def verify_transfer(client, username: str, filename: str,
+                    verify_seconds: int, poll_seconds: int) -> str:
+    """
+    After an enqueue, check whether the provider ACTUALLY starts delivering.
+
+    A Soulseek peer can accept a request (enqueue returns True, state
+    "Queued, Remotely") yet never send a byte. We poll the transfer for up to
+    verify_seconds and classify the outcome:
+
+      - "delivering": bytes are flowing (bytesTransferred > 0) or the state is
+        already InProgress / Completed+Succeeded -> the provider is good.
+      - "failed":     the transfer reached a terminal failure state
+        (Errored/TimedOut/Rejected/Cancelled/Aborted) -> try the next provider.
+      - "stalled":    verify_seconds elapsed with 0 bytes and still only queued
+        -> treat as non-delivering, try the next provider.
+
+    verify_seconds <= 0 disables verification and returns "delivering"
+    immediately (old fire-and-forget behaviour).
+
+    Never raises: any slskd/API error during polling is treated as "delivering"
+    (we do not punish a provider for our own transient read error).
+    """
+    if verify_seconds <= 0:
+        return "delivering"
+    poll = max(1, poll_seconds)
+    deadline = time.time() + verify_seconds
+    while True:
+        try:
+            tr = _find_transfer(client, username, filename)
+        except Exception:
+            return "delivering"  # read error on our side -> do not blame peer
+        if tr is not None:
+            state = tr.get("state", "")
+            cls = _classify_state(state)
+            if cls == "failed":
+                return "failed"
+            bytes_done = tr.get("bytesTransferred", 0) or 0
+            s = state.lower()
+            if bytes_done > 0 or "inprogress" in s or cls == "succeeded":
+                return "delivering"
+        if time.time() >= deadline:
+            return "stalled"
+        time.sleep(poll)
+
+
+def cancel_transfer(client, username: str, filename: str) -> None:
+    """
+    Cancel + remove a (stalled) transfer in slskd so it does not sit in the
+    queue forever. Looks the transfer up by (username, filename) to get its id.
+    Never fatal.
+    """
+    try:
+        tr = _find_transfer(client, username, filename)
+        if tr and tr.get("id"):
+            client.transfers.cancel_download(
+                username=username, id=tr.get("id"), remove=True)
+    except Exception as e:
+        logger.debug(t("download.slsk.cleanup_failed", error=e))
