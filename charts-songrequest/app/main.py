@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import os
 
-from . import config, i18n, library, manifest, slsk, status
+from . import blocklist, config, i18n, library, manifest, slsk, status
 from .i18n import t
 
 logging.basicConfig(
@@ -256,20 +256,44 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
 
     # 3. Trigger download (new addition OR real upgrade). Retry across multiple
     #    providers: Soulseek is P2P - the best hit may come from a peer that is
-    #    currently offline / rejects the upload. So go through the candidates
-    #    one by one until an enqueue succeeds.
+    #    offline, rejects the upload, or (worse) ACCEPTS the request but never
+    #    sends a byte ("Queued, Remotely" forever). So go through the candidates
+    #    one by one, and for each one that accepts the enqueue, VERIFY that the
+    #    transfer actually starts delivering. A provider that does not deliver
+    #    is cancelled and remembered on the blocklist (skipped on future
+    #    requests), then the next candidate is tried - so the song reaches a
+    #    peer that really sends it.
+    blocked = blocklist.blocked_users()
     chosen = None  # (username, file_dict, bitrate)
     for cand_user, cand_file, _score in candidates:
+        # Skip providers known to be non-delivering (within their block TTL).
+        if cand_user in blocked:
+            logger.info(t("songrequest.request.provider_skipped_blocked",
+                          user=cand_user))
+            continue
         cand_bitrate = cand_file.get("bitRate", 0) or 0
         # On an upgrade only take candidates that are really better than the
         # existing version (otherwise it would be no upgrade). effective as above.
         cand_effective = cand_bitrate if cand_bitrate > 0 else config.MIN_BITRATE
         if existing and cand_effective <= existing_bitrate:
             continue
-        if slsk.enqueue(client, cand_user, cand_file):
+        if not slsk.enqueue(client, cand_user, cand_file):
+            logger.info(t("download.song.provider_no_deliver", user=cand_user))
+            continue
+        # Enqueue accepted - but did the peer actually start sending? Verify.
+        cand_fname = cand_file.get("filename", "")
+        outcome = slsk.verify_transfer(
+            client, cand_user, cand_fname,
+            config.VERIFY_SECONDS, config.VERIFY_POLL_SECONDS)
+        if outcome == "delivering":
             chosen = (cand_user, cand_file, cand_bitrate)
             break
-        logger.info(t("download.song.provider_no_deliver", user=cand_user))
+        # Not delivering (stalled/failed): cancel it, remember the provider as
+        # problematic, and move on to the next candidate.
+        logger.info(t("songrequest.request.provider_not_delivering",
+                      user=cand_user, outcome=outcome))
+        slsk.cancel_transfer(client, cand_user, cand_fname)
+        blocklist.block(cand_user)
 
     if not chosen:
         logger.warning(t("songrequest.request.no_provider_delivered",

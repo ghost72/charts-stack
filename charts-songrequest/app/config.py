@@ -52,6 +52,28 @@ REJECT_COMPILATIONS = _get_bool("REJECT_COMPILATIONS", True)
 SEARCH_TIMEOUT_MS = _get_int("SEARCH_TIMEOUT_MS", 15000)
 SEARCH_WAIT_SECONDS = _get_int("SEARCH_WAIT_SECONDS", 25)
 
+# --- Download verification + provider blocklist ---
+# After enqueuing a download we do NOT blindly trust that slskd accepted it:
+# a Soulseek peer can accept the request ("Queued, Remotely") yet never send a
+# single byte. We poll the transfer for up to VERIFY_SECONDS; if no bytes flow
+# (or it fails), that provider is cancelled, remembered as problematic for
+# PROVIDER_BLOCK_DAYS, and the next candidate is tried instead. This way a
+# manual request reaches a provider that actually delivers.
+#
+# VERIFY_SECONDS: how long to wait for the transfer to actually start (bytes
+#   transferred > 0 or state InProgress/Succeeded). 0 disables verification
+#   (old fire-and-forget behaviour: trust the first accepted enqueue).
+VERIFY_SECONDS = _get_int("VERIFY_SECONDS", 20)
+# How often to poll slskd while verifying (seconds).
+VERIFY_POLL_SECONDS = _get_int("VERIFY_POLL_SECONDS", 2)
+# How long a non-delivering provider stays on the blocklist (days). After that
+# it gets another chance (Soulseek peers come and go). 0 disables the blocklist.
+PROVIDER_BLOCK_DAYS = _get_int("PROVIDER_BLOCK_DAYS", 14)
+# Blocklist state file (JSON: {username: blocked_until_unix_ts}). Lives in the
+# shared /charts folder next to the manifest/state.
+BLOCKLIST_FILE = os.environ.get(
+    "BLOCKLIST_FILE", "/charts/.songrequest-blocked.json")
+
 # --- Library (for the "already present?" pre-check) ---
 # Navidrome library root. Must be mounted into the container (read-only is
 # enough) so it can be checked before the search whether the song already

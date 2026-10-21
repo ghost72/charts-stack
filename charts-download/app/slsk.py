@@ -377,3 +377,78 @@ def cleanup_failed(client, to_cleanup: list[tuple[str, dict]]) -> None:
             )
         except Exception as e:
             logger.debug(t("download.slsk.cleanup_failed", error=e))
+
+
+def _parse_requested_at(value: str) -> float | None:
+    """
+    Parse slskd's ISO 'requestedAt' timestamp into a UTC unix timestamp.
+    slskd emits values like '2026-10-02T19:13:32.1720171' (sometimes with a
+    trailing 'Z', sometimes with sub-second digits beyond microseconds). Be
+    liberal: trim to microseconds, treat a naive value as UTC. Returns None if
+    it cannot be parsed (then the transfer is treated as "no age known").
+    """
+    if not value:
+        return None
+    from datetime import datetime, timezone
+    s = value.strip()
+    s = s[:-1] if s.endswith("Z") else s
+    # Trim fractional seconds to 6 digits (datetime cannot do 7).
+    if "." in s:
+        head, frac = s.split(".", 1)
+        s = head + "." + frac[:6]
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            dt = datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+def cleanup_stale_downloads(client, stale_hours: int, now: float | None = None) -> int:
+    """
+    Housekeeping for slskd's download list, run once per charts-download pass.
+    Cancels + removes transfers that are dead weight, INDEPENDENT of whether
+    they still map to a song in the state:
+
+      - FAILED transfers (Completed + Errored/TimedOut/Rejected/Cancelled/
+        Aborted): removed regardless of age.
+      - STUCK transfers: a peer accepted the request but never sent a byte
+        (bytesTransferred == 0, not succeeded, typically "Queued, Remotely")
+        AND the request is older than stale_hours. Recent/fresh queued
+        transfers are left alone so a just-started download is never killed.
+
+    Succeeded and actively-progressing transfers are never touched. Returns the
+    number of transfers removed. Never raises (housekeeping must not break a
+    run).
+    """
+    import time as _time
+    now = _time.time() if now is None else now
+    cutoff = now - stale_hours * 3600
+    removed = 0
+    for f in _all_downloads(client):
+        state = f.get("state", "")
+        cls = _classify_state(state)
+        if cls == "succeeded":
+            continue
+        is_failed = cls == "failed"
+        bytes_done = f.get("bytesTransferred", 0) or 0
+        is_stuck = False
+        if not is_failed and bytes_done == 0:
+            # 0 bytes and not failed -> only kill if provably old enough.
+            ts = _parse_requested_at(f.get("requestedAt", ""))
+            if ts is not None and ts < cutoff:
+                is_stuck = True
+        if not (is_failed or is_stuck):
+            continue
+        try:
+            client.transfers.cancel_download(
+                username=f.get("username"), id=f.get("id"), remove=True)
+            removed += 1
+            logger.info(t("download.slsk.stale_removed",
+                          state=state, filename=f.get("filename", "?")))
+        except Exception as e:
+            logger.debug(t("download.slsk.cleanup_failed", error=e))
+    if removed:
+        logger.info(t("download.slsk.stale_summary", count=removed, hours=stale_hours))
+    return removed

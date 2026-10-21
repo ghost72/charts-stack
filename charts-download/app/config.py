@@ -133,6 +133,21 @@ SEARCH_COOLDOWN_HOURS = _get_int("SEARCH_COOLDOWN_HOURS", 24)
 # 0 = never expire (blocked permanently until removed manually).
 BLOCK_TTL_DAYS = _get_int("BLOCK_TTL_DAYS", 30)
 
+# --- Stale transfer cleanup (slskd housekeeping) ---
+# Every run charts-download also tidies up slskd's download list so dead
+# transfers do not pile up: failed ones (Errored/TimedOut/Rejected/...) and
+# "stuck" ones (a peer accepted the request but never sent a byte -
+# "Queued, Remotely" at 0 bytes) that are older than STALE_DOWNLOAD_HOURS.
+# This is independent of the per-song state requeue (_requeue_failed): it
+# removes orphaned slskd transfers regardless of whether they still map to a
+# song in the state. STALE_CLEANUP=0 disables it.
+STALE_CLEANUP = _get_bool("STALE_CLEANUP", True)
+# How old (hours, by slskd's requestedAt) a 0-byte stuck transfer must be
+# before it is cancelled. Fresh/recent queued transfers are left alone so a
+# just-started download is never killed. Failed transfers are removed
+# regardless of age.
+STALE_DOWNLOAD_HOURS = _get_int("STALE_DOWNLOAD_HOURS", 6)
+
 # --- Scheduler ---
 INTERVAL_MINUTES = _get_int("INTERVAL_MINUTES", 60)
 RUN_ON_START = _get_bool("RUN_ON_START", True)

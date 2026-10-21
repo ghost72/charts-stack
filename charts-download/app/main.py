@@ -100,6 +100,11 @@ def run_once() -> dict:
     # again in this run. Failed transfers in slskd are cleaned up in the process.
     retried = _requeue_failed(client, st)
 
+    # Housekeeping: also remove dead/stuck transfers from slskd that no longer
+    # map to a song in the state (failed ones, and 0-byte stuck transfers older
+    # than STALE_DOWNLOAD_HOURS) so they do not pile up in slskd's list.
+    _cleanup_stale(client)
+
     # Each entry is (label, "#pos Artist - Title (bitrate)") so the message can
     # group by the originating playlist.
     planned: list[tuple[str, str]] = []   # for dry-run / message
@@ -272,6 +277,21 @@ def _requeue_failed(client, st: dict) -> int:
     state.save(st)
     logger.info(t("download.requeue.freed", count=len(failed_keys)))
     return len(failed_keys)
+
+
+def _cleanup_stale(client) -> None:
+    """
+    Housekeeping: remove dead/stuck transfers from slskd's download list
+    (failed ones, and 0-byte 'Queued, Remotely' transfers older than
+    STALE_DOWNLOAD_HOURS). Independent of the per-song state. No-op in dry-run
+    or when disabled. Never fatal.
+    """
+    if not config.STALE_CLEANUP or config.DRY_RUN:
+        return
+    try:
+        slsk.cleanup_stale_downloads(client, config.STALE_DOWNLOAD_HOURS)
+    except Exception as e:
+        logger.debug(t("download.slsk.cleanup_failed", error=e))
 
 
 def _breakdown(items: list[tuple[str, str]]) -> str:
