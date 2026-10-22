@@ -10,6 +10,22 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.6.1] - 2026-10-22
+
+UI polish for the new charts-config service and its dashboard tile.
+
+### Fixed
+- **charts-config: restored the donate footer** that was lost when the service
+  was carved out of charts-dashboard (PayPal/Revolut + translated label,
+  hideable via `CONFIG_DONATE=0`).
+- **charts-config: the Energy-channel table now spans the full width** instead
+  of being crushed into one half of the finder's two-column grid — readable
+  columns (no character-by-character wrapping), the active/mode status badge is
+  no longer clipped, and the copy button no longer overflows the right edge.
+- **charts-dashboard: the charts-config tile is now the same compact height** as
+  the other report-zone tiles (watchdog/dashboard/digest); its full description
+  shows on expand instead of inflating the tile.
+
 ## [1.6.0] - 2026-10-22
 
 Energy (NRJ/energy.ch) webradio as a new source, a dedicated config web UI,
