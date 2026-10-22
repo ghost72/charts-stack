@@ -175,6 +175,7 @@
   "digest.source.upgrade": "Amélioration de qualité",
   "digest.source.hitparade": "Hit-parade suisse",
   "digest.source.recommend": "Recommandations",
+  "digest.source.energy": "Energy",
   "digest.source.unknown": "Source inconnue",
   "digest.log.pruned": "Journal d'import élagué : {before} -> {after} entrées (rétention {days} jours)",
   "digest.log.prune_failed": "Impossible d'élaguer le journal d'import : {error}",
