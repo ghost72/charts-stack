@@ -107,6 +107,9 @@ body.login {
 @media (max-width: 720px) {
   .finder { grid-template-columns: 1fr; }
 }
+/* The Energy browser is a single wide 6-column table, not a pair of small
+   search boxes - give it the FULL content width instead of one 2-col cell. */
+.finder-full { grid-template-columns: 1fr; }
 .finder-box {
   background: var(--tile);
   border-radius: 12px;
@@ -197,55 +200,50 @@ body.login {
 .nrj-badge.active { background: rgba(63,182,122,.15); color: var(--ok); }
 .nrj-badge.inactive { background: #2f2742; color: #5a5168; }
 
-/* Energy channel table (6 cols): the finder's 3-col nth-child widths don't fit.
-   Scope every override to the energy results container so the finder tables
-   stay untouched. The table must stay WITHIN its box (no bleed past the right
-   edge) at desktop widths.
+/* Energy channel table (6 cols: Kanal/Slug/Genre/Modus/Status/Snippet). The
+   section now spans the full content width (.finder-full), so the table has
+   room for readable columns. Scope every override to the energy results
+   container so the Deezer/Last.fm/genre finder tables stay untouched.
 
-   Root cause of the earlier right-edge clipping: the generic finder snippet
-   cell lays the <code> and the copy button out in a horizontal flex row
-   (.snip { display:flex }, code flex:1 1 auto, .snip-copy flex:0 0 auto). In
-   the narrow 6-column energy table that row could not shrink enough, so the
-   fixed-width copy button was pushed past the cell and clipped by the generic
-   `td { overflow:hidden }`. Re-basing the energy .snip to a VERTICAL stack
-   (code on top, button below) removes the horizontal competition entirely:
-   the button can never be pushed off the right edge, and the snippet simply
-   wraps inside the cell. */
+   The generic .finder-table uses table-layout:fixed with 3-col nth-child
+   widths that don't suit 6 columns; we re-base the widths here. The first five
+   columns stay compact (and never clip their content), and the snippet column
+   takes the remaining room, wrapping inside its cell. */
 #energy-channels .finder-table {
   table-layout: fixed;            /* columns obey our widths, table != content width */
   width: 100%;
   max-width: 100%;
 }
+/* Reset the generic nth-child widths, then set per-column proportions below. */
 #energy-channels .finder-table th,
 #energy-channels .finder-table td {
   width: auto;
-  overflow-wrap: anywhere;        /* long tokens (slug, genre) break instead of overflowing */
+  overflow-wrap: normal;          /* no char-by-char wrapping of the labels */
 }
-/* Snippet is the last (6th) column and gets the remaining room; it wraps
-   inside the cell rather than pushing the table wider. overflow:visible so a
-   wrapped copy button is never clipped on the right. */
+/* Kanal: enough room for channel names so they don't wrap char-by-char. */
+#energy-channels .finder-table th:nth-child(1),
+#energy-channels .finder-table td:nth-child(1) { width: 16%; overflow-wrap: break-word; }
+/* Slug / Genre / Modus: compact. */
+#energy-channels .finder-table th:nth-child(2),
+#energy-channels .finder-table td:nth-child(2) { width: 12%; overflow-wrap: anywhere; }
+#energy-channels .finder-table th:nth-child(3),
+#energy-channels .finder-table td:nth-child(3) { width: 10%; overflow-wrap: anywhere; }
+#energy-channels .finder-table th:nth-child(4),
+#energy-channels .finder-table td:nth-child(4) { width: 12%; }
+/* Status: must fit the 'aktiv (feed)' / 'aktiv (library)' badge without clip. */
+#energy-channels .finder-table th:nth-child(5),
+#energy-channels .finder-table td:nth-child(5) { width: 12%; overflow: visible; }
+/* Snippet (6th) gets the rest; it wraps inside the cell rather than widening
+   the table. overflow:visible so the inline copy button is never clipped. */
 #energy-channels .finder-table th:last-child,
-#energy-channels .finder-table td:last-child { width: 40%; overflow: visible; }
-/* Stack code + copy button vertically instead of the generic flex row, so the
-   button sits under the (wrapped) snippet and stays inside the cell width. */
-#energy-channels .finder-table td .snip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  max-width: 100%;
-  min-width: 0;
-}
+#energy-channels .finder-table td:last-child { width: 38%; overflow: visible; }
+/* Snippet cell keeps the shared horizontal layout (code + copy button on one
+   row); at full width there is room, so no vertical stacking needed. The code
+   wraps onto multiple lines instead of scrolling. */
 #energy-channels .finder-table td .snip code {
-  width: 100%;                    /* fill the cell, never wider than it */
-  flex: 0 0 auto;
   white-space: pre-wrap;          /* snippet wraps onto multiple lines */
   overflow-wrap: anywhere;
-  overflow-x: hidden;             /* no inner horizontal scroll either */
-}
-#energy-channels .finder-table td .snip .snip-copy {
-  flex: 0 0 auto;
-  align-self: flex-start;         /* button under the snippet, left-aligned */
+  overflow-x: hidden;             /* no inner horizontal scroll */
 }
 @media (max-width: 720px) {
   /* Narrow screens: allow horizontal scroll of the whole table rather than

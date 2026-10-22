@@ -61,7 +61,7 @@
   "dashboard.ui.desc.charts_upgrade": "Findet Songs mit schlechter Qualität in der Library und ersetzt sie durch bessere Versionen.",
   "dashboard.ui.desc.charts_flashback": "Sammelt die Rotation von FLASHBACK FM (Dekaden-Channels) und lässt die Library wachsen – keine Playlist. Fehlende werden stündlich von charts-download nachgeladen.",
   "dashboard.ui.desc.charts_energy": "Pollt die Energy-Webradio-Kanäle (Swiss NRJ / energy.ch) und lässt die Library wachsen oder füllt bestehende Theme-Playlists auf. Fehlende werden stündlich von charts-download nachgeladen.",
-  "dashboard.ui.desc.charts_config": "Snippet-/Konfig-Weboberfläche: Deezer/Last.fm-Quellen-Finder und Energy-Kanal-Browser. Baut fertige charts-sync- und ENERGY_CHANNELS-Snippets zum Hineinkopieren. Nur lesend, kein Neustart-Knopf.",
+  "dashboard.ui.desc.charts_config": "Nur lesende Weboberfläche zum Bauen von charts-sync- und Energy-Snippets.",
   "dashboard.ui.desc.charts_recommend": "Lässt die Library aus dem Hörgeschmack mehrerer ListenBrainz-User wachsen – keine Playlist. Fehlende werden stündlich von charts-download nachgeladen.",
   "dashboard.ui.desc.charts_songrequest": "Web-UI, um einzelne Songs manuell anzufordern.",
   "dashboard.ui.desc.charts_digest": "Schickt täglich eine Pushover-Zusammenfassung der neu in die Library gekommenen Songs (nach Quelle).",
