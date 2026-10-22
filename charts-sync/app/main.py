@@ -224,6 +224,8 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
         stat_bits.append(f"Deezer {stats['deezer_new']}")
     if stats.get("lastfm_new"):
         stat_bits.append(f"Last.fm {stats['lastfm_new']}")
+    if stats.get("energy_new"):
+        stat_bits.append(f"Energy {stats['energy_new']}")
     if stat_bits:
         lines.append(t("notify.sources", sources=", ".join(stat_bits)))
     if stats.get("genre_filtered"):

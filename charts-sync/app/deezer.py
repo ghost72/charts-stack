@@ -167,6 +167,11 @@ def _is_excluded_artist(artist: str, exclude_set: set[str],
 
 def _fetch_one_feed(feed, client: httpx.Client) -> list[ChartTrack]:
     """Dispatcher: fetch a feed from Deezer or Last.fm depending on its type."""
+    if feed.kind == "energy":
+        # Lazy import to avoid a module import cycle (energy_feed imports from
+        # this module for ChartTrack). Reads a local handoff JSON, no socket.
+        from . import energy_feed
+        return energy_feed.load(feed.theme)
     if feed.kind == "lastfm":
         # Lazy import so Deezer-only setups do not need Last.fm.
         from . import lastfm
@@ -320,7 +325,7 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     # Log the contribution stats (what each source adds NET).
     if stats:
         parts = []
-        for kind in ("deezer", "lastfm"):
+        for kind in ("deezer", "lastfm", "energy"):
             if kind in stats:
                 s = stats[kind]
                 dup = s["raw"] - s["new"]
@@ -339,6 +344,7 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     chart_source.last_stats = {
         "deezer_new": stats.get("deezer", {}).get("new", 0),
         "lastfm_new": stats.get("lastfm", {}).get("new", 0),
+        "energy_new": stats.get("energy", {}).get("new", 0),
         "genre_filtered": filtered if genre_active else 0,
     }
 
