@@ -762,3 +762,46 @@ services:
       - ./lang:/lang:ro
     env_file:
       - .env
+
+  # ── charts-config ─ Snippet-/Konfig-UI (Web) ─────────────────────────────
+  # Quellen-Finder (Deezer/Last.fm) + Energy-Kanal-Browser. Baut fertige
+  # charts-sync- und ENERGY_CHANNELS-Snippets zum Hineinkopieren in .env/
+  # charts.json. Reiner Lese-Zugriff: ruft nur Deezer/Last.fm (WAN) ab und
+  # liest die charts-energy-Status-JSON read-only. KEIN Docker-Zugriff, KEIN
+  # Neustart-Knopf - nur Text-Hinweise. Passwortgeschuetzt (eigener Login).
+  charts-config:
+    build: ./charts-config
+    image: charts-config:latest
+    container_name: charts-config
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      - STATUS_DIR=/charts/.charts-status
+      # Advisory on/off flag (web UI has no run-loop; authoritative off-switch
+      # is not starting the container). Kept for parity with ENERGY_ENABLED etc.
+      - CONFIG_ENABLED=${CONFIG_ENABLED:-true}
+      # Fuer die Last.fm-Tag-Pruefung + das Ausgrauen der Last.fm-Box.
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      # Cache-TTL der Deezer-Genre-Tabelle (Sekunden). Default 24 h.
+      - DASHBOARD_GENRE_CACHE_TTL=${DASHBOARD_GENRE_CACHE_TTL:-86400}
+      # Eigener Login: Benutzer admin + CONFIG_PASSWORD. Leer -> faellt auf
+      # APP_USERS/APP_PASSWORD zurueck. Ohne jegliches Passwort startet der
+      # Dienst NICHT (fail-closed, da von aussen erreichbar).
+      - CONFIG_USERNAME=${CONFIG_USERNAME:-admin}
+      - CONFIG_PASSWORD=${CONFIG_PASSWORD:-}
+      - APP_USERS=${APP_USERS:-}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - APP_PASSWORD_USERNAME=${APP_PASSWORD_USERNAME:-youruser}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # Sprache fuer UI/Logs (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    ports:
+      - "${CONFIG_PORT:-5058}:5058"
+    volumes:
+      # Nur die Status-JSONs read-only (fuer den Energy-Live-Status).
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro
+      # Zentrale Sprachdateien (en/de/fr), geteilt wie die .env.
+      - ./lang:/lang:ro
+    env_file:
+      - .env

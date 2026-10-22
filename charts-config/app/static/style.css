@@ -1,0 +1,211 @@
+:root {
+  --bg: #15121c;
+  --card: #221b2e;
+  --tile: #2a2238;
+  --fg: #ece7f3;
+  --muted: #9b90ad;
+  --ok: #3fb67a;
+  --warn: #e0a53b;
+  --err: #e05a5a;
+  --info: #5a8fe0;
+  --accent: #1e5fa8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px;
+  background: linear-gradient(100deg, #1b4e8e 0%, #15406e 60%, #0f3357 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
+  position: sticky; top: 0; z-index: 100;
+}
+/* Brand on the left: icon badge + title + subtitle. */
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-badge {
+  display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 10px; font-size: 1.2rem;
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+.brand-title { font-size: 1.15rem; font-weight: 650; letter-spacing: .01em; color: #fff; }
+.brand-sub { font-size: .72rem; color: #bcd2ef; opacity: .85; margin-top: 1px; }
+
+.meta { display: flex; align-items: center; gap: 16px; font-size: .82rem; }
+.meta .logout {
+  color: #fff; opacity: .9; text-decoration: none; font-weight: 500;
+  padding: 6px 13px; border-radius: 8px; border: 1px solid rgba(255,255,255,.22);
+  transition: background .15s ease, opacity .15s ease, border-color .15s ease;
+}
+.meta .logout:hover {
+  opacity: 1; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.4);
+}
+main { padding: 16px 20px 40px; max-width: 1100px; margin: 0 auto; }
+section { margin-bottom: 28px; }
+section h2 {
+  font-size: .95rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 0 0 12px;
+}
+.muted-txt { color: var(--muted); }
+.s-err { color: var(--err); font-weight: 600; }
+.s-run { color: var(--warn); }
+b { font-weight: 600; }
+
+@media (max-width: 760px) {
+  /* Header more compact on narrow viewports: subtitle hidden, less padding. */
+  header { padding: 12px 16px; }
+  .brand-sub { display: none; }
+  .brand-badge { width: 34px; height: 34px; }
+}
+
+/* Login */
+body.login {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+}
+.card {
+  background: var(--card); border-radius: 16px; padding: 32px;
+  width: 100%; max-width: 360px; text-align: center;
+}
+.card h1 { margin: 0 0 4px; }
+.card .sub { color: var(--muted); margin-bottom: 20px; font-size: .9rem; }
+.card label {
+  display: block; text-align: left; font-size: .8rem;
+  color: var(--muted); margin: 12px 0 4px;
+}
+.card input {
+  width: 100%; padding: 11px 13px; border-radius: 9px;
+  border: 1px solid #3a3048; background: #1b1626; color: var(--fg);
+  font-size: 1rem;
+}
+.card button {
+  width: 100%; margin-top: 20px; padding: 12px;
+  border: 0; border-radius: 9px; background: var(--accent); color: #fff;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+}
+.card button:hover { filter: brightness(1.1); }
+.banner { margin-top: 16px; padding: 10px; border-radius: 8px; font-size: .85rem; }
+.banner.err { background: rgba(224,90,90,.18); color: #ffb4b4; }
+
+/* --- Source finder (migrated from the dashboard) --- */
+.finder-hint { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+.finder-hint code { font-size: .8rem; }
+/* At most TWO columns: wider boxes give the JSON snippet more room.
+   minmax(0, 1fr) (not 280px) lets the columns shrink below min-width 0 -> clean
+   wrap to one column on a narrow viewport without the snippet overflowing. */
+.finder {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 720px) {
+  .finder { grid-template-columns: 1fr; }
+}
+.finder-box {
+  background: var(--tile);
+  border-radius: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--muted);
+}
+.finder-box h3 { margin: 0 0 10px; font-size: .95rem; }
+.finder-box.muted { opacity: .55; }
+.finder-box.muted input, .finder-box.muted button { pointer-events: none; }
+.finder-box form { display: flex; gap: 8px; margin: 0 0 10px; }
+.finder-box form input {
+  flex: 1; min-width: 0; padding: 7px 9px;
+  border: 1px solid #3a3350; border-radius: 7px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+}
+.finder-box form button {
+  border: 0; border-radius: 7px; background: var(--accent); color: #fff;
+  padding: 7px 12px; font-size: .82rem; cursor: pointer; white-space: nowrap;
+}
+.finder-box form button:hover { filter: brightness(1.1); }
+/* Small secondary button (copy). */
+.btn-sm {
+  border: 1px solid #3a3350; border-radius: 6px;
+  background: #332b45; color: var(--fg);
+  padding: 4px 8px; font-size: .75rem; cursor: pointer;
+}
+.btn-sm:hover { filter: brightness(1.15); }
+/* Chips (tag suggestions). */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+.chip {
+  border: 1px solid #3a3350; border-radius: 999px;
+  background: #2f2742; color: var(--fg);
+  padding: 3px 10px; font-size: .78rem; cursor: pointer;
+}
+.chip:hover { filter: brightness(1.15); }
+/* Finder tables plain + zebra. */
+.finder-table, #dz-genres {
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+  table-layout: fixed;
+}
+.finder-table th, .finder-table td, #dz-genres th, #dz-genres td {
+  text-align: left; padding: 5px 8px; vertical-align: top;
+  overflow: hidden;
+}
+/* Title/Tracks (resp. Artist/Fans) kept compact, the snippet column gets the
+   rest - its content scrolls horizontally instead of wrapping. */
+.finder-table th:nth-child(1), .finder-table td:nth-child(1) { width: 42%; overflow-wrap: anywhere; }
+.finder-table th:nth-child(2), .finder-table td:nth-child(2) { width: 6em; }
+.finder-table th:nth-child(3), .finder-table td:nth-child(3) { width: auto; }
+.finder-table thead th, #dz-genres thead th {
+  color: var(--muted); font-weight: 600; border-bottom: 1px solid #37304755;
+}
+.finder-table tbody tr:nth-child(even), #dz-genres tbody tr:nth-child(even) {
+  background: #2f2742;
+}
+/* Clickable sort headers: pointer cursor + subtle hover; the arrow glyph is
+   appended inline by the renderer so no extra element is needed. */
+.finder-table thead th.sortable {
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.finder-table thead th.sortable:hover { color: var(--fg); }
+.finder-table thead th.sortable:focus-visible {
+  outline: 1px solid #8a7bd8; outline-offset: -1px;
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Snippet cell: selectable <code> + copy button, wrap-safe.
+   The snippet is NOT wrapped - otherwise the long JSON string collapses into a
+   vertical letter column in the narrow finder column. Instead single-line with
+   a horizontal scroll; it does not need to be read, the copy button copies it
+   in full. */
+.snip { display: flex; gap: 6px; align-items: center; max-width: 100%; min-width: 0; }
+.snip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .74rem; background: var(--bg); color: #c9bfe0;
+  padding: 4px 6px; border-radius: 6px; flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow-x: auto; overflow-y: hidden;
+}
+.snip-copy { flex: 0 0 auto; }
+.lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
+.lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
+
+/* Energy channel status badge: a small inline pill like the chips. Active uses
+   the shared green token, inactive the muted grey used by .tile.muted. */
+.nrj-badge {
+  display: inline-block; border-radius: 999px; padding: 2px 9px;
+  font-size: .74rem; font-weight: 600; white-space: nowrap;
+}
+.nrj-badge.active { background: rgba(63,182,122,.15); color: var(--ok); }
+.nrj-badge.inactive { background: #2f2742; color: #5a5168; }
+
+/* Energy channel table (6 cols): the finder's 3-col nth-child widths don't fit.
+   Scope overrides to the energy results container so the finder tables are
+   unaffected. Let the snippet column breathe and wrap on narrow screens. */
+#energy-channels .finder-table { table-layout: auto; }          /* size to content */
+#energy-channels .finder-table th,
+#energy-channels .finder-table td { width: auto; }              /* drop the 42%/6em rule */
+#energy-channels .finder-table td .snip code { white-space: pre-wrap; } /* snippet wraps */
+@media (max-width: 720px) {
+  /* Stack-friendly: allow horizontal scroll of the whole table rather than
+     crushing columns. */
+  #energy-channels { overflow-x: auto; }
+}

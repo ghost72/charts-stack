@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="title">charts-config</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css?v=config1">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="brand-badge">🧩</span>
+    <span class="brand-text">
+      <span class="brand-title">charts-config</span>
+      <span class="brand-sub" data-i18n="brand.subtitle">Charts-Automatik · Snippet-Tool</span>
+    </span>
+  </div>
+  <div class="meta">
+    <a class="logout" href="/logout" data-i18n="logout">⎋ Abmelden</a>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2 data-i18n="section.finder">🔎 Quellen-Finder (für charts-sync)</h2>
+    <div class="finder-hint" data-i18n-html="finder.hint">Treffer liefern ein fertiges Snippet. Füge es in die
+      <code>sources</code>-Liste der gewünschten Playlist ein – entweder in die
+      <code>charts.json</code> (falls <code>CHARTS_FILE</code> genutzt wird) oder
+      in die <code>CHARTS</code>-Variable der <code>.env</code>. Details in
+      CHARTS-SOURCES.md.</div>
+    <div class="finder-hint" data-i18n="finder.run_hint"></div>
+    <div class="finder">
+      <!-- Deezer playlist search -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_playlist">Deezer-Playlist suchen</h3>
+        <form id="dz-pl-form">
+          <input id="dz-pl-q" data-i18n-ph="finder.ph.deezer_playlist" placeholder="z.B. pop, country, schweiz">
+          <button type="submit" data-i18n="finder.btn.search">Suchen</button>
+        </form>
+        <div id="dz-pl-results"></div>
+      </div>
+      <!-- Deezer artist search (for type:artist) -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_artist">Deezer-Künstler suchen</h3>
+        <form id="dz-ar-form">
+          <input id="dz-ar-q" data-i18n-ph="finder.ph.deezer_artist" placeholder="z.B. Gölä, Polo Hofer, Bligg">
+          <button type="submit" data-i18n="finder.btn.search">Suchen</button>
+        </form>
+        <div id="dz-ar-results"></div>
+      </div>
+      <!-- Last.fm tag search (only when a key is set, otherwise grayed out) -->
+      <div class="finder-box" id="lf-tag-box">
+        <h3 data-i18n="finder.box.lastfm_tag">Last.fm-Tag prüfen</h3>
+        <div id="lf-chips" class="chips"></div>
+        <form id="lf-tag-form">
+          <input id="lf-tag-q" data-i18n-ph="finder.ph.lastfm_tag" placeholder="z.B. pop, 80s, country">
+          <button type="submit" data-i18n="finder.btn.check">Prüfen</button>
+        </form>
+        <div id="lf-tag-results"></div>
+      </div>
+      <!-- Deezer genre table (live, daily; fallback static) -->
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.deezer_genres">Deezer-Genres</h3>
+        <table id="dz-genres">
+          <thead><tr><th data-i18n="finder.col.id">ID</th><th data-i18n="finder.col.genre">Genre</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Energy channel browser: a read-only panel that mirrors the source
+       finder. It never writes .env/charts.json. -->
+  <section>
+    <h2 data-i18n="section.energy">⚡ Energy channels</h2>
+    <div class="finder-hint" data-i18n-html="energy.hint"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.own"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.feed"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.library"></div>
+    <div class="finder-hint" data-i18n="energy.run_hint"></div>
+    <div class="finder">
+      <div class="finder-box">
+        <div id="energy-channels"><div class="muted-txt" data-i18n="energy.loading"></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+// Injected i18n subset (config.ui.* re-based) + client translator. Mirrors the
+// Python loader's {name} substitution (split/join, not regex) and its
+// missing-key -> key-name fallback. English fallback is already merged in by
+// the server before injection.
+const I18N = {{I18N}};
+function t(key, params) {
+  let s = I18N[key];
+  if (s === undefined) return key;
+  if (params) for (const k in params)
+    s = s.split("{" + k + "}").join(String(params[k]));
+  return s;
+}
+// One-shot static-markup sweep: textContent for [data-i18n], placeholder for
+// [data-i18n-ph], innerHTML for [data-i18n-html] (nodes carrying inert markup
+// like the finder hint's <code>). Runs once at the end of this script.
+function applyStaticI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.placeholder = t(el.dataset.i18nPh);
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+}
+
+// Static fallback genre table (snapshot of stable Deezer genre IDs), used when
+// the live call /api/sources/deezer/genres fails (fail-open).
+const STATIC_GENRES = [
+  ["0","All"],["132","Pop"],["116","Rap/Hip Hop"],["152","Rock"],
+  ["113","Dance"],["165","R&B"],["85","Alternative"],["106","Electro"],
+  ["466","Folk"],["153","Blues"],["98","Classical"],["84","Country"],
+  ["129","Jazz"],["173","Films/Games"],["464","Metal"],["169","Soul & Funk"],
+  ["2","African Music"],["12","Brazilian Music"],["16","Indian Music"],
+];
+// Static suggested tags (common, reliably well-populated Last.fm tags).
+const STATIC_TAGS = ["pop","rock","hip-hop","electronic","dance","country",
+  "metal","jazz","80s","90s","2000s","indie","r&b","soul","folk","classical",
+  "swiss"];
+
+let _finderDone = false;
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Copies a snippet string to the clipboard. navigator.clipboard only exists in
+// a secure context (HTTPS) - otherwise a fallback via a temporary readonly
+// field + execCommand.
+function copySnippet(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const old = btn.textContent;
+    btn.textContent = t("finder.copied");
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.position = "absolute"; ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+  document.body.removeChild(ta);
+  if (done) done();
+}
+
+// Builds a snippet cell: readonly <code> (selectable) + copy button.
+function snippetCell(snippet) {
+  return `<div class="snip"><code>${esc(snippet)}</code>` +
+    `<button type="button" class="btn-sm snip-copy" data-snip="${esc(snippet)}">${t("finder.copy")}</button></div>`;
+}
+
+function renderGenres(rows) {
+  const tb = document.querySelector("#dz-genres tbody");
+  if (!tb) return;
+  tb.innerHTML = rows.map(([id, name]) =>
+    `<tr><td class="mono">${esc(id)}</td><td>${esc(name)}</td></tr>`).join("");
+}
+
+async function loadGenres() {
+  try {
+    const r = await fetch("/api/sources/deezer/genres", {cache: "no-store"});
+    const d = await r.json();
+    if (d && d.ok && Array.isArray(d.genres) && d.genres.length) {
+      renderGenres(d.genres.map(g => [g.id, g.name]));
+      return;
+    }
+  } catch (e) { /* fail-open */ }
+  renderGenres(STATIC_GENRES);   // fallback: static list
+}
+
+// Reusable client-side sortable table for the finder result boxes.
+// columns: [{ label, get(item), type: "string"|"number"|"raw", sortable }].
+// A "raw" column (the snippet) renders HTML verbatim and is never sortable.
+// defaultIdx picks the initial sort column; it starts descending so the
+// highest numeric value (most tracks / most fans) is on top.
+function renderSortableTable(box, items, columns, defaultIdx) {
+  let sortIdx = defaultIdx;
+  let sortDir = -1;   // -1 = descending, 1 = ascending
+
+  const cmp = (a, b) => {
+    const col = columns[sortIdx];
+    if (col.type === "number") {
+      const na = Number(col.get(a)), nb = Number(col.get(b));
+      const va = isNaN(na) ? -Infinity : na;
+      const vb = isNaN(nb) ? -Infinity : nb;
+      return (va - vb) * sortDir;
+    }
+    const sa = String(col.get(a) == null ? "" : col.get(a));
+    const sb = String(col.get(b) == null ? "" : col.get(b));
+    return sa.localeCompare(sb, undefined, {sensitivity: "base"}) * sortDir;
+  };
+
+  const draw = () => {
+    const sorted = columns[sortIdx].sortable ? items.slice().sort(cmp) : items;
+    const head = columns.map((col, i) => {
+      if (!col.sortable) return `<th>${col.label}</th>`;
+      const arrow = (i === sortIdx) ? (sortDir === 1 ? " ▲" : " ▼") : "";
+      return `<th class="sortable" data-col="${i}" role="button" ` +
+        `tabindex="0">${col.label}${arrow}</th>`;
+    }).join("");
+    const body = sorted.map(it =>
+      "<tr>" + columns.map(col =>
+        col.type === "raw"
+          ? `<td>${col.get(it)}</td>`
+          : `<td class="${col.type === "number" ? "mono" : ""}">${esc(col.get(it))}</td>`
+      ).join("") + "</tr>").join("");
+    box.innerHTML =
+      `<table class="finder-table"><thead><tr>${head}</tr></thead>` +
+      `<tbody>${body}</tbody></table>`;
+    box.querySelectorAll("th.sortable").forEach(th => {
+      const activate = () => {
+        const i = Number(th.dataset.col);
+        if (i === sortIdx) { sortDir = -sortDir; }
+        else { sortIdx = i; sortDir = -1; }
+        draw();
+      };
+      th.addEventListener("click", activate);
+      th.addEventListener("keydown", ev => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); activate(); }
+      });
+    });
+  };
+  draw();
+}
+
+async function searchDeezerPlaylists(q) {
+  const box = document.getElementById("dz-pl-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.searching")}</div>`;
+  try {
+    const r = await fetch("/api/sources/deezer/playlists?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (!d || !d.ok) {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+      return;
+    }
+    if (!d.results.length) {
+      box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
+      return;
+    }
+    renderSortableTable(box, d.results, [
+      {label: t("finder.col.title"), get: p => p.title, type: "string", sortable: true},
+      {label: t("finder.col.tracks"), get: p => p.nb_tracks, type: "number", sortable: true},
+      {label: t("finder.col.snippet"), get: p => snippetCell(p.snippet), type: "raw", sortable: false},
+    ], 1);   // default sort: Tracks, descending
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+async function searchDeezerArtists(q) {
+  const box = document.getElementById("dz-ar-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.searching")}</div>`;
+  try {
+    const r = await fetch("/api/sources/deezer/artists?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (!d || !d.ok) {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+      return;
+    }
+    if (!d.results.length) {
+      box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
+      return;
+    }
+    renderSortableTable(box, d.results, [
+      {label: t("finder.col.artist"), get: a => a.name, type: "string", sortable: true},
+      {label: t("finder.col.fans"), get: a => a.nb_fan, type: "number", sortable: true},
+      {label: t("finder.col.snippet"), get: a => snippetCell(a.snippet), type: "raw", sortable: false},
+    ], 1);   // default sort: Fans, descending
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+async function checkLastfmTag(q) {
+  const box = document.getElementById("lf-tag-results");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("finder.checking")}</div>`;
+  try {
+    const r = await fetch("/api/sources/lastfm/tag?q=" + encodeURIComponent(q),
+      {cache: "no-store"});
+    const d = await r.json();
+    if (d && d.ok) {
+      const samples = (d.sample || []).map(s => `<li>${esc(s)}</li>`).join("");
+      // Show the real tag total honestly; fall back to a plain "valid" line
+      // when Last.fm did not report a numeric total.
+      const headline = (d.total != null)
+        ? t("finder.lastfm.hit", {tag: esc(d.tag), total: esc(d.total)})
+        : t("finder.lastfm.valid", {tag: esc(d.tag)});
+      box.innerHTML =
+        `<div class="lf-hit">${headline}</div>` +
+        (samples ? `<ul class="lf-samples">${samples}</ul>` : "") +
+        snippetCell(d.snippet);
+    } else {
+      box.innerHTML = `<div class="s-err">${esc((d && d.detail) || t("finder.generic_error"))}</div>`;
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
+// Loads the read-only Energy channel list and renders it as a sortable table.
+// Fail-open like searchDeezerPlaylists: any non-OK / !ok / empty result shows
+// the energy.unreachable message instead of throwing. Status is a badge span,
+// snippet is the shared snippetCell() markup.
+async function loadEnergyChannels() {
+  const box = document.getElementById("energy-channels");
+  if (!box) return;
+  try {
+    const r = await fetch("/api/sources/energy/channels", {cache: "no-store"});
+    const d = await r.json();
+    if (!r.ok || !d || !d.ok || !Array.isArray(d.channels) || !d.channels.length) {
+      box.innerHTML = `<div class="muted-txt">${t("energy.unreachable")}</div>`;
+      return;
+    }
+    renderSortableTable(box, d.channels, [
+      {label: t("energy.col.channel"), get: c => c.display, type: "string", sortable: true},
+      {label: t("energy.col.slug"), get: c => c.slug, type: "string", sortable: true},
+      {label: t("energy.col.genre"), get: c => c.genre, type: "string", sortable: true},
+      {label: t("energy.col.mode"), get: c => c.mode, type: "string", sortable: true},
+      {label: t("energy.col.status"), type: "raw", sortable: false, get: c => {
+        const cls = c.active ? "active" : "inactive";
+        const txt = c.active ? t("energy.status.active", {mode: c.active_mode})
+                             : t("energy.status.inactive");
+        return `<span class="nrj-badge ${cls}">${esc(txt)}</span>`;
+      }},
+      {label: t("energy.col.snippet"), get: c => snippetCell(c.snippet), type: "raw", sortable: false},
+    ], 0);   // default sort: Channel, ascending by name feel (descending glyph)
+  } catch (e) {
+    box.innerHTML = `<div class="muted-txt">${t("energy.unreachable")}</div>`;
+  }
+}
+
+function initFinder(lastfm) {
+  // Gray out the Last.fm part when no API key is configured. This cannot change
+  // at runtime, but we set it idempotently.
+  const lfBox = document.getElementById("lf-tag-box");
+  if (lfBox) {
+    if (lastfm.configured === false) {
+      lfBox.classList.add("muted");
+      if (!lfBox.querySelector(".lf-nokey")) {
+        const hint = document.createElement("div");
+        hint.className = "lf-nokey muted-txt";
+        hint.textContent = t("finder.lastfm.needs_key");
+        lfBox.appendChild(hint);
+      }
+    } else {
+      lfBox.classList.remove("muted");
+      const hint = lfBox.querySelector(".lf-nokey");
+      if (hint) hint.remove();
+    }
+  }
+
+  if (_finderDone) return;      // wire up the rest only ONCE
+  _finderDone = true;
+
+  // Fill the genre table once.
+  loadGenres();
+
+  // Build the chips.
+  const chipsEl = document.getElementById("lf-chips");
+  if (chipsEl) {
+    chipsEl.innerHTML = STATIC_TAGS.map(t =>
+      `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join("");
+    chipsEl.addEventListener("click", (e) => {
+      const b = e.target.closest(".chip");
+      if (!b) return;
+      const tag = b.getAttribute("data-tag");
+      const inp = document.getElementById("lf-tag-q");
+      if (inp) inp.value = tag;
+      checkLastfmTag(tag);
+    });
+  }
+
+  // Form submits.
+  const dzForm = document.getElementById("dz-pl-form");
+  if (dzForm) {
+    dzForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("dz-pl-q").value || "").trim();
+      if (q) searchDeezerPlaylists(q);
+    });
+  }
+  const dzArForm = document.getElementById("dz-ar-form");
+  if (dzArForm) {
+    dzArForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("dz-ar-q").value || "").trim();
+      if (q) searchDeezerArtists(q);
+    });
+  }
+  const lfForm = document.getElementById("lf-tag-form");
+  if (lfForm) {
+    lfForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (document.getElementById("lf-tag-q").value || "").trim();
+      if (q) checkLastfmTag(q);
+    });
+  }
+
+  // Copy buttons (delegation across the whole finder section).
+  const finder = document.querySelector(".finder");
+  if (finder) {
+    finder.addEventListener("click", (e) => {
+      const b = e.target.closest(".snip-copy");
+      if (!b) return;
+      copySnippet(b.getAttribute("data-snip"), b);
+    });
+  }
+
+  // Load the Energy channel browser once. It sits OUTSIDE the .finder section,
+  // so its copy buttons need their own identical .snip-copy delegation bound to
+  // the energy results container (the finder delegation above does not reach it).
+  loadEnergyChannels();
+  const energyBox = document.getElementById("energy-channels");
+  if (energyBox) {
+    energyBox.addEventListener("click", (e) => {
+      const b = e.target.closest(".snip-copy");
+      if (!b) return;
+      copySnippet(b.getAttribute("data-snip"), b);
+    });
+  }
+}
+
+applyStaticI18n();   // populate the static head/body markup once on load
+// charts-config has no /api/status; probe the Last.fm endpoint once (empty
+// query) to learn whether a key is configured, then init the finder. The
+// backend returns `configured` even without an API key.
+fetch("/api/sources/lastfm/tag?q=", {cache: "no-store"})
+  .then(r => r.json())
+  .then(d => initFinder({configured: d && d.configured}))
+  .catch(() => initFinder({}));
+</script>
+</body>
+</html>
