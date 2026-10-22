@@ -792,6 +792,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-}
       # Sprache fuer UI/Logs (leer = Englisch, de/fr verfuegbar).
       - CHARTS_LANG=${CHARTS_LANG:-}
+      # Dezenter Spenden-Footer (PayPal/Revolut). Default an; mit 0 abschaltbar.
+      - CONFIG_DONATE=${CONFIG_DONATE:-1}
       - TZ=${TZ:-Europe/Zurich}
     ports:
       - "${CONFIG_PORT:-5058}:5058"

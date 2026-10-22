@@ -100,6 +100,7 @@ exposed.
 | `LASTFM_API_KEY` | – | optional, for the Last.fm tag check (empty = Last.fm box greyed out) |
 | `DASHBOARD_GENRE_CACHE_TTL` | `86400` | cache TTL of the Deezer genre table in the source finder (seconds; refreshed on the first call after expiry) |
 | `CHARTS_LANG` | – (empty = English) | language for the UI **and** logs (`de`/`fr` available) – one stack-wide switch, no in-UI toggle |
+| `CONFIG_DONATE` | `1` | discreet donate footer (PayPal/Revolut); `0`/`false`/`no` hides it |
 
 ## Access
 
