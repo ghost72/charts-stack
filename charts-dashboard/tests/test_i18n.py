@@ -99,7 +99,7 @@ def test_dashboard_ui_keys_present():
         "dashboard.ui.time.unit.min",
         "dashboard.ui.time.in_prefix",
         "dashboard.ui.tile.reachable",
-        "dashboard.ui.finder.generic_error",
+        "dashboard.ui.tile.not_reachable",
         "dashboard.ui.donate.label",
     }
     for c in _SHIPPED:
@@ -171,8 +171,8 @@ def test_index_render_handoff(monkeypatch, lang):
     html = r.text
     assert f'<html lang="{lang}">' in html
     i18n_obj = _extract_i18n(html)
-    # known placeholder key is present (surfaces a dataset-casing typo)
-    assert "finder.ph.deezer_playlist" in i18n_obj
+    # a surviving dashboard.ui.* key is present in the client handoff
+    assert "tile.slskd.connected" in i18n_obj
     # language-correct sample strings
     expected = {
         "de": "verbunden & eingeloggt",

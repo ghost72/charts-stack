@@ -158,43 +158,6 @@ async def api_status(request: Request):
     return JSONResponse(collector.collect())
 
 
-# --- Source finder (read-only, fail-open, auth-protected like /api/status) ---
-
-@app.get("/api/sources/deezer/playlists")
-async def api_sources_deezer_playlists(request: Request, q: str = ""):
-    if not _current_user(request):
-        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
-    return JSONResponse(collector.search_deezer_playlists(q))
-
-
-@app.get("/api/sources/deezer/artists")
-async def api_sources_deezer_artists(request: Request, q: str = ""):
-    if not _current_user(request):
-        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
-    return JSONResponse(collector.search_deezer_artists(q))
-
-
-@app.get("/api/sources/deezer/genres")
-async def api_sources_deezer_genres(request: Request):
-    if not _current_user(request):
-        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
-    return JSONResponse(collector.deezer_genres())
-
-
-@app.get("/api/sources/lastfm/tag")
-async def api_sources_lastfm_tag(request: Request, q: str = ""):
-    if not _current_user(request):
-        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
-    return JSONResponse(collector.lastfm_tag_check(q))
-
-
-@app.get("/api/sources/energy/channels")
-async def api_sources_energy_channels(request: Request):
-    if not _current_user(request):
-        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
-    return JSONResponse(collector.energy_channels())
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok"}
