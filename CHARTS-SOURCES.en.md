@@ -103,7 +103,7 @@ Last.fm source is **ignored** (not passed to the API).
 > artist sources that no playlist/chart covers well – e.g. Swiss dialect
 > ("Mundart"): Gölä, Polo Hofer, Patent Ochsner. The `source` is the **artist
 > ID**, not a playlist ID (see
-> [section 5](#5-finding-idstags-without-the-dashboard) on how to find it).
+> [section 5](#5-finding-idstags-without-charts-config) on how to find it).
 
 > **`genre_filter`** toggles the genre filter **per playlist** – `true`/`false`
 > override the global `GENRE_FILTER` (off by default, opt-in); if the field is
@@ -138,11 +138,11 @@ The following table is a **snapshot** of the well-known, stable Deezer genre IDs
 
 **Live path:** The current, complete list is always available at
 `https://api.deezer.com/genre` (JSON, `data[].id` / `data[].name`). The same list
-appears as a searchable table in the dashboard "Source finder" panel.
+appears as a searchable table in the charts-config "Source finder" panel.
 
-**Freshness of the dashboard table:** The genre table in the dashboard does
+**Freshness of the charts-config table:** The genre table in charts-config does
 **not** refresh via a cron job; it refreshes on the first page view **after the
-24h TTL** (`DASHBOARD_GENRE_CACHE_TTL`) expires. If the dashboard has not been
+24h TTL** (`DASHBOARD_GENRE_CACHE_TTL`) expires. If charts-config has not been
 opened for a while, the table may be older than 24h until the next view refreshes
 it – which satisfies the "updated daily" goal.
 
@@ -150,7 +150,7 @@ it – which satisfies the "updated daily" goal.
 > automatically valid `chart` IDs. For country-/genre-specific playlists the most
 > reliable path is a **playlist ID** (`type:"playlist"`) of an official Deezer
 > country/genre playlist. That is why this document recommends the **playlist
-> path** for "pop/country/…" first (playlist search in the dashboard or
+> path** for "pop/country/…" first (playlist search in charts-config or
 > `https://api.deezer.com/search/playlist?q=…`).
 
 ---
@@ -173,7 +173,7 @@ in **English** (e.g. `Switzerland`, `Germany`, `United States`).
 ### `tag.getTopTracks`
 Top tracks for a **tag/genre**. Required parameter `tag` (e.g. `pop`, `rock`,
 `country`, `80s`, `swiss`). Tags are freely assigned and quality varies – check
-usefulness via the dashboard tag finder.
+usefulness via the charts-config tag finder.
 ```json
 {"service":"lastfm","method":"tag.getTopTracks","tag":"pop"}
 ```
@@ -187,9 +187,9 @@ Top tracks of a public Last.fm user. Required parameter `user`, optional `period
 
 ---
 
-## 5. Finding IDs/tags (without the dashboard)
+## 5. Finding IDs/tags (without charts-config)
 
-If you do not use the dashboard "Source finder" panel, here is how to get the
+If you do not use the charts-config "Source finder" panel, here is how to get the
 values:
 
 - **Deezer playlist ID:** open the playlist in the Deezer web app; the ID is in
@@ -206,7 +206,7 @@ values:
 - **Last.fm country:** use English country names; validate with the same
   `geo.getTopTracks` call.
 
-> The dashboard "Source finder" panel makes this more convenient and returns the
+> The charts-config "Source finder" panel makes this more convenient and returns the
 > ready-to-use `.env` snippet (including tag/country validation).
 
 ---
@@ -380,7 +380,7 @@ Compact single line (`CHARTS=` on ONE line):
 ### Group B — template with placeholder (fetch the ID first)
 
 These templates are **not directly runnable**: every `<id>` must first be
-replaced with a real ID via the dashboard finder (Deezer playlist search) or
+replaced with a real ID via the charts-config finder (Deezer playlist search) or
 `https://api.deezer.com/search/playlist?q=…`. They are **deliberately shown
 multi-line only** as templates – never as a compact copy-paste line – so nobody
 accidentally goes live with an `<id>`.

@@ -40,55 +40,11 @@ central component.
 > the `WATCH_CONTAINERS` variable (central `.env`). If a box does not appear,
 > check there first – the `.env` overrides the code default.
 
-## Source finder (find new chart sources)
-
-At the bottom of the page there is a dedicated panel (independent of the flow
-diagram) that helps you assemble the `charts-sync` `CHARTS` list – no more
-fishing IDs out of web links by hand:
-
-- **Deezer playlist search:** type a query → matching playlists with their ID
-  and a **ready-made JSON snippet** to copy
-  (`{"service":"deezer","type":"playlist","source":"<id>",…}`).
-- **Deezer artist search:** type an artist name (e.g. `Gölä`, `Polo Hofer`) →
-  matching artists with their ID and fan count (helps tell apart artists with
-  the same name) plus a **ready-made snippet** for the artist's top tracks
-  (`{"service":"deezer","type":"artist","source":"<id>",…}`).
-- **Deezer genre table:** the stable genre IDs as a list (cached once per day,
-  refreshed on the first call after expiry – see `DASHBOARD_GENRE_CACHE_TTL`).
-  If the live call fails, a built-in static fallback list is used.
-- **Last.fm tag check:** enter a tag (e.g. `country`) → validates via
-  `tag.getTopTracks` whether it is usable and shows the matching snippet
-  (`{"service":"lastfm","method":"tag.getTopTracks","tag":"<tag>",…}`). This part
-  is **only active with `LASTFM_API_KEY`**; without a key it is greyed out.
-
-Every snippet can be copied and pasted straight into the `CHARTS` variable of
-your `.env`/`compose.yml`. Full reference: [`CHARTS-SOURCES.en.md`](../CHARTS-SOURCES.en.md).
-
-## Energy channel browser (NRJ)
-
-Right below the source finder there is a second, equally **read-only** panel: a
-list of the confirmed Energy (NRJ) webradio channels, so you do not have to hunt
-slugs in the README when assembling `ENERGY_CHANNELS`. Per channel it shows the
-display name, slug, genre, a **status badge** (active + the running mode, or
-inactive) and a **ready-made JSON snippet** for the `ENERGY_CHANNELS` array. The
-dashboard **never** writes `.env` or `charts.json` – you paste by hand.
-
-The status comes from the running `charts-energy` config (which the service
-writes into its status JSON); a missing/old status file simply shows every
-channel as "inactive" (fail-open). Each default mode needs one extra wiring step:
-
-- **own** → append its `missing-energy-<name>.txt` (shown in the snippet) to
-  `MISSING_FILES` so `charts-download` fetches its missing songs.
-- **feed** → add `{"service":"energy","theme":"<theme>"}` to that theme's
-  playlist in `charts-sync/charts.json` (theme byte-for-byte, e.g. `mundart`).
-- **library** → append the shared `missing-energy-library.txt` to `MISSING_FILES`
-  (all `library` channels share this one file).
-
-Example: copy the **Energy Pop** snippet
-(`{"slug":"energypop","title":"Energy Pop","mode":"own","playlist":"energy-pop.m3u","enabled":true}`)
-into the `ENERGY_CHANNELS` array of your `.env`, then add `missing-energy-pop.txt`
-to `MISSING_FILES`. Details:
-[`charts-energy/README.en.md`](../charts-energy/README.en.md).
+The dashboard is a **pure status monitor**: it shows state, connections and run
+stats, nothing more. The source finder and the Energy-channel browser that used
+to live here moved to the sibling service **[`charts-config`](../charts-config)**
+(own web UI on port 5058). The dashboard still renders a **charts-config tile**
+in the monitoring zone so you can see at a glance whether that service is up.
 
 ## Where the data comes from
 
@@ -137,7 +93,6 @@ Without a valid login the service refuses to start (the page may be exposed).
 | `LASTFM_API_KEY` | – | optional, for the Last.fm live check (empty = tile grey) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, for the Pushover `validate` check |
 | `DASHBOARD_EXTERNAL_TTL` | `120` | cache TTL of the external live checks (seconds) |
-| `DASHBOARD_GENRE_CACHE_TTL` | `86400` | cache TTL of the Deezer genre table in the source finder (seconds; refreshed on the first call after expiry) |
 | `WATCH_CONTAINERS` | all charts services | which containers are shown – services **without** a status file (e.g. `charts-watchdog`, `charts-dashboard`) only appear if listed here |
 
 ## Access

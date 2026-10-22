@@ -24,10 +24,10 @@ steht als zentrale Komponente im Zentrum, durch die alle Downloads laufen.
   (Library-Scan auf schlechte Qualität) stoßen Downloads über **slskd** an.
 - **Einsortieren:** `charts-import` legt die geladenen Songs getaggt in die
   Library → **Navidrome** (externes Ziel, als grüne Pille dargestellt).
-- **Überwachung & Report:** `charts-watchdog`, `charts-dashboard` und
-  `charts-digest` (tägliche Pushover-Zusammenfassung) stehen rechts in einer
-  eigenen „Überwachung & Report"-Zone (nicht im Datenfluss), als gestapelte
-  Kacheln mit gleichmäßigem Abstand.
+- **Überwachung & Report:** `charts-watchdog`, `charts-dashboard`,
+  `charts-digest` (tägliche Pushover-Zusammenfassung) und `charts-config`
+  (Snippet-/Konfig-UI) stehen rechts in einer eigenen „Überwachung & Report"-Zone
+  (nicht im Datenfluss), als gestapelte Kacheln mit gleichmäßigem Abstand.
 
 > **Fehlt eine Dienst-Box?** Dienste, die **keine** Statusdatei schreiben
 > (`charts-watchdog`, `charts-dashboard`), werden nur angezeigt, wenn sie in der
@@ -63,57 +63,12 @@ aufgeklappt. Die Kacheln lassen sich mit der Maus **frei verschieben**
 
 Die Seite aktualisiert sich automatisch (Standard alle 15 s).
 
-## Quellen-Finder (neue Chart-Quellen finden)
-
-Unten auf der Seite steht ein eigenes Panel (unabhängig vom Flow-Diagramm), das
-beim Zusammenstellen der `charts-sync`-`CHARTS`-Liste hilft – man muss die IDs
-nicht mehr von Hand aus Weblinks fummeln:
-
-- **Deezer-Playlist-Suche:** Suchbegriff eingeben → passende Playlists mit ID
-  und einem **fertigen JSON-Snippet** zum Kopieren
-  (`{"service":"deezer","type":"playlist","source":"<id>",…}`).
-- **Deezer-Künstler-Suche:** Künstlernamen eingeben (z. B. `Gölä`, `Polo Hofer`)
-  → passende Künstler mit ID und Fan-Zahl (hilft, gleichnamige Künstler zu
-  unterscheiden) sowie ein **fertiges Snippet** für die Top-Tracks des Künstlers
-  (`{"service":"deezer","type":"artist","source":"<id>",…}`).
-- **Deezer-Genre-Tabelle:** die stabilen Genre-IDs als Liste (1×/Tag gecacht,
-  Refresh beim ersten Aufruf nach Ablauf – siehe `DASHBOARD_GENRE_CACHE_TTL`).
-  Fällt der Live-Call aus, greift eine eingebaute statische Fallback-Liste.
-- **Last.fm-Tag-Prüfung:** einen Tag (z. B. `country`) eingeben → prüft via
-  `tag.getTopTracks`, ob er brauchbar ist, und zeigt das passende Snippet
-  (`{"service":"lastfm","method":"tag.getTopTracks","tag":"<tag>",…}`). Dieser
-  Teil ist **nur mit `LASTFM_API_KEY`** aktiv; ohne Key ist er ausgegraut.
-
-Jedes Snippet lässt sich kopieren und direkt in die `CHARTS`-Variable der
-`.env`/`compose.yml` einsetzen. Volle Referenz: [`CHARTS-SOURCES.md`](../CHARTS-SOURCES.md).
-
-## Energy-Kanäle (NRJ) durchsuchen
-
-Direkt unter dem Quellen-Finder steht ein zweites, ebenfalls **reines
-Lese-Panel**: eine Liste der bestätigten Energy-(NRJ-)Webradio-Kanäle, damit man
-beim Zusammenstellen von `ENERGY_CHANNELS` nicht die Slugs aus dem README suchen
-muss. Je Kanal werden Anzeigename, Slug, Genre, ein **Status-Badge** (aktiv +
-laufender Modus bzw. inaktiv) und ein **fertiges JSON-Snippet** für das
-`ENERGY_CHANNELS`-Array gezeigt. Das Dashboard ändert **nie** `.env` oder
-`charts.json` – man fügt von Hand ein.
-
-Der Status stammt aus der laufenden `charts-energy`-Konfiguration (die der
-Dienst in seine Status-JSON schreibt); eine fehlende/alte Statusdatei zeigt alle
-Kanäle einfach „inaktiv“ (fail-open). Je Standard-Modus ist eine zusätzliche
-Verdrahtung nötig:
-
-- **own** → die (im Snippet angezeigte) `missing-energy-<name>.txt` an
-  `MISSING_FILES` anhängen, damit `charts-download` die fehlenden Songs lädt.
-- **feed** → `{"service":"energy","theme":"<theme>"}` zur Playlist dieses Themas
-  in `charts-sync/charts.json` hinzufügen (Thema bytegleich, z. B. `mundart`).
-- **library** → die gemeinsame `missing-energy-library.txt` an `MISSING_FILES`
-  anhängen (alle `library`-Kanäle teilen sich diese eine Datei).
-
-Beispiel: das Snippet von **Energy Pop** kopieren
-(`{"slug":"energypop","title":"Energy Pop","mode":"own","playlist":"energy-pop.m3u","enabled":true}`)
-und in das `ENERGY_CHANNELS`-Array der `.env` einfügen, dann
-`missing-energy-pop.txt` an `MISSING_FILES` ergänzen. Details:
-[`charts-energy/README.md`](../charts-energy/README.md).
+Das Dashboard ist ein **reiner Status-Monitor**: es zeigt Zustand, Verbindungen
+und Lauf-Statistik, mehr nicht. Der Quellen-Finder und der Energy-Kanal-Browser,
+die früher hier lagen, sind in den Schwester-Dienst
+**[`charts-config`](../charts-config)** gewandert (eigene Web-UI auf Port 5058).
+Das Dashboard zeigt weiterhin eine **charts-config-Kachel** in der
+Überwachungs-Zone, damit man auf einen Blick sieht, ob dieser Dienst läuft.
 
 ## Woher die Daten kommen
 
@@ -164,7 +119,6 @@ sein).
 | `LASTFM_API_KEY` | – | optional, für den Last.fm-Live-Check (leer = Kachel grau) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, für den Pushover-`validate`-Check |
 | `DASHBOARD_EXTERNAL_TTL` | `120` | Cache-TTL der externen Live-Checks (Sekunden) |
-| `DASHBOARD_GENRE_CACHE_TTL` | `86400` | Cache-TTL der Deezer-Genre-Tabelle im Quellen-Finder (Sekunden; Refresh beim ersten Aufruf nach Ablauf) |
 | `WATCH_CONTAINERS` | alle charts-Dienste | welche Container angezeigt werden – Dienste **ohne** Statusdatei (z. B. `charts-watchdog`, `charts-dashboard`) erscheinen NUR, wenn sie hier gelistet sind |
 
 ## Zugriff
