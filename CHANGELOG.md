@@ -10,6 +10,55 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [1.6.0] - 2026-10-22
+
+Energy (NRJ/energy.ch) webradio as a new source, a dedicated config web UI,
+clearer notifications, and a status-only dashboard.
+
+### Added
+- **New service `charts-energy`.** Taps the Swiss NRJ / energy.ch webradio
+  channels via their Icecast ICY in-stream metadata (no API, no headless
+  browser), accumulates the observed spins and feeds the missing songs into the
+  existing charts-download pipeline. Config-driven per channel via the
+  `ENERGY_CHANNELS` JSON, with THREE modes:
+  - `own` — writes its own `energy-<slug>.m3u` playlist (reserved
+    `energy-*.m3u` namespace, collision-guarded).
+  - `feed` — hands tracks to an EXISTING charts-sync theme (e.g. tops up the one
+    `mundart.m3u` or `charts.m3u`), deduped against the Deezer/Last.fm sources —
+    no second playlist.
+  - `library` — download-only like charts-flashback: no playlist, resolves a
+    release year via MusicBrainz into the shared year map, so songs appear in
+    the right decade via the Navidrome Smart Playlists.
+  Ships **disabled by default** (`ENERGY_ENABLED=0`, empty channel list) so a
+  fresh clone never polls unexpectedly. Includes a channel-discovery helper.
+- **New service `charts-config`.** A standalone, password-protected web UI
+  (port 5058) that hosts the source finder (Deezer playlist/artist search,
+  Last.fm tag check, Deezer genre table) and a new Energy-channel browser
+  (per-channel ready-to-paste `ENERGY_CHANNELS` snippet, active/mode status
+  badge, and text-only "where to paste / what to restart" hints). Read-only: no
+  Docker access, never writes your config files.
+- **charts-sync `energy` feed kind.** charts-sync can consume a charts-energy
+  handoff file as an additional source of an existing theme
+  (`{"service":"energy","theme":"…"}`), so Energy tracks merge into the curated
+  playlists (deduped, energy merged after the curated sources).
+- **Affected songs listed in more notifications.** The charts-download
+  "re-downloaded" group and the charts-recommend message now list the songs,
+  not just a count.
+- **charts-digest Energy group.** Library-mode Energy downloads now show up as a
+  clean "⚡ Energy" group in the daily digest.
+
+### Changed
+- **charts-dashboard is a pure status monitor again.** The source finder and the
+  Energy browser moved out of the dashboard into the new charts-config service;
+  the dashboard now shows service status and a charts-config tile (grayed out
+  when a service is disabled).
+- The charts-energy notification header total now spans both own- and
+  library-mode channels instead of only own, so it matches the per-section
+  detail below.
+- Documentation synced across the stack for the two new services (root README
+  tables, ports, finder location → charts-config, decade sources, and a new
+  charts-config README).
+
 ## [1.5.0] - 2026-10-21
 
 Hitparade playlist updates promptly when a missing song arrives.
