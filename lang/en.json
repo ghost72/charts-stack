@@ -242,7 +242,7 @@
   "download.notify.dry_run_header": "<b>{count}</b> songs would be downloaded (DRY_RUN)",
   "download.notify.enqueued_header": "<b>{count}</b> downloads started:",
   "download.notify.retried_header": "<b>{count}</b> failed re-downloaded",
-  "download.notify.retried_group": "<b>🔁 {count} re-downloaded:</b>",
+  "download.notify.retried_group": "🔁 {count} re-downloaded:",
   "download.notify.retried_entry": "{artist} - {title}",
   "download.notify.more": "... and {count} more",
   "download.mode.dry_run": "DRY_RUN (test only, no download)",

@@ -242,7 +242,7 @@
   "download.notify.dry_run_header": "<b>{count}</b> Songs w\u00fcrden geladen (DRY_RUN)",
   "download.notify.enqueued_header": "<b>{count}</b> Downloads gestartet:",
   "download.notify.retried_header": "<b>{count}</b> fehlgeschlagene neu geladen",
-  "download.notify.retried_group": "<b>🔁 {count} neu geladen:</b>",
+  "download.notify.retried_group": "🔁 {count} neu geladen:",
   "download.notify.retried_entry": "{artist} - {title}",
   "download.notify.more": "... und {count} weitere",
   "download.mode.dry_run": "DRY_RUN (nur Test, kein Download)",
