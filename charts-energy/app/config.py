@@ -15,6 +15,7 @@ channel list) so a fresh clone never polls Icecast unexpectedly.
 import json
 import logging
 import os
+import re
 
 from .i18n import t
 
@@ -24,6 +25,17 @@ logger = logging.getLogger(__name__)
 def _get_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_bool(name: str, default: bool) -> bool:
+    return os.environ.get(name, "1" if default else "0") == "1"
+
+
+def _get_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
     except (TypeError, ValueError):
         return default
 
@@ -106,6 +118,44 @@ AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".wav", ".alac",
 }
 
+# --- library mode: MusicBrainz year resolution (hybrid, for the decade NSP) ---
+# Used only by `library` channels (year.py). Exact release year via
+# MusicBrainz; if not plausible/empty -> the resolver falls back to the channel
+# decade midpoint. The three CONSTANT names MB_USER_AGENT / MB_CACHE_FILE /
+# HTTP_TIMEOUT are pinned so the MB machinery copied unchanged from
+# charts-flashback/app/year.py dereferences them without edits; only the env
+# var the first one reads differs (MB_USER_AGENT_ENERGY).
+MB_ENABLED = _get_bool("MB_ENABLED", True)
+# Constant name stays MB_USER_AGENT (copied _mb_year uses config.MB_USER_AGENT);
+# only the env var it reads is MB_USER_AGENT_ENERGY so the two services can
+# carry different User-Agents.
+MB_USER_AGENT = os.environ.get("MB_USER_AGENT_ENERGY",
+                               "charts-energy/1.0 (self-hosted)")
+# Rate limit: MusicBrainz allows ~1 request/second. 1.1s buffer.
+MB_RATE_SLEEP = _get_float("MB_RATE_SLEEP", 1.1)
+# Minimum score of a recording hit for it to be considered.
+MB_SCORE_MIN = _get_int("MB_SCORE_MIN", 90)
+# Energy-OWNED year cache (misses too); a plain constant with no env override,
+# mirroring flashback, so the copied _load_cache/_save_cache work unedited. NOT
+# shared with flashback's cache.
+MB_CACHE_FILE = os.path.join(CHARTS_DIR, ".charts-energy-mbcache.json")
+# httpx timeout for the copied _mb_year (config.HTTP_TIMEOUT).
+HTTP_TIMEOUT = _get_int("HTTP_TIMEOUT", 30)
+
+# Year map (artist|title -> year) that charts-import reads when tagging to set
+# the date/originaldate tag - WITHOUT ever writing the year into file/folder
+# names. DELIBERATELY the flashback filename: charts-import reads this single
+# hardcoded shared file, keyed purely by lowercase 'artist|title', so an
+# Energy-written entry is indistinguishable from a flashback-written one (zero
+# changes to charts-import/charts-download). The shared name is not a bug.
+YEAR_MAP_FILE = os.path.join(CHARTS_DIR, ".charts-flashback-years.json")
+
+# library mode writes ONE shared missing file across all `library` channels
+# (mirrors flashback's single missing-flashback.txt). The user appends it to
+# charts-download's MISSING_FILES; no charts-download code change.
+LIBRARY_MISSING_FILE = os.environ.get("ENERGY_LIBRARY_MISSING_FILE",
+                                      "missing-energy-library.txt")
+
 # --- Pushover (optional; identical block to the siblings) ---
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
@@ -124,7 +174,33 @@ STATE_FILE = os.environ.get("STATE_FILE", ".charts-energy-state.json")
 
 # --- Channel list (CHARTS-style JSON-in-env) ---
 
-_VALID_MODES = ("own", "feed")
+_VALID_MODES = ("own", "feed", "library")
+
+# OWN-mode playlists are restricted to this reserved namespace so Energy can
+# never collide with a charts-sync curated playlist (charts.m3u/mundart.m3u/
+# ...), which by convention is never energy-prefixed. Names are lowercased
+# before matching AND before writing.
+_OWN_PLAYLIST_RE = re.compile(r"^energy-[a-z0-9-]+\.m3u$")
+
+# Decade slugs: energy80s/90s/00s/10s/20s. Used to derive the decade hint for
+# library mode (the explicit `decade` field overrides it).
+_ENERGY_DECADE_RE = re.compile(r"^energy(\d{2})s$")
+
+
+def decade_from_slug(slug: str) -> str:
+    """'energy80s'->'1980', 'energy00s'->'2000', else ''. Pure for tests.
+
+    The slug is lowercased before the match so a capitalized slug cannot escape
+    the parse. The century split (nn >= 30 -> 1900s) resolves the 2-digit
+    ambiguity for the confirmed set: 80s/90s -> 1980/1990, 00s/10s/20s ->
+    2000/2010/2020.
+    """
+    m = _ENERGY_DECADE_RE.match(slug.strip().lower())
+    if not m:
+        return ""
+    nn = int(m.group(1))
+    century = 1900 if nn >= 30 else 2000
+    return str(century + nn)
 
 
 def _default_names(slug: str) -> tuple[str, str]:
@@ -150,7 +226,7 @@ class Channel:
 
     def __init__(self, slug: str, title: str = "", enabled: bool = True,
                  mode: str = "own", playlist: str = "", missing: str = "",
-                 theme: str = ""):
+                 theme: str = "", decade: str = ""):
         self.slug = slug
         self.title = title or slug
         self.enabled = enabled
@@ -162,6 +238,9 @@ class Channel:
         self.missing = missing or default_missing
         # FEED-mode field (ignored in own mode).
         self.theme = theme
+        # LIBRARY-mode decade hint (ignored by own/feed): explicit `decade`
+        # override, else parsed from the slug (energy80s -> 1980), else "".
+        self.decade = decade or decade_from_slug(slug)
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid only
         return (f"Channel(slug={self.slug!r}, mode={self.mode!r}, "
@@ -178,6 +257,12 @@ def _parse_channels(data) -> tuple[list[Channel], list[str]]:
     """
     channels: list[Channel] = []
     warnings: list[str] = []
+    # Collision guard (OWN only): never let two writers target the same .m3u or
+    # the same missing file (both are full overwrites). Resolved, normalized
+    # names are tracked here; feed/library are exempt (no .m3u, feed writes no
+    # per-channel missing file, library channels share one missing file).
+    seen_playlists: set[str] = set()
+    seen_missing: set[str] = set()
 
     if not isinstance(data, list):
         return channels, warnings
@@ -202,12 +287,45 @@ def _parse_channels(data) -> tuple[list[Channel], list[str]]:
 
         enabled = bool(entry.get("enabled", True))
         title = str(entry.get("title", "")).strip()
+        # Normalize the slug to lowercase so _default_names always produces a
+        # pattern-valid default (a capitalized slug would otherwise yield
+        # energy-Energy80s.m3u and fail the reserved-namespace check).
+        norm_slug = slug.lower()
         playlist = str(entry.get("playlist", "")).strip()
         missing = str(entry.get("missing", "")).strip()
+        decade = str(entry.get("decade", "")).strip()
+
+        if mode == "own":
+            default_playlist, default_missing = _default_names(norm_slug)
+            # Resolve + normalize (lowercase) the playlist name.
+            resolved_playlist = (playlist.lower() if playlist
+                                 else default_playlist)
+            if not _OWN_PLAYLIST_RE.match(resolved_playlist):
+                # Reserved namespace: an explicit non-energy-*.m3u name is a
+                # hard refuse (use feed to write into an existing playlist).
+                warnings.append(t("energy.config.own_playlist_reserved",
+                                   slug=slug, name=resolved_playlist))
+                continue
+            resolved_missing = (missing.lower() if missing
+                                else default_missing.lower())
+            if (resolved_playlist in seen_playlists
+                    or resolved_missing in seen_missing):
+                # Another OWN channel already owns this .m3u or missing file.
+                name = (resolved_playlist if resolved_playlist in seen_playlists
+                        else resolved_missing)
+                warnings.append(t("energy.config.own_playlist_duplicate",
+                                   slug=slug, name=name))
+                continue
+            seen_playlists.add(resolved_playlist)
+            seen_missing.add(resolved_missing)
+            # Store the normalized names so the eventual write uses them.
+            playlist = resolved_playlist
+            missing = resolved_missing
 
         channels.append(Channel(
-            slug=slug, title=title, enabled=enabled, mode=mode,
-            playlist=playlist, missing=missing, theme=theme,
+            slug=norm_slug if mode == "own" else slug,
+            title=title, enabled=enabled, mode=mode,
+            playlist=playlist, missing=missing, theme=theme, decade=decade,
         ))
 
     return channels, warnings

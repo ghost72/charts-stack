@@ -27,12 +27,16 @@ _SHIPPED = ("en", "de", "fr")
 
 
 # The CLOSED set of energy.* keys the charts-energy app references (design
-# section 10, 34 keys). FEAT-003 adds EXACTLY these to all three lang files.
+# section 10: 34 pre-existing + 14 new for library mode = 48 keys). The library
+# mode feature adds EXACTLY the 14 new keys to all three lang files;
+# energy.config.channel_bad_mode is an UPDATED value, not a new key.
 _ENERGY_KEYS = {
-    # energy.config.* (5)
+    # energy.config.* (7: 5 existing + 2 new collision keys)
     "energy.config.enabled_unparsed",
     "energy.config.channel_no_slug",
     "energy.config.channel_bad_mode",
+    "energy.config.own_playlist_reserved",
+    "energy.config.own_playlist_duplicate",
     "energy.config.feed_no_theme",
     "energy.config.no_channels",
     # energy.status.* (2)
@@ -45,20 +49,31 @@ _ENERGY_KEYS = {
     "energy.run.done",
     "energy.run.error",
     "energy.channel.done",
+    # energy.channel.* library (1 new)
+    "energy.channel.library_done",
     # energy.icy.* (3)
     "energy.icy.no_metaint",
     "energy.icy.no_separator",
     "energy.icy.read_failed",
-    # energy.counter.* (4)
+    # energy.mb.* (2 new)
+    "energy.mb.cache_write_failed",
+    "energy.mb.lookup_failed",
+    # energy.counter.* (5: 4 existing + 1 new)
     "energy.counter.channels",
     "energy.counter.tracks",
     "energy.counter.matched",
     "energy.counter.missing",
-    # energy.notify.* (4)
+    "energy.counter.library_missing",
+    # energy.notify.* (9: 4 existing + 5 new library keys)
     "energy.notify.title",
     "energy.notify.body",
     "energy.notify.own_done",
     "energy.notify.feed_done",
+    "energy.notify.library_done",
+    "energy.notify.library_to_load_header",
+    "energy.notify.library_present_header",
+    "energy.notify.library_song_entry",
+    "energy.notify.library_song_entry_no_year",
     # energy.state.* (2)
     "energy.state.yes",
     "energy.state.no",
@@ -72,6 +87,10 @@ _ENERGY_KEYS = {
     "energy.feed.written",
     "energy.feed.merged",
     "energy.feed.skipped",
+    # energy.library.* (3 new)
+    "energy.library.missing_file.header",
+    "energy.library.year_map.updated",
+    "energy.library.year_map.write_failed",
 }
 
 
