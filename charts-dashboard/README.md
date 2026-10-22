@@ -87,6 +87,34 @@ nicht mehr von Hand aus Weblinks fummeln:
 Jedes Snippet lässt sich kopieren und direkt in die `CHARTS`-Variable der
 `.env`/`compose.yml` einsetzen. Volle Referenz: [`CHARTS-SOURCES.md`](../CHARTS-SOURCES.md).
 
+## Energy-Kanäle (NRJ) durchsuchen
+
+Direkt unter dem Quellen-Finder steht ein zweites, ebenfalls **reines
+Lese-Panel**: eine Liste der bestätigten Energy-(NRJ-)Webradio-Kanäle, damit man
+beim Zusammenstellen von `ENERGY_CHANNELS` nicht die Slugs aus dem README suchen
+muss. Je Kanal werden Anzeigename, Slug, Genre, ein **Status-Badge** (aktiv +
+laufender Modus bzw. inaktiv) und ein **fertiges JSON-Snippet** für das
+`ENERGY_CHANNELS`-Array gezeigt. Das Dashboard ändert **nie** `.env` oder
+`charts.json` – man fügt von Hand ein.
+
+Der Status stammt aus der laufenden `charts-energy`-Konfiguration (die der
+Dienst in seine Status-JSON schreibt); eine fehlende/alte Statusdatei zeigt alle
+Kanäle einfach „inaktiv“ (fail-open). Je Standard-Modus ist eine zusätzliche
+Verdrahtung nötig:
+
+- **own** → die (im Snippet angezeigte) `missing-energy-<name>.txt` an
+  `MISSING_FILES` anhängen, damit `charts-download` die fehlenden Songs lädt.
+- **feed** → `{"service":"energy","theme":"<theme>"}` zur Playlist dieses Themas
+  in `charts-sync/charts.json` hinzufügen (Thema bytegleich, z. B. `mundart`).
+- **library** → die gemeinsame `missing-energy-library.txt` an `MISSING_FILES`
+  anhängen (alle `library`-Kanäle teilen sich diese eine Datei).
+
+Beispiel: das Snippet von **Energy Pop** kopieren
+(`{"slug":"energypop","title":"Energy Pop","mode":"own","playlist":"energy-pop.m3u","enabled":true}`)
+und in das `ENERGY_CHANNELS`-Array der `.env` einfügen, dann
+`missing-energy-pop.txt` an `MISSING_FILES` ergänzen. Details:
+[`charts-energy/README.md`](../charts-energy/README.md).
+
 ## Woher die Daten kommen
 
 - **Container-Zustand:** read-only über den `charts-docker-proxy` (`inspect`),

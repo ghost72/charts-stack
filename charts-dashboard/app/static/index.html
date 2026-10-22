@@ -84,6 +84,22 @@
       </div>
     </div>
   </section>
+
+  <!-- Energy channel browser: an independent read-only panel that mirrors the
+       Quellen-Finder. It never writes .env/charts.json and does NOT touch the
+       flow hub / SVG / LAYOUT. -->
+  <section data-i18n="section.energy">
+    <h2 data-i18n="section.energy">⚡ Energy channels</h2>
+    <div class="finder-hint" data-i18n-html="energy.hint"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.own"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.feed"></div>
+    <div class="finder-hint" data-i18n-html="energy.note.library"></div>
+    <div class="finder">
+      <div class="finder-box">
+        <div id="energy-channels"><div class="muted-txt" data-i18n="energy.loading"></div></div>
+      </div>
+    </div>
+  </section>
 </main>
 {{DONATE}}
 <script>
@@ -1027,6 +1043,38 @@ async function checkLastfmTag(q) {
   }
 }
 
+// Loads the read-only Energy channel list and renders it as a sortable table.
+// Fail-open like searchDeezerPlaylists: any non-OK / !ok / empty result shows
+// the energy.unreachable message instead of throwing. Status is a badge span,
+// snippet is the shared snippetCell() markup.
+async function loadEnergyChannels() {
+  const box = document.getElementById("energy-channels");
+  if (!box) return;
+  try {
+    const r = await fetch("/api/sources/energy/channels", {cache: "no-store"});
+    const d = await r.json();
+    if (!r.ok || !d || !d.ok || !Array.isArray(d.channels) || !d.channels.length) {
+      box.innerHTML = `<div class="muted-txt">${t("energy.unreachable")}</div>`;
+      return;
+    }
+    renderSortableTable(box, d.channels, [
+      {label: t("energy.col.channel"), get: c => c.display, type: "string", sortable: true},
+      {label: t("energy.col.slug"), get: c => c.slug, type: "string", sortable: true},
+      {label: t("energy.col.genre"), get: c => c.genre, type: "string", sortable: true},
+      {label: t("energy.col.mode"), get: c => c.mode, type: "string", sortable: true},
+      {label: t("energy.col.status"), type: "raw", sortable: false, get: c => {
+        const cls = c.active ? "active" : "inactive";
+        const txt = c.active ? t("energy.status.active", {mode: c.active_mode})
+                             : t("energy.status.inactive");
+        return `<span class="nrj-badge ${cls}">${esc(txt)}</span>`;
+      }},
+      {label: t("energy.col.snippet"), get: c => snippetCell(c.snippet), type: "raw", sortable: false},
+    ], 0);   // default sort: Channel, ascending by name feel (descending glyph)
+  } catch (e) {
+    box.innerHTML = `<div class="muted-txt">${t("energy.unreachable")}</div>`;
+  }
+}
+
 function initFinder(lastfm) {
   // Last.fm-Teil ausgrauen, wenn kein API-Key konfiguriert ist. Das kann sich
   // nicht zur Laufzeit ändern, aber wir setzen es idempotent bei jedem render.
@@ -1098,6 +1146,19 @@ function initFinder(lastfm) {
   const finder = document.querySelector(".finder");
   if (finder) {
     finder.addEventListener("click", (e) => {
+      const b = e.target.closest(".snip-copy");
+      if (!b) return;
+      copySnippet(b.getAttribute("data-snip"), b);
+    });
+  }
+
+  // Load the Energy channel browser once. It sits OUTSIDE the .finder section,
+  // so its copy buttons need their own identical .snip-copy delegation bound to
+  // the energy results container (the finder delegation above does not reach it).
+  loadEnergyChannels();
+  const energyBox = document.getElementById("energy-channels");
+  if (energyBox) {
+    energyBox.addEventListener("click", (e) => {
       const b = e.target.closest(".snip-copy");
       if (!b) return;
       copySnippet(b.getAttribute("data-snip"), b);

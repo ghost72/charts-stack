@@ -514,6 +514,160 @@ def lastfm_tag_check(q: str) -> dict:
                                  err=e.__class__.__name__)}
 
 
+# ---------------------------------------------------------------------------
+# Energy channel browser (read-only helper for the dashboard panel "Energy
+# channels"). Returns the confirmed non-regional Energy (NRJ) webradio channels
+# with a per-channel default-mode snippet, a derived missing-file name, and a
+# live active/active-mode status read from charts-energy's status JSON. Fully
+# fail-open (never raises). See collector finder functions above for the style.
+# ---------------------------------------------------------------------------
+
+# The confirmed NON-regional Energy channels as (display, slug, genre) tuples.
+# KEEP IN SYNC with charts-energy/app/discover.py :: CONFIRMED_CHANNELS; a drift
+# test (tests/test_energy_channels.py) enforces this. The 4 genre=="Regional"
+# channels (energyzuerich/bern/basel/luzern) are intentionally excluded: they
+# add noise and all map to the same generic default. This is the same
+# "copy-into-every-service" discipline the repo uses for i18n.py / status.py;
+# the dashboard runs in a separate container and cannot import charts-energy.
+_ENERGY_CHANNELS: list[tuple[str, str, str]] = [
+    ("Energy Made In Switzerland", "energymadeinswitzerland", "Swiss/Mundart"),
+    ("Energy Pop", "energypop", "Pop"),
+    ("Energy Hits", "energyhits", "Hits"),
+    ("Energy Dance", "energydance", "Dance"),
+    ("Energy Rock", "energyrock", "Rock"),
+    ("Energy Urban", "energyurban", "Rap/Hip-Hop"),
+    ("Energy 80s", "energy80s", "80s"),
+    ("Energy 90s", "energy90s", "90s"),
+    ("Energy 00s", "energy00s", "00s"),
+    ("Energy 10s", "energy10s", "10s"),
+    ("Energy 20s", "energy20s", "20s"),
+    ("Energy Workout", "energyworkout", "Workout"),
+    ("Energy Lounge", "energylounge", "Lounge"),
+    ("Energy Love", "energylove", "Love/Ballads"),
+    ("Energy Latin", "energylatin", "Latin"),
+    ("Energy At Work", "energyatwork", "At Work"),
+    ("Energy Me Time", "energymetime", "Me Time"),
+    ("Energy Xmas", "energyxmas", "Christmas"),
+]
+
+# Decade slugs default to `library` mode (hybrid year resolution per channel).
+_ENERGY_DECADE_SLUGS = frozenset(
+    ("energy80s", "energy90s", "energy00s", "energy10s", "energy20s"))
+
+
+def _energy_default_mode(slug: str) -> str:
+    """Return the suggested default mode for a channel slug (pure).
+
+    Decade channels -> 'library'; 'energymadeinswitzerland' -> 'feed'; every
+    other channel -> 'own'. This only selects the DEFAULT shown in the snippet;
+    the user may run a channel in any mode.
+    """
+    if slug in _ENERGY_DECADE_SLUGS:
+        return "library"
+    if slug == "energymadeinswitzerland":
+        return "feed"
+    return "own"
+
+
+def _energy_default_names(slug: str) -> tuple[str, str]:
+    """Derive the OWN-mode (playlist, missing_file) names from a slug (pure).
+
+    Re-implements charts-energy/app/config.py :: _default_names exactly (strip a
+    leading 'energy', re-prefix 'energy-'): energypop -> ('energy-pop.m3u',
+    'missing-energy-pop.txt'). The dashboard cannot import the charts-energy
+    package (separate container), so this one small derivation is duplicated; a
+    unit test pins it against the documented examples so it cannot drift.
+    """
+    rest = slug[len("energy"):] if slug.startswith("energy") else slug
+    rest = rest.strip("-") or slug
+    return f"energy-{rest}.m3u", f"missing-energy-{rest}.txt"
+
+
+def _energy_snippet(display: str, slug: str) -> str:
+    """Build one ready-to-paste ENERGY_CHANNELS array element (compact JSON).
+
+    Built by explicit string concatenation (not json.dumps) like the finder
+    snippets, so the compact, parser-conformant form is guaranteed and the key
+    order is fixed: slug, (title for own), mode, (playlist for own / theme for
+    feed), enabled. feed is only ever emitted for energymadeinswitzerland with
+    theme 'mundart' byte-for-byte.
+    """
+    mode = _energy_default_mode(slug)
+    if mode == "library":
+        return ('{"slug":"' + slug + '","mode":"library","enabled":true}')
+    if mode == "feed":
+        return ('{"slug":"' + slug
+                + '","mode":"feed","theme":"mundart","enabled":true}')
+    # own: carries the user-visible playlist name + a title.
+    playlist, _missing = _energy_default_names(slug)
+    return ('{"slug":"' + slug + '","title":"' + display
+            + '","mode":"own","playlist":"' + playlist + '","enabled":true}')
+
+
+def energy_channels() -> dict:
+    """Return the confirmed Energy channels with snippet + live status.
+
+    Reads the 'charts-energy' status entry (via _read_status_files) for its
+    'status' and 'channels'. A channel is ACTIVE iff status is 'ok'/'running'
+    AND its slug is present in 'channels' with enabled True. Fully fail-open: a
+    missing/old status file, a missing 'channels' key, or status 'idle'/'error'
+    yields every channel inactive. Returns {"ok": True, "channels": [...]}.
+    """
+    try:
+        status_data = _read_status_files().get("charts-energy") or {}
+        svc_status = status_data.get("status")
+        raw_channels = status_data.get("channels")
+        # Build {slug: active_mode} from well-formed, enabled entries only.
+        # Defensive: skip anything that is not a dict with a string slug. A mode
+        # outside own/feed/library is still recorded verbatim (badge prints it).
+        running: dict[str, str] = {}
+        if isinstance(raw_channels, list):
+            for entry in raw_channels:
+                if not isinstance(entry, dict):
+                    continue
+                slug = entry.get("slug")
+                if not isinstance(slug, str) or not slug:
+                    continue
+                if entry.get("enabled") is not True:
+                    continue
+                mode = entry.get("mode")
+                running[slug] = mode if isinstance(mode, str) else ""
+        # Positive-whitelist predicate: only ok/running count as operating.
+        service_live = svc_status in ("ok", "running")
+
+        channels = []
+        for display, slug, genre in _ENERGY_CHANNELS:
+            mode = _energy_default_mode(slug)
+            if mode == "own":
+                _playlist, missing_file = _energy_default_names(slug)
+            elif mode == "library":
+                # All library channels share this one file (charts-energy
+                # default ENERGY_LIBRARY_MISSING_FILE).
+                missing_file = "missing-energy-library.txt"
+            else:  # feed
+                missing_file = ""
+            active = service_live and slug in running
+            channels.append({
+                "display": display,
+                "slug": slug,
+                "genre": genre,
+                "mode": mode,
+                "snippet": _energy_snippet(display, slug),
+                "missing_file": missing_file,
+                "active": active,
+                "active_mode": running.get(slug, "") if active else "",
+            })
+        return {"ok": True, "channels": channels}
+    except Exception as e:
+        # Unexpected failure -> fail-open with the finder's unreachable prose.
+        logger.warning(i18n.t("dashboard.conn.unreachable",
+                              err=e.__class__.__name__))
+        return {"ok": False,
+                "detail": i18n.t("dashboard.conn.unreachable",
+                                 err=e.__class__.__name__),
+                "channels": []}
+
+
 _AUDIO_EXT = (".mp3", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wav", ".wma")
 
 # Directory statistics are expensive (os.walk over possibly tens of thousands
