@@ -188,6 +188,13 @@ async def api_sources_lastfm_tag(request: Request, q: str = ""):
     return JSONResponse(collector.lastfm_tag_check(q))
 
 
+@app.get("/api/sources/energy/channels")
+async def api_sources_energy_channels(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
+    return JSONResponse(collector.energy_channels())
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

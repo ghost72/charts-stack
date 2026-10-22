@@ -386,6 +386,15 @@ body.login {
 .lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
 
+/* Energy channel status badge: a small inline pill like the chips. Active uses
+   the shared green token, inactive the muted grey used by .tile.muted. */
+.nrj-badge {
+  display: inline-block; border-radius: 999px; padding: 2px 9px;
+  font-size: .74rem; font-weight: 600; white-space: nowrap;
+}
+.nrj-badge.active { background: rgba(63,182,122,.15); color: var(--ok); }
+.nrj-badge.inactive { background: #2f2742; color: #5a5168; }
+
 /* Discreet donate footer (toggled by DASHBOARD_DONATE). Muted, unobtrusive. */
 .site-footer {
   margin: 28px auto 14px; padding: 10px 16px; text-align: center;
