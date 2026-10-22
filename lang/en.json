@@ -61,7 +61,7 @@
   "dashboard.ui.desc.charts_upgrade": "Finds low-quality songs in the library and replaces them with better versions.",
   "dashboard.ui.desc.charts_flashback": "Collects the rotation of FLASHBACK FM (decade channels) and grows the library – no playlist. Missing ones are fetched hourly by charts-download.",
   "dashboard.ui.desc.charts_energy": "Polls the Swiss NRJ (energy.ch) webradio channels and grows the library or tops up existing theme playlists. Missing ones are fetched hourly by charts-download.",
-  "dashboard.ui.desc.charts_config": "Snippet/config web UI: Deezer/Last.fm source finder and Energy channel browser. Builds ready-to-paste charts-sync and ENERGY_CHANNELS snippets. Read-only, no restart button.",
+  "dashboard.ui.desc.charts_config": "Read-only web UI to build charts-sync and Energy source snippets.",
   "dashboard.ui.desc.charts_recommend": "Grows the library from the listening taste of several ListenBrainz users – no playlist. Missing ones are fetched hourly by charts-download.",
   "dashboard.ui.desc.charts_songrequest": "Web UI to manually request individual songs.",
   "dashboard.ui.desc.charts_digest": "Sends a daily Pushover summary of the songs newly added to the library (by source).",
