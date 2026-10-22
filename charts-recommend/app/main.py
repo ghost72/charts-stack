@@ -162,7 +162,7 @@ def run_once() -> tuple[dict, list[str], int, int]:
                   sources=counters["sources"], candidates=counters["candidates"],
                   matched=counters["matched"], missing=counters["missing"],
                   suffix=suffix))
-    _notify(source_results, counters)
+    _notify(source_results, counters, missing)
     return counters, fetch_errors, transport_attempts, transport_failures
 
 
@@ -198,7 +198,9 @@ def _base_msg(counters: dict) -> str:
     return ", ".join(parts) if parts else t("recommend.status.nothing_found")
 
 
-def _notify(source_results: list[dict], counters: dict) -> None:
+def _notify(source_results: list[dict], counters: dict,
+            missing: list[tuple[int, str, str]] | None = None) -> None:
+    missing = missing or []
     cand = counters["candidates"]
     miss = counters["missing"]
     if cand == 0:
@@ -219,7 +221,21 @@ def _notify(source_results: list[dict], counters: dict) -> None:
     else:
         head = t("recommend.notify.all_present", candidates=cand, users=n_users)
     body = head + (t("recommend.notify.sources", sources=quellen) if quellen else "")
-    notify.send(t("recommend.notify.title", service="charts-recommend"), body)
+    lines = [body]
+    # List the songs that will actually be downloaded (the `missing` set), one
+    # artist/title line per song (no chart #pos), mirroring charts-flashback.
+    # The all_present path (no missing songs) deliberately renders no song list.
+    if missing:
+        lines.append("")
+        lines.append(t("recommend.notify.to_load_header", count=len(missing)))
+        shown = missing[:15]
+        for _pos, artist, title in shown:
+            lines.append(t("recommend.notify.song_entry", artist=artist, title=title))
+        if len(missing) > 15:
+            lines.append("")
+            lines.append(t("recommend.notify.more", count=len(missing) - 15))
+    notify.send(t("recommend.notify.title", service="charts-recommend"),
+                "\n".join(lines))
 
 
 def _next_run_iso() -> str:

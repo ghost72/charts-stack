@@ -98,7 +98,7 @@ def run_once() -> dict:
 
     # First: release failed downloads from the state so they are searched/loaded
     # again in this run. Failed transfers in slskd are cleaned up in the process.
-    retried = _requeue_failed(client, st)
+    retried_count, retried_songs = _requeue_failed(client, st)
 
     # Housekeeping: also remove dead/stuck transfers from slskd that no longer
     # map to a song in the state (failed ones, and 0-byte stuck transfers older
@@ -242,41 +242,49 @@ def run_once() -> dict:
     if not config.DRY_RUN:
         state.save(st)
 
-    _summary_and_notify(planned, enqueued, retried)
+    _summary_and_notify(planned, enqueued, retried_count, retried_songs)
     return {
         "enqueued": len(enqueued),
         "planned": len(planned),
-        "retried": retried,
+        "retried": retried_count,
         "missing": len(entries),
     }
 
 
-def _requeue_failed(client, st: dict) -> int:
+def _requeue_failed(client, st: dict) -> tuple[int, list[tuple[str, str]]]:
     """
     Checks the status of the already-requested downloads. Failed ones are
     removed from the state (so they are loaded again) and cleaned up in slskd.
-    Returns the number of released songs.
+    Returns (count, retried_songs) where count is the number of released songs
+    and retried_songs is a list of (artist, title) for each released song (so
+    the notification can list them, not just a count).
 
     In dry-run only detection/logging happens, no changes.
     """
     requested = st.get("requested", {})
     if not requested:
-        return 0
+        return 0, []
 
     failed_keys, to_cleanup = slsk.check_download_states(client, requested)
     if not failed_keys:
-        return 0
+        return 0, []
 
     if config.DRY_RUN:
         logger.info(t("download.requeue.dry_run", count=len(failed_keys)))
-        return 0
+        return 0, []
 
+    # Collect the clean artist/title BEFORE popping the entries, so the message
+    # can list exactly which songs were re-downloaded.
+    retried_songs: list[tuple[str, str]] = []
     for key in failed_keys:
+        entry = requested.get(key)
+        if isinstance(entry, dict):
+            retried_songs.append((entry.get("artist", ""), entry.get("title", "")))
         requested.pop(key, None)
     slsk.cleanup_failed(client, to_cleanup)
     state.save(st)
     logger.info(t("download.requeue.freed", count=len(failed_keys)))
-    return len(failed_keys)
+    return len(failed_keys), retried_songs
 
 
 def _cleanup_stale(client) -> None:
@@ -309,7 +317,8 @@ def _breakdown(items: list[tuple[str, str]]) -> str:
 
 def _summary_and_notify(planned: list[tuple[str, str]],
                         enqueued: list[tuple[str, str]],
-                        retried: int) -> None:
+                        retried: int,
+                        retried_songs: list[tuple[str, str]]) -> None:
     """Logs a summary and optionally sends Pushover."""
     if config.DRY_RUN:
         logger.info(t("download.summary.done_dry_run", count=len(planned)))
@@ -332,7 +341,18 @@ def _summary_and_notify(planned: list[tuple[str, str]],
                 header.append(f"<i>{_breakdown(enqueued)}</i>")
             if retried:
                 header.append(t("download.notify.retried_header", count=retried))
-            _notify(t("download.notify.title_live"), header, enqueued)
+            # List the re-downloaded songs as a second group, mirroring the
+            # enqueued block but with artist/title-only lines (no #pos, no source
+            # label - a retried song carries no meaningful chart position). The
+            # group header's {count} is the full retried total even if the list
+            # is truncated by the shared 15-item cap in _notify.
+            retried_items = [
+                (t("download.notify.retried_group", count=retried),
+                 t("download.notify.retried_entry", artist=a, title=title))
+                for a, title in retried_songs
+            ]
+            _notify(t("download.notify.title_live"), header,
+                    enqueued + retried_items)
 
 
 def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None:
