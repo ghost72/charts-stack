@@ -199,13 +199,31 @@ body.login {
 
 /* Energy channel table (6 cols): the finder's 3-col nth-child widths don't fit.
    Scope overrides to the energy results container so the finder tables are
-   unaffected. Let the snippet column breathe and wrap on narrow screens. */
-#energy-channels .finder-table { table-layout: auto; }          /* size to content */
+   unaffected. The table must stay WITHIN its box (no bleed past the right
+   edge): use fixed layout at full width and let the wide snippet column wrap
+   inside its cell instead of growing the table to the content width. */
+#energy-channels .finder-table {
+  table-layout: fixed;            /* columns obey our widths, table != content width */
+  width: 100%;
+  max-width: 100%;
+}
 #energy-channels .finder-table th,
-#energy-channels .finder-table td { width: auto; }              /* drop the 42%/6em rule */
-#energy-channels .finder-table td .snip code { white-space: pre-wrap; } /* snippet wraps */
+#energy-channels .finder-table td {
+  width: auto;
+  overflow-wrap: anywhere;        /* long tokens (slug, genre) break instead of overflowing */
+}
+/* Snippet is the last (6th) column and gets the remaining room; it wraps
+   inside the cell rather than pushing the table wider. */
+#energy-channels .finder-table th:last-child,
+#energy-channels .finder-table td:last-child { width: 40%; }
+#energy-channels .finder-table td .snip { max-width: 100%; }
+#energy-channels .finder-table td .snip code {
+  white-space: pre-wrap;          /* snippet wraps onto multiple lines */
+  overflow-wrap: anywhere;
+  overflow-x: hidden;             /* no inner horizontal scroll either */
+}
 @media (max-width: 720px) {
-  /* Stack-friendly: allow horizontal scroll of the whole table rather than
+  /* Narrow screens: allow horizontal scroll of the whole table rather than
      crushing columns. */
   #energy-channels { overflow-x: auto; }
 }
