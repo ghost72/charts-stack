@@ -380,6 +380,12 @@ def main() -> None:
     # no / an old value until the first run).
     status.set_next_run(_next_match_iso())
 
+    # Publish the parsed channel set (slug/mode/enabled) for the dashboard to
+    # read the ACTUAL running config. Written once per process (channels are
+    # static) and regardless of ENERGY_ENABLED.
+    status.set_channels([{"slug": c.slug, "mode": c.mode, "enabled": c.enabled}
+                         for c in config.CHANNELS])
+
     if config.ENERGY_ENABLED and config.RUN_ON_START:
         poll_once()
         _guarded_run()

@@ -156,6 +156,25 @@ def set_next_run(next_run: str) -> None:
     _write(data)
 
 
+def set_channels(channels: list[dict]) -> None:
+    """
+    Update ONLY the 'channels' key (the parsed channel set), without touching
+    status, run times or counters, so the dashboard can read the ACTUAL running
+    config of this service.
+
+    This is an ADDITIVE helper that lives only in charts-energy's copy of the
+    otherwise-shared status.py (same discipline as the dashboard's additive
+    ui_table/active_lang readers). Other services' copies stay unchanged and
+    never call it - do NOT propagate it. Mirrors set_next_run: the shared
+    _write does temp+os.replace atomically, logs at debug on OSError and never
+    raises.
+    """
+    data = _read()
+    data["service"] = _service
+    data["channels"] = channels
+    _write(data)
+
+
 def heartbeat(message: str = "", next_run: str = "") -> None:
     """
     Sign of life without a full run (e.g. an event-driven service like

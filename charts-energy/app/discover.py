@@ -22,6 +22,8 @@ from .i18n import t
 
 # Confirmed channels from .agents/tasks/energy-api-feasibility.md section 3
 # (each proven live by reading ICY metadata). (display, slug, genre).
+# KEEP IN SYNC with charts-dashboard/app/collector.py :: _ENERGY_CHANNELS
+# (non-regional subset); a dashboard drift test enforces this.
 CONFIRMED_CHANNELS: list[tuple[str, str, str]] = [
     ("Energy Made In Switzerland", "energymadeinswitzerland", "Swiss/Mundart"),
     ("Energy Pop", "energypop", "Pop"),
