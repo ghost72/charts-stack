@@ -29,10 +29,10 @@ polling/matching/output and writes status "idle" (gray tile, not an error).
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from . import (config, feed, icy, library, notify, playlist, playlist_library,
-               state, status)
+from . import (config, discover, feed, health, icy, library, notify, playlist,
+               playlist_library, state, status)
 from . import year as year_mod
 from .i18n import t
 
@@ -341,27 +341,243 @@ _COUNTER_LABEL_KEYS = {
 }
 
 
+def _prev_status() -> str:
+    """
+    Read the status of the PREVIOUS run from the status JSON (before
+    status.start() sets it to 'running'). Serves the state-change-gated alarm:
+    this way it can be detected whether the last run was already an error. We
+    read the file via the status module (same file/path) but do not create an
+    additional state file. If the file is missing, the run counts as 'ok' (no
+    previous error). Copied verbatim from charts-recommend.
+    """
+    data = status._read()
+    val = data.get("status")
+    return val if isinstance(val, str) else "ok"
+
+
+def _last_run_end_prev() -> datetime:
+    """
+    Read the previous run's end from the status JSON (before status.start()).
+
+    Parsed with datetime.fromisoformat into an aware datetime. Absent or
+    unparsable (fresh deploy, status reset, health reset) -> datetime.min made
+    UTC-aware, so the first run marks every active channel as "produced" and no
+    dead/canary counter ever increments on a cold start (the safe direction).
+    """
+    raw = status._read().get("last_run_end")
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except (TypeError, ValueError):
+            pass
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _alert_structural(message: str, was_error_before: bool) -> None:
+    """
+    Pushover alarm on a structural break - only on state change, when
+    NOTIFY_ONLY_ON_CHANGE is set, so the persisting outage does not re-alarm on
+    every run. Without PUSHOVER_* notify.send() is a no-op anyway. Mirrors
+    charts-recommend's _alert_fetch_error.
+    """
+    if config.NOTIFY_ONLY_ON_CHANGE and was_error_before:
+        logger.info(t("energy.alert.still_failing"))
+        return
+    notify.send(t("energy.alert.structural_title"), message)
+
+
+def _update_channel_health(health_map: dict, last_run_end_prev: datetime,
+                           st: dict) -> dict[str, bool]:
+    """
+    Update the G1a per-channel producing counters for the ACTIVE channels and
+    return the per-channel produced_now map.
+
+    For every active channel compute produced_now from the newest accumulated
+    first_seen (state.tracks_for is sorted first_seen DESC, so element 0 is the
+    newest). Then reset dead_runs for channels NOT active this run and PRUNE the
+    channels map against the CONFIG slug set ({c.slug for c in config.CHANNELS})
+    - NOT discover.CONFIRMED_CHANNELS - so a re-enabled channel never inherits a
+    near-threshold counter and a non-CONFIRMED config slug is never silently
+    pruned.
+    """
+    active = config.active_channels()
+    active_slugs = {c.slug for c in active}
+    per_channel_produced: dict[str, bool] = {}
+    for channel in active:
+        tracks = state.tracks_for(st, channel.slug)
+        newest = None
+        if tracks:
+            newest = state._parse(tracks[0].get("first_seen", ""))
+        per_channel_produced[channel.slug] = health.produced_now(
+            newest, last_run_end_prev)
+
+    # Reset dead_runs for channels absent from the active set (frozen while
+    # disabled); keep ever_produced as a historical fact.
+    channels_map = health_map.setdefault("channels", {})
+    for slug, rec in channels_map.items():
+        if slug not in active_slugs and isinstance(rec, dict):
+            rec["dead_runs"] = 0
+
+    # Prune entries for slugs no longer present in the current CONFIG set.
+    config_slugs = {c.slug for c in config.CHANNELS}
+    for slug in list(channels_map.keys()):
+        if slug not in config_slugs:
+            del channels_map[slug]
+
+    return per_channel_produced
+
+
+def _structural_reason_msg(reasons: list[str], health_map: dict) -> str:
+    """Build the readable status/alarm reason line from the verdict kinds."""
+    channels_map = health_map.get("channels", {})
+    parts: list[str] = []
+    if "canary" in reasons:
+        parts.append(t("energy.alert.structural_canary",
+                       runs=config.ENERGY_CANARY_DEAD_RUNS_THRESHOLD))
+    if "channels" in reasons:
+        dead = [slug for slug, rec in channels_map.items()
+                if isinstance(rec, dict)
+                and rec.get("dead_runs", 0) >= config.ENERGY_DEAD_RUNS_THRESHOLD]
+        parts.append(t("energy.alert.structural_channels",
+                       count=len(dead), runs=config.ENERGY_DEAD_RUNS_THRESHOLD,
+                       slugs=", ".join(sorted(dead))))
+    return " ".join(parts)
+
+
 def _guarded_run() -> None:
-    """Run run_match() and write the status (idle/ok/error)."""
+    """Run run_match(), evaluate the structural-break verdict, write status."""
     next_run = _next_match_iso()
     if not config.ENERGY_ENABLED:
-        # Disabled: container keeps running, but no polling/matching/output.
-        # Status idle (gray, not an error).
+        # Disabled: container keeps running, but no polling/matching/output and
+        # NO health bookkeeping. Status idle (gray, not an error).
         status.start()
         status.finish("idle", t("energy.status.disabled"), {}, next_run)
         logger.info(t("energy.disabled_skip"))
         return
+
+    # Read prev status + previous run end BEFORE start() flips status to running.
+    prev_status = _prev_status()
+    last_run_end_prev = _last_run_end_prev()
     status.start()
     try:
         result = run_match() or {}
         counters = {k: v for k, v in result.items() if isinstance(v, (int, float))}
+
+        # Structural-break evaluation (FIXED order, design G1 §Evaluation order):
+        # load health -> per active channel update producing counters -> THEN
+        # evaluate the canary against the just-updated flags -> build reasons.
+        st = state.load()
+        health_map = health.load()
+        per_channel_produced = _update_channel_health(
+            health_map, last_run_end_prev, st)
+        reasons = health._evaluate_health(
+            health_map, per_channel_produced,
+            config.ENERGY_DEAD_RUNS_THRESHOLD,
+            config.ENERGY_CANARY_DEAD_RUNS_THRESHOLD)
+        try:
+            health.save(health_map)
+        except OSError as e:
+            # Keep the in-memory verdict for this run; retry next run.
+            logger.warning(t("energy.health.write_failed", error=e))
+
+        if reasons:
+            reason = _structural_reason_msg(reasons, health_map)
+            status.finish("error",
+                          t("energy.status.structural_error", reason=reason),
+                          counters, next_run)
+            _alert_structural(reason, prev_status == "error")
+            return
+
         parts = [f"{v} {t(_COUNTER_LABEL_KEYS[k])}"
                  for k, v in counters.items() if k in _COUNTER_LABEL_KEYS and v]
         msg = ", ".join(parts) if parts else t("energy.status.nothing_to_do")
         status.finish("ok", msg, counters, next_run)
+        if prev_status == "error":
+            notify.send(t("energy.notify.title", service="charts-energy"),
+                        t("energy.notify.structural_recovered"))
     except Exception as e:
         logger.exception(t("energy.run.error", error=e))
         status.finish("error", str(e), {}, next_run)
+        _alert_structural(str(e), prev_status == "error")
+
+
+def run_liveness() -> None:
+    """
+    Daily liveness re-check (G2) over discover.CONFIRMED_CHANNELS (all 22,
+    regional included).
+
+    Per slug: alive = discover.probe_result(slug). Update the health liveness
+    map (ever_alive/dead_probes) keyed by CONFIRMED_CHANNELS slugs - an
+    INDEPENDENT key universe from the G1a channels map. Write the current
+    live/dead verdict to the status JSON (status.set_liveness) so charts-config
+    can surface stale channels. Alarm (state-change-gated on the health
+    liveness.alarm_active flag) when a previously-live channel reaches the
+    dead-probes threshold; recover once when all previously-dead channels are
+    live again.
+
+    HONEST limitation: this re-checks KNOWN slugs only; it cannot auto-discover
+    new channels (the directory is JS-rendered). A genuinely new channel needs a
+    manual addition to CONFIRMED_CHANNELS.
+    """
+    slugs = [slug for _display, slug, _genre in discover.CONFIRMED_CHANNELS]
+    logger.info(t("energy.liveness.start", count=len(slugs)))
+
+    health_map = health.load()
+    liveness = health_map.setdefault("liveness", {})
+    prev_alarm = bool(liveness.get("alarm_active"))
+
+    current: dict[str, str] = {}
+    live_count = 0
+    for slug in slugs:
+        alive = discover.probe_result(slug)
+        current[slug] = "live" if alive else "dead"
+        if alive:
+            live_count += 1
+        rec = liveness.get(slug)
+        if not isinstance(rec, dict):
+            rec = {"ever_alive": False, "dead_probes": 0}
+            liveness[slug] = rec
+        rec.setdefault("ever_alive", False)
+        rec.setdefault("dead_probes", 0)
+        if alive:
+            rec["ever_alive"] = True
+            rec["dead_probes"] = 0
+        elif rec["ever_alive"]:
+            rec["dead_probes"] += 1
+        # A slug that was never alive in our probing history is not alarmed.
+
+    # Alarm gating on the own alarm_active flag (not status.json's run status):
+    # dead = a previously-live slug that crossed the dead-probes threshold.
+    dead_slugs = sorted(
+        slug for slug, rec in liveness.items()
+        if isinstance(rec, dict)
+        and rec.get("dead_probes", 0) >= config.ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD)
+    now_alarm = bool(dead_slugs)
+    liveness["alarm_active"] = now_alarm
+
+    try:
+        health.save(health_map)
+    except OSError as e:
+        logger.warning(t("energy.health.write_failed", error=e))
+
+    # Surface the current verdict for charts-config (never raises).
+    status.set_liveness(current)
+
+    dead_count = len(slugs) - live_count
+    logger.info(t("energy.liveness.done", live=live_count, dead=dead_count))
+
+    if now_alarm and not prev_alarm:
+        _alert_structural(
+            t("energy.alert.channel_dead", count=len(dead_slugs),
+              probes=config.ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD,
+              slugs=", ".join(dead_slugs)),
+            was_error_before=False)
+    elif prev_alarm and not now_alarm:
+        notify.send(t("energy.notify.title", service="charts-energy"),
+                    t("energy.notify.liveness_recovered"))
 
 
 def main() -> None:
@@ -399,6 +615,15 @@ def main() -> None:
     poll_sleep = max(30, config.ENERGY_POLL_SECONDS)
     match_interval = timedelta(minutes=config.ENERGY_MATCH_INTERVAL_MINUTES)
     last_match = datetime.now()
+    # Third cadence (G2): daily liveness re-probe of the KNOWN channel list.
+    # Runs INLINE on this single poll/match/liveness loop (no background thread -
+    # see design §NIT-5). An optional first pass at startup (ENERGY_LIVENESS_
+    # ON_START) gives a fresh container a map immediately.
+    liveness_interval = timedelta(hours=config.ENERGY_LIVENESS_INTERVAL_HOURS)
+    last_liveness = datetime.now()
+    if config.ENERGY_ENABLED and config.RUN_ON_START \
+            and config.ENERGY_LIVENESS_ON_START:
+        run_liveness()
 
     while True:
         time.sleep(poll_sleep)
@@ -418,6 +643,10 @@ def main() -> None:
         if now - last_match >= match_interval:
             _guarded_run()
             last_match = now
+
+        if now - last_liveness >= liveness_interval:
+            run_liveness()
+            last_liveness = now
 
 
 if __name__ == "__main__":

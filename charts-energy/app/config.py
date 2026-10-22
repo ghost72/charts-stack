@@ -171,6 +171,26 @@ NOTIFY_MISSING_LIMIT = _get_int("NOTIFY_MISSING_LIMIT", 40)
 # State file (accumulate + dedupe buffer). Lives in CHARTS_DIR.
 STATE_FILE = os.environ.get("STATE_FILE", ".charts-energy-state.json")
 
+# --- Structural-break detection (G1) + liveness re-check (G2) ---
+# Sidecar health-state file (detector bookkeeping, NOT dashboard payload). Lives
+# in CHARTS_DIR next to the state file, loaded fail-open.
+ENERGY_HEALTH_FILE = os.environ.get("ENERGY_HEALTH_FILE",
+                                    ".charts-energy-health.json")
+# G1a: a previously-producing channel is "dead" after this many consecutive
+# runs with no new spin (~30 min/run -> 48 runs ~= 24 h of silence).
+ENERGY_DEAD_RUNS_THRESHOLD = _get_int("ENERGY_DEAD_RUNS_THRESHOLD", 48)
+# G1b: the format canary fires after this many consecutive runs in which NO
+# active channel produced a valid spin (4 runs ~= 2 h -> separator/type break).
+ENERGY_CANARY_DEAD_RUNS_THRESHOLD = _get_int(
+    "ENERGY_CANARY_DEAD_RUNS_THRESHOLD", 4)
+# G2: daily liveness re-probe of the KNOWN channel list. Interval in hours, an
+# optional probe at startup, and the consecutive-dead-probes alarm threshold
+# (3 daily probes ~= 3 days a previously-live channel has been gone).
+ENERGY_LIVENESS_INTERVAL_HOURS = _get_int("ENERGY_LIVENESS_INTERVAL_HOURS", 24)
+ENERGY_LIVENESS_ON_START = _get_bool("ENERGY_LIVENESS_ON_START", True)
+ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD = _get_int(
+    "ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD", 3)
+
 
 # --- Channel list (CHARTS-style JSON-in-env) ---
 

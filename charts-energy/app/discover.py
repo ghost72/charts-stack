@@ -58,10 +58,41 @@ def list_channels() -> None:
         print(f"{display} | {slug} | {genre}")
 
 
+def probe_result(slug: str) -> bool:
+    """
+    Pure liveness check for a KNOWN slug: True iff HTTP 200 + an icy-name header.
+
+    Opens the stream host with Icy-MetaData:1 via httpx (headers-only GET) and
+    returns a bool with no printing. An httpx.HTTPError (unreachable / timeout)
+    is treated as dead (False) - the same meaning the CLI already assigns to an
+    unreachable host.
+
+    HONEST limitation: this only RE-CHECKS the known CONFIRMED_CHANNELS slugs; it
+    cannot auto-discover brand-new Energy channels, because Energy's channel
+    directory is JS-rendered. A genuinely new channel still needs a manual
+    addition to CONFIRMED_CHANNELS (and the charts-config mirror). There is no
+    speculative slug guesser.
+    """
+    url = config.ENERGY_STREAM_HOST_TMPL.format(slug=slug)
+    try:
+        with httpx.Client(timeout=config.ENERGY_READ_TIMEOUT) as client:
+            resp = client.get(url, headers={
+                "Icy-MetaData": "1",
+                "User-Agent": config.ENERGY_USER_AGENT,
+            })
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 200 and bool(resp.headers.get("icy-name"))
+
+
 def probe(slug: str) -> int:
     """
     Probe a guessed slug: HTTP 200 + an icy-name header => real channel.
     Returns a process exit code (0 real, non-zero otherwise).
+
+    CLI wrapper around probe_result: it repeats the httpx GET to keep the exact
+    print + exit-code contract (the unreachable/real/not-real messages and the
+    icy-name echo), so re-checks KNOWN CONFIRMED_CHANNELS slugs only.
     """
     url = config.ENERGY_STREAM_HOST_TMPL.format(slug=slug)
     try:

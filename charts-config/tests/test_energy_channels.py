@@ -187,7 +187,38 @@ def test_channel_count_and_shape(monkeypatch):
     assert len(out["channels"]) == 18
     for c in out["channels"]:
         assert set(c) == {"display", "slug", "genre", "mode", "snippet",
-                          "missing_file", "active", "active_mode"}
+                          "missing_file", "active", "active_mode", "liveness"}
+
+
+# --- G2 liveness badge field (additive, fail-open) --------------------------
+
+def test_liveness_unknown_without_energy_liveness(monkeypatch):
+    """No energy_liveness key -> every channel reports liveness 'unknown'."""
+    _patch_status(monkeypatch, {"status": "ok", "channels": []})
+    out = collector.energy_channels()
+    assert all(c["liveness"] == "unknown" for c in out["channels"])
+
+
+def test_liveness_unknown_when_status_file_missing(monkeypatch):
+    _patch_status(monkeypatch, None)
+    out = collector.energy_channels()
+    assert all(c["liveness"] == "unknown" for c in out["channels"])
+
+
+def test_liveness_live_and_dead_from_map(monkeypatch):
+    _patch_status(monkeypatch, {
+        "status": "ok",
+        "channels": [],
+        "energy_liveness": {
+            "checked_at": "2026-10-20T00:00:00+00:00",
+            "channels": {"energypop": "live", "energyxmas": "dead"},
+        },
+    })
+    by_slug = _by_slug(collector.energy_channels())
+    assert by_slug["energypop"]["liveness"] == "live"
+    assert by_slug["energyxmas"]["liveness"] == "dead"
+    # A slug absent from the map stays "unknown".
+    assert by_slug["energyhits"]["liveness"] == "unknown"
 
 
 # --- HARD-FAILING slug drift guard ------------------------------------------

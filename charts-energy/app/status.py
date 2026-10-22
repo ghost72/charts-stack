@@ -175,6 +175,24 @@ def set_channels(channels: list[dict]) -> None:
     _write(data)
 
 
+def set_liveness(channels: dict) -> None:
+    """
+    Update ONLY the 'energy_liveness' key with the current per-channel liveness
+    map, without touching status, run times or counters, so charts-config can
+    surface stale channels.
+
+    Writes {'checked_at': <ISO>, 'channels': {slug: 'live'|'dead'}}. Like
+    set_channels, this is an ADDITIVE helper that lives only in charts-energy's
+    copy of the otherwise-shared status.py - do NOT propagate it to the sibling
+    copies. Mirrors set_channels: the shared _write does temp+os.replace
+    atomically, logs at debug on OSError and never raises.
+    """
+    data = _read()
+    data["service"] = _service
+    data["energy_liveness"] = {"checked_at": _now_iso(), "channels": channels}
+    _write(data)
+
+
 def heartbeat(message: str = "", next_run: str = "") -> None:
     """
     Sign of life without a full run (e.g. an event-driven service like
