@@ -4,7 +4,7 @@
 
 Sends a daily **Pushover summary** of the songs sorted into the library in the
 last 24 h – grouped by source (current charts, Swiss Mundart, FLASHBACK FM,
-manually requested …).
+Energy, manually requested …).
 
 A pure notification/report service of the `charts-*` family (like
 [`charts-watchdog`](../charts-watchdog) and [`charts-dashboard`](../charts-dashboard)) –

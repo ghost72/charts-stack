@@ -416,7 +416,7 @@ deduplicated list. The default is **two** playlists:
 > 📖 **Full field and ID reference + ready-made examples** (country, 80s/90s,
 > …): [`CHARTS-SOURCES.en.md`](../CHARTS-SOURCES.en.md) in the repo root
 > ([Deutsch](../CHARTS-SOURCES.md)). New source IDs are easy to find in the
-> **"source finder"** at the bottom of the [charts-dashboard](../charts-dashboard).
+> **"source finder"** in [charts-config](../charts-config) (port 5058).
 >
 > **Config from a file instead of env (recommended for many playlists):**
 > Instead of the single-line `CHARTS` variable, the definition can be loaded from
@@ -455,18 +455,29 @@ deduplicated list. The default is **two** playlists:
 | Field             | Meaning |
 |-------------------|-----------|
 | `sources`         | List of sources to merge (Deezer **and/or** Last.fm). |
-| `sources[].service`| Optional, recommended: `deezer` or `lastfm` – makes the source unambiguous. **Backward-compatible:** if `service` is missing it is derived from `type`/`method` (old config without `service` behaves exactly as before). An explicit `service` overrides the heuristic (a conflict triggers a warning). |
+| `sources[].service`| Optional, recommended: `deezer`, `lastfm` or `energy` – makes the source unambiguous. **Backward-compatible:** if `service` is missing it is derived from `type`/`method` (old config without `service` behaves exactly as before). An explicit `service` overrides the heuristic (a conflict triggers a warning). |
 | `sources[].type`  | Deezer: `chart` (chart ID, `0` = global) or `playlist` (playlist ID). Last.fm: `lastfm`. |
 | `sources[].source`| Deezer: the ID as a string. |
 | `sources[].limit` | Optional; max. tracks **for exactly this source** (`"all"` or a number). If missing, the entry's `limit` applies, otherwise `CHART_LIMIT`. |
 | `sources[].enabled`| Optional (default `true`). `false` = the source is skipped without deleting it. This lets you, for example, switch off all Deezer feeds and enable only Last.fm (or vice versa). |
 | `sources[].method`| Last.fm only: `chart.getTopTracks`, `geo.getTopTracks`, `tag.getTopTracks`, `user.getTopTracks`. |
 | `sources[].country` / `.tag` / `.user` / `.period` | Last.fm only: the parameter matching the method (e.g. `"country": "Switzerland"`, `"tag": "80s"`, `"user": "deinname"`, `"period": "3month"`). |
+| `sources[].theme` | `energy` only: the handoff-file theme key that `charts-energy` writes (e.g. `"mundart"`). |
 | `name`            | File name of the `.m3u` (lands in `PLAYLIST_DIR`). |
 | `title`           | Display name in Navidrome (emojis allowed, `{date}` = current date). |
 | `missing`         | File name of the missing list (lands in `CHARTS_DIR`). |
 | `limit`           | Optional; entry default for sources without their own `limit`. |
 | `exclude_artists` | Optional; artists kept out of **exactly this** playlist (list or comma-separated string). See below. |
+
+> **`energy` feed (handoff from charts-energy):** besides `deezer`/`lastfm` there
+> is the feed kind `energy`. Such a source (`{"service":"energy","theme":"…"}`)
+> reads **no** Deezer/Last.fm API; it reads the handoff JSON that
+> [`charts-energy`](../charts-energy) writes per theme in `feed` mode
+> (`CHARTS_DIR/.charts-energy-feed-<theme>.json`) and feeds its tracks into an
+> **existing** playlist/theme (e.g. `mundart`). This is how a channel's NRJ
+> detections land in the normal charts-sync playlist. A handoff file that is too
+> old (> `ENERGY_FEED_MAX_AGE_HOURS`, default 48 h) is treated as empty (one log
+> warning) so a dead collector never keeps stale tracks.
 
 **Per-source limit:** each source can have its own `limit`. This way the global
 chart is restricted to the real Top 100 (the longtail at positions 100–300 is

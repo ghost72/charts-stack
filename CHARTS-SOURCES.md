@@ -107,7 +107,7 @@ durchgereicht).
 > gezielte Künstler-Quellen, die keine Playlist/Chart gut abdeckt – z.B.
 > Schweizer Mundart (Gölä, Polo Hofer, Patent Ochsner). Die `source` ist die
 > **Künstler-ID**, nicht die Playlist-ID (siehe
-> [Abschnitt 5](#5-idstags-finden-ohne-dashboard) zum Finden).
+> [Abschnitt 5](#5-idstags-finden-ohne-charts-config) zum Finden).
 
 > **`genre_filter`** schaltet den Genre-Filter **pro Playlist** – `true`/`false`
 > stechen den globalen `GENRE_FILTER` (Default aus, opt-in) aus; fehlt das Feld,
@@ -142,12 +142,12 @@ Deezer-Genre-IDs (Stand dieses Dokuments):
 
 **Live-Weg:** Die aktuelle, vollständige Liste gibt es jederzeit unter
 `https://api.deezer.com/genre` (JSON, `data[].id` / `data[].name`). Im
-Dashboard-Panel „Quellen-Finder" erscheint dieselbe Liste als durchsuchbare
+charts-config-Panel „Quellen-Finder" erscheint dieselbe Liste als durchsuchbare
 Tabelle.
 
-**Aktualität der Dashboard-Tabelle:** Die Genre-Tabelle im Dashboard
+**Aktualität der charts-config-Tabelle:** Die Genre-Tabelle in charts-config
 aktualisiert sich **nicht** per Cronjob, sondern beim ersten Seitenaufruf **nach
-Ablauf der 24-h-TTL** (`DASHBOARD_GENRE_CACHE_TTL`). Ist das Dashboard länger
+Ablauf der 24-h-TTL** (`DASHBOARD_GENRE_CACHE_TTL`). Ist charts-config länger
 nicht geöffnet, kann die Tabelle älter als 24 h sein, bis der nächste Aufruf sie
 frischt – für den „täglich aktuell"-Anspruch genügt das.
 
@@ -155,7 +155,7 @@ frischt – für den „täglich aktuell"-Anspruch genügt das.
 > automatisch gültige `chart`-IDs. Für Länder-/Genre-spezifische Playlists ist
 > der zuverlässigste Weg eine **Playlist-ID** (`type:"playlist"`) einer
 > offiziellen Deezer-Länder-/Genre-Playlist. Deshalb empfiehlt dieses Dokument
-> für „Pop/Country/…" primär den **Playlist-Weg** (Playlist-Suche im Dashboard
+> für „Pop/Country/…" primär den **Playlist-Weg** (Playlist-Suche in charts-config
 > oder `https://api.deezer.com/search/playlist?q=…`).
 
 ---
@@ -178,7 +178,7 @@ Top-Tracks eines Landes. Pflichtparameter `country` = ISO-3166-1-Ländername auf
 ### `tag.getTopTracks`
 Top-Tracks zu einem **Tag/Genre**. Pflichtparameter `tag` (z.B. `pop`, `rock`,
 `country`, `80s`, `swiss`). Tags sind frei vergeben, die Qualität variiert –
-Brauchbarkeit am besten über den Dashboard-Tag-Finder prüfen.
+Brauchbarkeit am besten über den charts-config-Tag-Finder prüfen.
 ```json
 {"service":"lastfm","method":"tag.getTopTracks","tag":"pop"}
 ```
@@ -192,9 +192,9 @@ Top-Tracks eines öffentlichen Last.fm-Users. Pflichtparameter `user`, optional
 
 ---
 
-## 5. IDs/Tags finden (ohne Dashboard)
+## 5. IDs/Tags finden (ohne charts-config)
 
-Falls du das Dashboard-Panel „Quellen-Finder" nicht nutzt, kommst du so an die
+Falls du das charts-config-Panel „Quellen-Finder" nicht nutzt, kommst du so an die
 Werte:
 
 - **Deezer-Playlist-ID:** Playlist in der Deezer-Web-App öffnen; die ID steht in
@@ -211,7 +211,7 @@ Werte:
 - **Last.fm-Country:** englische Ländernamen verwenden; mit demselben
   `geo.getTopTracks`-Aufruf validieren.
 
-> Im Dashboard-Panel „Quellen-Finder" geht das bequemer und liefert direkt das
+> Im charts-config-Panel „Quellen-Finder" geht das bequemer und liefert direkt das
 > fertige `.env`-Snippet (inkl. Tag-/Country-Validierung).
 
 ---
@@ -387,7 +387,7 @@ Kompakte Einzeile (`CHARTS=` auf EINER Zeile):
 ### Rubrik B — Vorlage mit Platzhalter (ID erst holen)
 
 Diese Vorlagen sind **nicht direkt lauffähig**: Jedes `<id>` muss zuerst über den
-Dashboard-Finder (Deezer-Playlist-Suche) oder
+charts-config-Finder (Deezer-Playlist-Suche) oder
 `https://api.deezer.com/search/playlist?q=…` durch eine echte ID ersetzt werden.
 Sie stehen **bewusst nur mehrzeilig** als Vorlage – nicht als kompakte
 copy-paste-Zeile – damit niemand versehentlich ein `<id>` live schaltet.

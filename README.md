@@ -37,6 +37,7 @@ any Subsonic client works, on any platform.
 | **charts-sync** | Fetches Deezer/Last.fm charts, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
 | **charts-hitparade** | Fetches the official Swiss charts (Top 100) weekly, writes `hitparade.m3u` + `missing-hitparade.txt` | Sun 20:00 |
 | **charts-flashback** | Collects the FLASHBACK FM main stream rotation (all decades mixed) and grows the library (downloads, no playlist; year tag for the decade NSPs) | 2 h |
+| **charts-energy** | Uses the Swiss NRJ/energy.ch ICY webradio stream as a source; three per-channel modes (own playlist / feed into a charts-sync theme / grow the library); **disabled by default** | continuous poll (`ENERGY_POLL_SECONDS` ~90 s) + match every ~30 min |
 | **charts-download** | Reads `missing-*.txt`, searches/downloads via slskd, writes the **manifest** | 60 min |
 | **charts-import** | Imports finished downloads into the library (tags, cover, ReplayGain, optional Lidarr unmonitor; keeps Navidrome "date added" stable on retag/upgrade via `PRESERVE_MTIME`, default on) | 30 min |
 | **charts-digest** | Sends a daily Pushover summary of songs newly added to the library (grouped by source) | daily 09:00 |
@@ -45,6 +46,7 @@ any Subsonic client works, on any platform.
 | **charts-songrequest** | Web UI (FastAPI) to request individual songs manually (multi-user login) | on-demand |
 | **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
 | **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections and run stats | service |
+| **charts-config** | Password-protected web UI (port 5058) hosting the source finder + the Energy-channel browser; read-only (no config is changed) | service |
 | **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
 
 ### The glue: two shared folders + the manifest
@@ -182,12 +184,20 @@ MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-fl
 Without this, charts-recommend still writes the lists but charts-download ignores
 them. (Missing files are harmless – just a log warning.)
 
+The same applies to **charts-energy** `library` channels: they write their
+missing songs into the shared `missing-energy-library.txt`, so append
+`/charts/missing-energy-library.txt` to `MISSING_FILES` if you enable a library
+channel (it is an optional add-on, not part of the default list above – mirrors
+`.env.example`).
+
 > **Decades (80s/90s …):** These no longer run through a dedicated charts-sync
 > playlist, but through **charts-flashback** (fills the library from the
 > FLASHBACK FM rotation) + **Navidrome Smart Playlists (NSP)** that filter the
-> library by year. charts-sync only fetches the international + Swiss charts and
-> Mundart. Reason: the NSPs cover the *whole* library (broader + better quality
-> than a single Deezer playlist).
+> library by year. The other decade source is **charts-energy** in `library`
+> mode (e.g. energy80s/energy90s → MusicBrainz year tag → the same NSPs, sharing
+> the `.charts-flashback-years.json` file). charts-sync only fetches the
+> international + Swiss charts and Mundart. Reason: the NSPs cover the *whole*
+> library (broader + better quality than a single Deezer playlist).
 
 ### Your own chart sources (Deezer / Last.fm)
 
@@ -196,8 +206,8 @@ sources. Each source may carry an optional, backward-compatible `service` field
 (`deezer`/`lastfm`). The bundled IDs are **examples** – replace them with your
 own. The full field and ID reference plus ready-made examples (country, 80s/90s,
 …) is in **[`CHARTS-SOURCES.en.md`](CHARTS-SOURCES.en.md)**. New source IDs are
-easy to find via the **source finder** in the
-[charts-dashboard](charts-dashboard) (Deezer playlist search, genre table,
+easy to find via the **source finder** in
+[charts-config](charts-config) (port 5058; Deezer playlist search, genre table,
 Last.fm tag check). See `charts-sync/README.en.md`.
 
 **On/off per service:** `charts-hitparade` and `charts-flashback` each have a
@@ -218,15 +228,25 @@ Two services keep an eye on the stack:
   sends **one** Pushover message when one fails (and an all-clear on recovery).
   See `charts-watchdog/README.en.md`.
 
-Neither accesses the Docker socket directly; both go **read-only** through a
+A third web UI sits alongside them:
+
+- **charts-config** – a read-only web UI (default port `5058`) hosting the
+  **source finder** (Deezer playlist/artist search, Deezer genre table, Last.fm
+  tag check → ready `charts-sync` snippets) and the **Energy-channel browser**
+  (per-channel `ENERGY_CHANNELS` snippet + live status). It changes no config –
+  it only shows ready-to-paste snippets. Password-protected with its **own**
+  login (user `admin` + `CONFIG_PASSWORD`). See `charts-config/README.en.md`.
+
+Neither the dashboard nor the watchdog accesses the Docker socket directly; both
+go **read-only** through a
 small `charts-docker-proxy` (read requests only, no container start/stop).
 Dashboard and watchdog therefore run as an unprivileged user, not as root. The
 run stats come from small JSON files each service writes into
 `Charts/.charts-status/`.
 
-| Live connections | Source finder |
+| Dashboard: live connections | charts-config: source finder |
 | --- | --- |
-| ![Dashboard connections view](screenshots/connections.png) | ![Dashboard source finder](screenshots/source_finder.png) |
+| ![Dashboard connections view](screenshots/connections.png) | ![charts-config source finder](screenshots/source_finder.png) |
 
 ### Language (logs, Pushover, dashboard)
 
@@ -293,6 +313,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 | **charts-sync** | Holt Deezer-/Last.fm-Charts, matcht gegen deine Library, schreibt `.m3u`-Playlists + `missing-*.txt` | 12 h |
 | **charts-hitparade** | Holt wöchentlich die offizielle Schweizer Hitparade (Top-100), schreibt `hitparade.m3u` + `missing-hitparade.txt` | So 20:00 |
 | **charts-flashback** | Sammelt die Rotation vom FLASHBACK-FM-Hauptstream (alle Dekaden gemischt) und lässt die Library wachsen (Nachladen, keine Playlist; Jahr-Tag für die Dekaden-NSP) | 2 h |
+| **charts-energy** | Nutzt den Schweizer NRJ-/energy.ch-ICY-Webradio-Stream als Quelle; drei Modi pro Kanal (eigene Playlist / Feed in ein charts-sync-Thema / Library wachsen lassen); **standardmäßig deaktiviert** | Dauer-Poll (`ENERGY_POLL_SECONDS` ~90 s) + Match alle ~30 min |
 | **charts-download** | Liest `missing-*.txt`, sucht/lädt via slskd, schreibt das **Manifest** | 60 min |
 | **charts-import** | Sortiert fertige Downloads in die Library ein (Tags, Cover, ReplayGain, optional Lidarr-Unmonitor; hält Navidromes „date added" bei Retag/Upgrade stabil über `PRESERVE_MTIME`, Default an) | 30 min |
 | **charts-digest** | Schickt täglich eine Pushover-Zusammenfassung der neu in die Library gekommenen Songs (nach Quelle gruppiert) | täglich 09:00 |
@@ -301,6 +322,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 | **charts-songrequest** | Web-UI (FastAPI) zum manuellen Anfordern einzelner Songs (Mehrbenutzer-Login) | on-demand |
 | **charts-watchdog** | Überwacht alle Container und meldet per Pushover, wenn einer ausfällt oder sich erholt | 30 s |
 | **charts-dashboard** | Web-UI (FastAPI) mit Status aller Dienste, Verbindungen und Lauf-Statistik | Dienst |
+| **charts-config** | Passwortgeschützte Web-UI (Port 5058) mit dem Quellen-Finder + dem Energy-Kanal-Browser; reiner Lese-Zugriff (ändert keine Konfiguration) | Dienst |
 | **slskd** | Soulseek-Client, die Download-Engine (eigenes Soulseek-Login) | Dienst |
 
 ### Das Bindeglied: zwei gemeinsame Ordner + das Manifest
@@ -455,12 +477,21 @@ MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-fl
 
 Nicht vorhandene Dateien sind harmlos – es gibt nur eine Log-Warnung.
 
+Dasselbe gilt für **charts-energy**-`library`-Kanäle: sie schreiben ihre
+fehlenden Songs in die gemeinsame `missing-energy-library.txt` – hänge daher
+`/charts/missing-energy-library.txt` an `MISSING_FILES` an, wenn du einen
+library-Kanal aktivierst (optionaler Zusatz, nicht Teil der Default-Liste oben –
+spiegelt die `.env.example`).
+
 > **Dekaden (80er/90er …):** Diese laufen **nicht mehr** über eine eigene
 > charts-sync-Playlist, sondern über **charts-flashback** (füllt die Library aus
 > der FLASHBACK-FM-Rotation) + **Navidrome Smart Playlists (NSP)**, die die
-> Library nach Jahr filtern. charts-sync lädt nur noch die internationalen +
-> Schweizer Charts und Mundart. Grund: die NSP greifen die *ganze* Library ab
-> (breiter + bessere Qualität als eine einzelne Deezer-Playlist).
+> Library nach Jahr filtern. Die andere Dekaden-Quelle ist **charts-energy** im
+> `library`-Modus (z. B. energy80s/energy90s → MusicBrainz-Jahr-Tag → dieselben
+> NSP, teilt sich die `.charts-flashback-years.json`). charts-sync lädt nur noch
+> die internationalen + Schweizer Charts und Mundart. Grund: die NSP greifen die
+> *ganze* Library ab (breiter + bessere Qualität als eine einzelne
+> Deezer-Playlist).
 
 ### Eigene Chart-Quellen (Deezer / Last.fm)
 
@@ -469,8 +500,8 @@ Quellen. Jede Quelle kann ein optionales, abwärtskompatibles `service`-Feld
 (`deezer`/`lastfm`) tragen. Die mitgelieferten IDs sind **Beispiele** – ersetze
 sie durch deine eigenen. Die vollständige Feld- und ID-Referenz samt fertiger
 Beispiele (Country, 80er/90er …) steht in **[`CHARTS-SOURCES.md`](CHARTS-SOURCES.md)**.
-Neue Quellen-IDs findest du bequem über den **Quellen-Finder** im
-[charts-dashboard](charts-dashboard) (Deezer-Playlist-Suche, Genre-Tabelle,
+Neue Quellen-IDs findest du bequem über den **Quellen-Finder** in
+[charts-config](charts-config) (Port 5058; Deezer-Playlist-Suche, Genre-Tabelle,
 Last.fm-Tag-Prüfung). Details in `charts-sync/README.md`.
 
 **An/Aus pro Dienst:** `charts-hitparade` und `charts-flashback` haben je einen
@@ -491,7 +522,18 @@ Zwei Dienste behalten den Stack im Auge:
   Container und schickt **eine** Pushover-Meldung, wenn einer ausfällt (und eine
   Entwarnung bei Erholung). Details in `charts-watchdog/README.md`.
 
-Beide greifen **nicht** direkt auf den Docker-Socket zu, sondern **read-only**
+Daneben steht eine dritte Web-UI:
+
+- **charts-config** – eine reine Lese-Web-UI (Standard-Port `5058`) mit dem
+  **Quellen-Finder** (Deezer-Playlist-/Künstler-Suche, Deezer-Genre-Tabelle,
+  Last.fm-Tag-Prüfung → fertige `charts-sync`-Snippets) und dem
+  **Energy-Kanal-Browser** (fertiges `ENERGY_CHANNELS`-Snippet je Kanal +
+  Live-Status). Sie ändert **keine** Konfiguration – sie zeigt nur
+  Snippets zum Hineinkopieren. Passwortgeschützt mit **eigenem** Login (Benutzer
+  `admin` + `CONFIG_PASSWORD`). Details in `charts-config/README.md`.
+
+Dashboard und Watchdog greifen **nicht** direkt auf den Docker-Socket zu,
+sondern **read-only**
 über einen kleinen `charts-docker-proxy` (nur lesende Abfragen erlaubt, kein
 Container-Start/-Stop). Dashboard und Watchdog laufen dadurch als
 unprivilegierter User, nicht als root. Die Lauf-Statistik stammt aus kleinen

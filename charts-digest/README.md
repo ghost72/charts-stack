@@ -4,7 +4,7 @@
 
 Schickt einmal täglich eine **Pushover-Zusammenfassung** der Songs, die in den
 letzten 24 h neu in die Library einsortiert wurden – gruppiert nach Quelle
-(Aktuelle Charts, Schweizer Mundart, FLASHBACK FM, manuell angefordert …).
+(Aktuelle Charts, Schweizer Mundart, FLASHBACK FM, Energy, manuell angefordert …).
 
 Reiner Melde-/Report-Dienst der `charts-*`-Familie (wie
 [`charts-watchdog`](../charts-watchdog) und [`charts-dashboard`](../charts-dashboard)) –
