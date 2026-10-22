@@ -229,6 +229,13 @@ services:
       - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
       - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
       - NOTIFY_MISSING_LIMIT=${NOTIFY_MISSING_LIMIT:-40}
+      # library-Modus: MusicBrainz-Jahresaufloesung (fuer die Dekaden-NSPs) +
+      # die eine gemeinsame Missing-Datei aller library-Kanaele.
+      - MB_ENABLED=${MB_ENABLED:-1}
+      - MB_USER_AGENT_ENERGY=${MB_USER_AGENT_ENERGY:-charts-energy/1.0 (self-hosted)}
+      - MB_RATE_SLEEP=${MB_RATE_SLEEP:-1.1}
+      - MB_SCORE_MIN=${MB_SCORE_MIN:-90}
+      - ENERGY_LIBRARY_MISSING_FILE=${ENERGY_LIBRARY_MISSING_FILE:-missing-energy-library.txt}
       - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
       - PUSHOVER_USER=${PUSHOVER_USER:-}
       - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
