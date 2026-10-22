@@ -67,6 +67,16 @@ docker compose run --rm charts-energy python -m app.discover --probe energypop
 `--list` zeigt die bestätigten Slugs (Anzeige | Slug | Genre); `--probe <slug>`
 prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
 
+> **Ehrliche Einschränkung (Liveness-Re-Check, G2):** Der tägliche
+> Liveness-Check (`ENERGY_LIVENESS_*`) prüft **nur die bereits bekannten** Slugs
+> aus `discover.py::CONFIRMED_CHANNELS` erneut und zeigt deren Zustand als
+> live/offline-Badge in charts-config. Er kann **keine** brandneuen
+> Energy-Kanäle automatisch entdecken – das energy.ch-Verzeichnis wird per
+> JavaScript gerendert. Ein wirklich neuer Kanal muss weiterhin **von Hand** in
+> `CONFIRMED_CHANNELS` (und den charts-config-Spiegel) ergänzt werden. Es gibt
+> bewusst keinen spekulativen „Slug-Rater". Ein Alarm wird nur für einen Kanal
+> ausgelöst, der schon einmal live war und über die Schwelle hinweg weg bleibt.
+
 ## Konfiguration (zentrale `.env`)
 
 | Variable | Default | Zweck |

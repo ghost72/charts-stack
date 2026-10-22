@@ -348,7 +348,15 @@ async function loadEnergyChannels() {
         const cls = c.active ? "active" : "inactive";
         const txt = c.active ? t("energy.status.active", {mode: c.active_mode})
                              : t("energy.status.inactive");
-        return `<span class="nrj-badge ${cls}">${esc(txt)}</span>`;
+        let out = `<span class="nrj-badge ${cls}">${esc(txt)}</span>`;
+        // G2 liveness badge (read-only): "live"/"dead" from the daily re-probe.
+        // "unknown" (no map yet / energy disabled) renders no badge.
+        if (c.liveness === "live" || c.liveness === "dead") {
+          const lcls = c.liveness === "live" ? "live" : "dead";
+          const ltxt = t("energy.liveness." + c.liveness);
+          out += ` <span class="nrj-badge ${lcls}" title="${esc(t("energy.liveness.hint"))}">${esc(ltxt)}</span>`;
+        }
+        return out;
       }},
       {label: t("energy.col.snippet"), get: c => snippetCell(c.snippet), type: "raw", sortable: false},
     ], 0);   // default sort: Channel, ascending by name feel (descending glyph)

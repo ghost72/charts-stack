@@ -78,3 +78,33 @@ def test_probe_unreachable(monkeypatch, capsys):
     _patch_client(monkeypatch, exc=httpx.ConnectError("boom"))
     rc = discover.probe("energypop")
     assert rc != 0
+
+
+# --- probe_result (pure bool, no printing) ---------------------------------
+
+def test_probe_result_true_on_200_with_icy_name(monkeypatch):
+    _patch_client(monkeypatch,
+                  response=_FakeResponse(200, {"icy-name": "Energy Pop"}))
+    assert discover.probe_result("energypop") is True
+
+
+def test_probe_result_false_on_404(monkeypatch):
+    _patch_client(monkeypatch, response=_FakeResponse(404, {}))
+    assert discover.probe_result("energynope") is False
+
+
+def test_probe_result_false_without_icy_name(monkeypatch):
+    _patch_client(monkeypatch, response=_FakeResponse(200, {}))
+    assert discover.probe_result("energypop") is False
+
+
+def test_probe_result_false_on_http_error(monkeypatch):
+    _patch_client(monkeypatch, exc=httpx.ConnectError("boom"))
+    assert discover.probe_result("energypop") is False
+
+
+def test_probe_result_does_not_print(monkeypatch, capsys):
+    _patch_client(monkeypatch,
+                  response=_FakeResponse(200, {"icy-name": "Energy Pop"}))
+    discover.probe_result("energypop")
+    assert capsys.readouterr().out == ""

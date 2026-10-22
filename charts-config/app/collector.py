@@ -352,6 +352,12 @@ def energy_channels() -> dict:
         status_data = _read_status_files().get("charts-energy") or {}
         svc_status = status_data.get("status")
         raw_channels = status_data.get("channels")
+        # G2 liveness map (read-only, additive, fully fail-open): the current
+        # live/dead verdict from the daily re-probe. Absent (old energy / before
+        # the first liveness pass) -> {} -> every channel reports "unknown" and
+        # the frontend renders no badge.
+        liveness = (status_data.get("energy_liveness") or {}).get(
+            "channels") or {}
         # Build {slug: active_mode} from well-formed, enabled entries only.
         # Defensive: skip anything that is not a dict with a string slug. A mode
         # outside own/feed/library is still recorded verbatim (badge prints it).
@@ -391,6 +397,8 @@ def energy_channels() -> dict:
                 "missing_file": missing_file,
                 "active": active,
                 "active_mode": running.get(slug, "") if active else "",
+                # "live" | "dead" | "unknown" (no badge rendered for unknown).
+                "liveness": liveness.get(slug, "unknown"),
             })
         return {"ok": True, "channels": channels}
     except Exception as e:
