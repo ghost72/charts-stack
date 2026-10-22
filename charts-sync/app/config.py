@@ -190,12 +190,19 @@ CHARTS_FILE = os.environ.get("CHARTS_FILE", "").strip()
 #                  across runs.
 PLAYLIST_ORDER = os.environ.get("PLAYLIST_ORDER", "chart").strip().lower()
 
+# --- Energy feed (handoff from the charts-energy collector) ---
+# An "energy" feed reads a per-theme handoff JSON that charts-energy writes
+# (CHARTS_DIR/.charts-energy-feed-<theme>.json). A handoff file older than this
+# many hours is treated as empty (one WARN) so a dead/stale collector never
+# keeps stale tracks in a theme playlist. charts-sync opens no socket for this.
+ENERGY_FEED_MAX_AGE_HOURS = _get_int("ENERGY_FEED_MAX_AGE_HOURS", 48)
+
 
 class Feed:
     """
     A single chart source within a playlist.
 
-    kind:    "deezer" or "lastfm".
+    kind:    "deezer", "lastfm" or "energy".
     enabled: False -> feed is skipped (without deleting it from the config). So
              you can e.g. turn off all Deezer feeds and only import Last.fm (or
              vice versa).
@@ -209,11 +216,15 @@ class Feed:
                "tag.getTopTracks", "user.getTopTracks"
       params = dict with method-specific extra values
                (country / tag / user / period)
+    Energy-specific:
+      theme  = the handoff-file theme key charts-energy writes (e.g. "mundart").
+               The reader opens CHARTS_DIR/.charts-energy-feed-<theme>.json.
     """
 
     def __init__(self, kind: str, limit: int, enabled: bool = True,
                  deezer_type: str = "chart", source: str = "0",
-                 method: str = "", params: dict | None = None):
+                 method: str = "", params: dict | None = None,
+                 theme: str = ""):
         self.kind = kind
         self.limit = limit
         self.enabled = enabled
@@ -221,11 +232,14 @@ class Feed:
         self.source = source
         self.method = method
         self.params = params or {}
+        self.theme = theme
 
     def __repr__(self) -> str:
         state = "on" if self.enabled else "OFF"
         if self.kind == "lastfm":
             detail = f"{self.method}{self.params or ''}"
+        elif self.kind == "energy":
+            detail = f"theme:{self.theme}"
         else:
             detail = f"{self.deezer_type}:{self.source}"
         return f"Feed[{self.kind}/{state}]({detail} <={self.limit})"
@@ -268,13 +282,27 @@ class ChartSource:
         # default (see effective_genre_filter).
         self.genre_filter: bool | None = genre_filter
         # Populated by deezer.fetch_chart after the run (for Pushover):
-        # {"deezer_new": int, "lastfm_new": int, "genre_filtered": int}
+        # {"deezer_new": int, "lastfm_new": int, "energy_new": int,
+        #  "genre_filtered": int}
         self.last_stats: dict[str, int] = {}
 
     @property
     def active_feeds(self) -> list["Feed"]:
-        """Only the enabled feeds (enabled=True)."""
-        return [f for f in self.feeds if f.enabled]
+        """
+        The enabled feeds (enabled=True), stably partitioned so that energy
+        feeds are always merged LAST.
+
+        Returns all non-energy feeds first (in config order), then all energy
+        feeds (in config order). This is a pure permutation of the enabled set
+        (membership and length unchanged), so the active-source count in
+        _parse_charts is unaffected; only fetch_chart's iteration order changes.
+        Because fetch_chart keeps the first occurrence of a track, appending
+        energy last guarantees the curated Deezer/Last.fm feeds keep position
+        priority and energy only adds genuinely new tracks.
+        """
+        enabled = [f for f in self.feeds if f.enabled]
+        return ([f for f in enabled if f.kind != "energy"]
+                + [f for f in enabled if f.kind == "energy"])
 
     @property
     def effective_genre_filter(self) -> bool:
@@ -349,7 +377,12 @@ _DEEZER_TYPES = {"chart", "playlist", "artist"}
 # "service" and "source" are NOT Last.fm query parameters: they are
 # deliberately ignored instead of passed through to the API (a "source"
 # accidentally set on a Last.fm source would otherwise be sent as &source=..).
-_LASTFM_META_KEYS = {"type", "method", "limit", "enabled", "service", "source"}
+# "theme" belongs to an energy source; it is listed here defensively so a theme
+# key mistakenly placed on a lastfm source is never forwarded as an API param
+# (an energy feed never reaches the lastfm param construction in the first
+# place, so this only guards the misplacement case).
+_LASTFM_META_KEYS = {"type", "method", "limit", "enabled", "service", "source",
+                     "theme"}
 
 # Valid Last.fm methods as a mirror set of lastfm._METHOD_PARAM. Deliberately NO
 # import of lastfm here (import cycle config->lastfm->deezer->config, deezer.py
@@ -382,6 +415,17 @@ def _build_feed(s: dict, entry_limit: int, context: str,
     method_raw = str(s.get("method", "")).strip().lower()
     limit = _parse_limit(s.get("limit"), entry_limit)
     enabled = bool(s.get("enabled", True))
+
+    # Energy feed (handoff from charts-energy). Handled before the Deezer/Last.fm
+    # heuristic: it carries a "theme" (no Deezer ID, no Last.fm method) and
+    # charts-sync only reads a local JSON file for it (never a socket).
+    if service == "energy":
+        theme = str(s.get("theme", "")).strip()
+        if not theme:
+            warnings.append(t("sync.config.energy_no_theme",
+                               context=context, index=index))
+            enabled = False
+        return Feed(kind="energy", limit=limit, enabled=enabled, theme=theme)
 
     # 1) Determine the effective service.
     if service == "lastfm":
