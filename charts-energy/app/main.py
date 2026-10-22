@@ -244,8 +244,18 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
     feed_results = feed_results or []
     if not results and not feed_results and not library_results:
         return
-    total_matched = sum(r["matched"] for r in results)
-    total_missing = sum(r["missing"] for r in results)
+    # Header totals span BOTH the own-mode playlists and the library-mode
+    # channels (present + to-load), so the top line matches the per-section
+    # detail below instead of only counting own channels (which left the header
+    # at "0 / 0" whenever only feed/library channels were active). Feed channels
+    # are deliberately NOT folded in: their tracks are HANDED OVER to charts-sync
+    # (not downloaded or counted as present/missing here) and keep their own
+    # "X track(s) handed over" line.
+    lib = library_results or {}
+    lib_present = len(lib.get("present") or [])
+    lib_to_load = len(lib.get("to_load") or [])
+    total_matched = sum(r["matched"] for r in results) + lib_present
+    total_missing = sum(r["missing"] for r in results) + lib_to_load
     push_title = t("energy.notify.title", service="charts-energy")
 
     lines = [t("energy.notify.body",
