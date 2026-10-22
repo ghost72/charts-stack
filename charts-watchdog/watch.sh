@@ -103,6 +103,24 @@ _lookup() {
     2>/dev/null || true
 }
 
+# _status_field KEY FILE -> top-level string value of KEY from a status JSON
+# (e.g. "status","message"), otherwise empty. Mirrors _lookup's two-step
+# grep->sed but for the service <service>.json status files (indent=2, so each
+# field is on its own line - the one-line grep contract holds). grep isolates
+# the one `"key":` line, sed cuts the first-quote-bounded value. Empty on an
+# absent/unreadable file or a missing field. set -eu-safe (every step
+# `|| true`), never crashes. A `message` with an embedded double-quote is cut
+# short at that quote (same bounded behaviour as _lookup); the authored status
+# messages avoid embedded quotes.
+_status_field() {
+  _sf_file="$2"
+  [ -f "$_sf_file" ] || { echo ""; return 0; }
+  _sf_line="$(grep -F "\"$1\":" "$_sf_file" 2>/dev/null | head -n1 || true)"
+  [ -n "$_sf_line" ] || { echo ""; return 0; }
+  printf '%s' "$_sf_line" | sed -n \
+    's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null || true
+}
+
 # t KEY [arg ...] -> translated string filled with %s, on stdout.
 # NEVER crashes (set -eu-safe). Fallback chain: chosen language -> en -> key name.
 t() {
@@ -436,6 +454,19 @@ COOLDOWN="${WATCH_COOLDOWN_SECONDS:-1800}"
 # timeouts/single poll dropouts thus NEVER report immediately (no spam).
 EXT_DEBOUNCE_SECONDS="${WATCH_EXTERNAL_DEBOUNCE_SECONDS:-600}"
 
+# --- Status-error machine (third machine) ----------------------------------
+# Pages when a service writes status="error" into its <service>.json (same files
+# the dashboard reads). Reuses the same DEBOUNCE/RECOVER_POLLS/COOLDOWN tunables
+# as the container machine (a status-error is a real problem) but its own st-
+# marker namespace. Additive: the container + external machines are untouched.
+# WATCH_STATUS_ENABLED: master toggle (0 = skip the whole status loop).
+WATCH_STATUS_ENABLED="${WATCH_STATUS_ENABLED:-1}"
+# WATCH_STATUS_DIR: directory of the <service>.json status files (new ro mount).
+WATCH_STATUS_DIR="${WATCH_STATUS_DIR:-/charts/.charts-status}"
+# WATCH_STATUS_SERVICES: space-separated service names (the <service>.json
+# basenames) to watch. Default = the ten status-writing services.
+WATCH_STATUS_SERVICES="${WATCH_STATUS_SERVICES:-charts-sync charts-hitparade charts-flashback charts-energy charts-recommend charts-import charts-download charts-upgrade charts-digest charts-songrequest}"
+
 read_num() { cat "$1" 2>/dev/null || echo 0; }
 
 # Main flow: start banner, state directory, continuous loop. Behind the
@@ -448,6 +479,17 @@ main_loop() {
   [ "$EXT_DEBOUNCE_POLLS" -lt 1 ] && EXT_DEBOUNCE_POLLS=1
 
   log "$(t watchdog.start.banner "$CONTAINERS" "$INTERVAL" "$DEBOUNCE" "$RECOVER_POLLS" "$COOLDOWN" "$EXT_DEBOUNCE_SECONDS" "$EXT_DEBOUNCE_POLLS")"
+
+  # One-time status-machine start log (right after the start banner + the
+  # EXT_DEBOUNCE_POLLS arithmetic, before the while-loop). Does NOT extend the
+  # banner's fixed 7-arg format.
+  if [ "$WATCH_STATUS_ENABLED" = "1" ]; then
+    if [ -d "$WATCH_STATUS_DIR" ]; then
+      log "$(t watchdog.log.status_watching "$WATCH_STATUS_SERVICES" "$WATCH_STATUS_DIR")"
+    else
+      log "$(t watchdog.log.status_dir_missing "$WATCH_STATUS_DIR")"
+    fi
+  fi
 
   # State machine per container, markers as files under /tmp/wd:
   #   <c>.alarm   : "1" while a problem counts as REPORTED (until all-clear)
@@ -553,6 +595,55 @@ main_loop() {
         fi
       fi
     done
+
+    # --- Status-error machine (third machine) ------------------------------
+    # Pages when a service's <service>.json reports status="error". Same
+    # anti-spam/anti-flap machine as the containers, with its OWN st- marker
+    # namespace (so a container named like a watched service cannot collide).
+    # DEBOUNCE/RECOVER_POLLS/COOLDOWN reused from the container part. error =>
+    # problem; ok/idle/running/empty => ok (quiet; a transient read race must
+    # not page).
+    if [ "$WATCH_STATUS_ENABLED" = "1" ]; then
+      for svc in $WATCH_STATUS_SERVICES; do
+        _stfile="$WATCH_STATUS_DIR/$svc.json"
+        _st="$(_status_field status "$_stfile")"
+        if [ "$_st" = "error" ]; then res=problem; else res=ok; fi
+        alarmed="$(read_num "/tmp/wd/st-$svc.alarm")"
+
+        if [ "$res" = "ok" ]; then
+          echo 0 > "/tmp/wd/st-$svc.bad"
+          good="$(read_num "/tmp/wd/st-$svc.good")"
+          good=$((good + 1))
+          echo "$good" > "/tmp/wd/st-$svc.good"
+          # All-clear only on an open alarm AND stably ok again.
+          if [ "$alarmed" = "1" ] && [ "$good" -ge "$RECOVER_POLLS" ]; then
+            log "$(t watchdog.log.status_recovered "$svc" "$good")"
+            notify "$(t watchdog.notify.status_recovered_title "$svc")" "$(t watchdog.notify.status_recovered_msg "$svc")"
+            echo 0 > "/tmp/wd/st-$svc.alarm"
+          fi
+        else
+          echo 0 > "/tmp/wd/st-$svc.good"
+          bad="$(read_num "/tmp/wd/st-$svc.bad")"
+          bad=$((bad + 1))
+          echo "$bad" > "/tmp/wd/st-$svc.bad"
+          # Problem only after DEBOUNCE continuous error polls, no open alarm,
+          # cooldown since the last message expired.
+          if [ "$bad" -ge "$DEBOUNCE" ] && [ "$alarmed" != "1" ]; then
+            last="$(read_num "/tmp/wd/st-$svc.last")"
+            _msg="$(_status_field message "$_stfile")"
+            if [ "$last" -eq 0 ] || [ "$((now - last))" -ge "$COOLDOWN" ]; then
+              log "$(t watchdog.log.status_problem "$svc" "$bad")"
+              notify "$(t watchdog.notify.status_problem_title "$svc")" "$(t watchdog.notify.status_problem_msg "$svc" "$_msg")"
+              echo 1 > "/tmp/wd/st-$svc.alarm"
+              echo "$now" > "/tmp/wd/st-$svc.last"
+            else
+              log "$(t watchdog.log.status_problem_cooldown "$svc")"
+              echo 1 > "/tmp/wd/st-$svc.alarm"
+            fi
+          fi
+        fi
+      done
+    fi
 
     # Pushover: is taken into account (checked + into the container log) but
     # DELIBERATELY NEVER reported via a Pushover alarm - wanting to report a
