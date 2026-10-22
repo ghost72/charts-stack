@@ -175,6 +175,7 @@
   "digest.source.upgrade": "Quality upgrade",
   "digest.source.hitparade": "Swiss Hitparade",
   "digest.source.recommend": "Recommendations",
+  "digest.source.energy": "Energy",
   "digest.source.unknown": "Unknown source",
   "digest.log.pruned": "Import log pruned: {before} -> {after} entries (retention {days} days)",
   "digest.log.prune_failed": "Could not prune import log: {error}",

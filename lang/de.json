@@ -175,6 +175,7 @@
   "digest.source.upgrade": "Qualitäts-Upgrade",
   "digest.source.hitparade": "Schweizer Hitparade",
   "digest.source.recommend": "Empfehlungen",
+  "digest.source.energy": "Energy",
   "digest.source.unknown": "Unbekannte Quelle",
   "digest.log.pruned": "Import-Log gekürzt: {before} -> {after} Einträge (Aufbewahrung {days} Tage)",
   "digest.log.prune_failed": "Import-Log konnte nicht gekürzt werden: {error}",

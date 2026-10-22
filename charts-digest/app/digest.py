@@ -33,6 +33,11 @@ _SOURCE_LABELS = {
     "upgrade": ("⬆️", "digest.source.upgrade"),
     "hitparade": ("🏆", "digest.source.hitparade"),
     "recommend": ("🎧", "digest.source.recommend"),
+    # charts-energy library-mode downloads: charts-download derives the source
+    # from the missing-file name "missing-energy-library.txt" -> "energy-library"
+    # (see charts-download/app/missing.py source_label). Label it as Energy here
+    # so the daily digest shows a clean "⚡ Energy" group instead of the raw slug.
+    "energy-library": ("⚡", "digest.source.energy"),
     "": ("🎵", "digest.source.unknown"),
 }
 
