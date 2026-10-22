@@ -169,6 +169,15 @@ NOTIFY_MISSING_LIMIT = _get_int("NOTIFY_MISSING_LIMIT", 40)
 # change" notification and the ordering). Lives in CHARTS_DIR.
 STATE_FILE = os.environ.get("STATE_FILE", ".charts-sync-state.json")
 
+# --- Structural-break detection (G3) ---
+# A previously-ok source is "dead" after this many consecutive runs returning
+# nothing (empty or error). Sync runs every SYNC_INTERVAL_HOURS (default 12 h),
+# so 6 runs ~= 3 days of a once-working source producing nothing -> error.
+SYNC_DEAD_RUNS_THRESHOLD = _get_int("SYNC_DEAD_RUNS_THRESHOLD", 6)
+# Sidecar health-state file (detector bookkeeping, NOT dashboard payload). Lives
+# in CHARTS_DIR next to the state file, loaded fail-open.
+SYNC_HEALTH_FILE = os.environ.get("SYNC_HEALTH_FILE", ".charts-sync-health.json")
+
 # --- Playlist definition from a FILE (optional, admin-friendly) ---
 # The CHARTS env is necessarily SINGLE-LINE (env limitation) and gets unwieldy
 # with many playlists/sources. Alternatively the whole definition can be loaded

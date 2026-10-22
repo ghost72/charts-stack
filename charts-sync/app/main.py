@@ -23,7 +23,7 @@ import os
 import time
 from datetime import datetime
 
-from . import config, deezer, library, notify, playlist, status
+from . import config, deezer, health, library, notify, playlist, status
 from .i18n import t
 
 logging.basicConfig(
@@ -56,8 +56,18 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, _state_path())
 
 
-def _sync_source(chart_source, lib, state: dict) -> None:
-    """Process a single chart source."""
+def _sync_source(chart_source, lib, state: dict) -> str:
+    """
+    Process a single chart source.
+
+    Returns a per-source outcome for the G3 structural-break detector:
+      "error" - the internal fetch except branch fired (transport failure),
+      "empty" - fetched successfully but zero chart tracks,
+      "ok"    - a successful fetch (tracks returned) + the usual write/notify.
+    The match/dedupe/write/notify path below is unchanged; only the return value
+    is added. A source that raises PAST this function is caught and mapped to
+    "error" by run_sync's per-source try/except.
+    """
     logger.info(t("sync.source.header", name=chart_source.title))
 
     # a. Fetch charts
@@ -65,10 +75,10 @@ def _sync_source(chart_source, lib, state: dict) -> None:
         chart_tracks = deezer.fetch_chart(chart_source)
     except Exception as e:
         logger.error(t("sync.source.fetch_failed", name=chart_source.title, error=e))
-        return
+        return "error"
     if not chart_tracks:
         logger.warning(t("sync.source.no_tracks", name=chart_source.title))
-        return
+        return "empty"
 
     # b. Match
     matched: list[tuple[int, str, str, str]] = []
@@ -111,6 +121,8 @@ def _sync_source(chart_source, lib, state: dict) -> None:
 
     # Notification (change detection via the matched paths)
     _handle_notify(chart_source, matched, missing, state)
+
+    return "ok"
 
 
 def _order_matched(chart_source, matched, state: dict):
@@ -273,38 +285,68 @@ def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
     return cut + suffix
 
 
-def run_sync() -> None:
+def run_sync() -> tuple[dict, int, int, dict]:
     """
     Run a single sync run over all chart sources.
-    Returns: counter dict for the status/dashboard module.
+
+    Returns a 4-tuple (counters, produced, attempted, health_map):
+      counters:   the UNCHANGED dashboard counter dict
+                  {"sources": ok_sources, "library_tracks": ...}. "sources"
+                  keeps its exact current meaning: the number of _sync_source
+                  calls that did NOT raise at the run-loop level (an "empty" and
+                  a caught run-loop exception both leave it unchanged, as today).
+      produced:   detector-internal count of sources that returned "ok".
+      attempted:  detector-internal count of configured sources (len(CHARTS)).
+      health_map: the per-source health map (already persisted this run).
+
+    produced/attempted/health_map are detector-internal (G3) and are NEVER
+    written into counters. EVERY return site yields the same 4-tuple shape so
+    _guarded_sync's four-value unpack can never raise ValueError.
     """
     logger.info(t("sync.run.start", sources=len(config.CHARTS)))
 
     if not config.CHARTS:
         logger.warning(t("sync.run.no_sources"))
-        return {"sources": 0, "library_tracks": 0}
+        # MEDIUM-1: match the 4-tuple arity. attempted == 0 means the
+        # whole_run_empty guard (attempted > 0 and produced == 0) is False, so
+        # an empty-CHARTS deployment is correctly NON-alarming; _load_health()
+        # yields a fail-open health dict whose "sources" map is {} -> no dead
+        # sources.
+        return {"sources": 0, "library_tracks": 0}, 0, 0, health.load()
 
     # 1. Index the library ONCE (the expensive part, reused for all sources)
     lib = library.build_index(config.MUSIC_DIR)
     if not lib.tracks:
         logger.warning(t("sync.run.library_empty", dir=config.MUSIC_DIR))
 
-    # 2. Load state, process all sources, save state
+    # 2. Load state + health, process all sources, save both
     state = _load_state()
+    health_map = health.load()
     ok_sources = 0
     for chart_source in config.CHARTS:
         try:
-            _sync_source(chart_source, lib, state)
-            ok_sources += 1
+            outcome = _sync_source(chart_source, lib, state)  # "ok"|"empty"|"error"
+            if outcome == "ok":
+                ok_sources += 1  # UNCHANGED existing "sources" counter
         except Exception as e:
             logger.exception(t("sync.source.exception", name=chart_source.title, error=e))
+            outcome = "error"  # a run-loop crash is an "error" outcome
+        # One place records the per-source outcome into the health counter.
+        health._record_source_outcome(health_map, chart_source.name, outcome)
     _save_state(state)
+    try:
+        health.save(health_map)
+    except OSError as e:
+        # Keep the in-memory verdict for this run; retry next run.
+        logger.warning(t("sync.health.write_failed", error=e))
 
     logger.info(t("sync.run.done"))
-    return {
+    counters = {
         "sources": ok_sources,
         "library_tracks": len(lib.tracks),
     }
+    attempted = len(config.CHARTS)
+    return counters, ok_sources, attempted, health_map
 
 
 def _next_run_iso() -> str:
@@ -313,17 +355,82 @@ def _next_run_iso() -> str:
                          time.localtime(time.time() + max(1, config.SYNC_INTERVAL_HOURS) * 3600))
 
 
+def _prev_status() -> str:
+    """
+    Read the status of the PREVIOUS run from the status JSON (before
+    status.start() sets it to 'running'). Serves the state-change-gated alarm:
+    this way it can be detected whether the last run was already an error. We
+    read the file via the status module (same file/path) but do not create an
+    additional state file. If the file is missing, the run counts as 'ok' (no
+    previous error). Copied verbatim from charts-recommend.
+    """
+    data = status._read()
+    val = data.get("status")
+    return val if isinstance(val, str) else "ok"
+
+
+def _alert_structural(message: str, was_error_before: bool) -> None:
+    """
+    Pushover alarm on a structural break - only on state change, when
+    NOTIFY_ONLY_ON_CHANGE is set, so the persisting outage does not re-alarm on
+    every run. Without PUSHOVER_* notify.send() is a no-op anyway. Mirrors
+    charts-recommend's _alert_fetch_error.
+    """
+    if config.NOTIFY_ONLY_ON_CHANGE and was_error_before:
+        logger.info(t("sync.alert.still_failing"))
+        return
+    notify.send(t("sync.alert.structural_title"), message)
+
+
+def _structural_reason_msg(whole_run_empty: bool, attempted: int,
+                           dead_sources: list[str]) -> str:
+    """Build the readable status/alarm reason line from the verdict parts."""
+    parts: list[str] = []
+    if whole_run_empty:
+        parts.append(t("sync.alert.whole_run_empty", attempted=attempted))
+    if dead_sources:
+        parts.append(t("sync.alert.sources_dead",
+                       count=len(dead_sources),
+                       runs=config.SYNC_DEAD_RUNS_THRESHOLD,
+                       names=", ".join(sorted(dead_sources))))
+    return " ".join(parts)
+
+
 def _guarded_sync() -> None:
-    """Run run_sync() and write the status (success/error)."""
+    """Run run_sync(), evaluate the structural-break verdict, write status."""
+    # Remember the previous status BEFORE start() (start() sets 'running').
+    prev_status = _prev_status()
     status.start()
     try:
-        counters = run_sync() or {}
+        counters, produced, attempted, health_map = run_sync()
+        # Whole-run empty fires immediately (no threshold): every configured
+        # source produced nothing this run.
+        whole_run_empty = attempted > 0 and produced == 0
+        # A previously-ok source dead across N consecutive runs.
+        dead_sources = [
+            name for name, h in health_map.get("sources", {}).items()
+            if isinstance(h, dict)
+            and h.get("dead_runs", 0) >= config.SYNC_DEAD_RUNS_THRESHOLD]
+
+        if whole_run_empty or dead_sources:
+            reason = _structural_reason_msg(whole_run_empty, attempted, dead_sources)
+            # counters unchanged; produced/attempted/health never enter it.
+            status.finish("error",
+                          t("sync.status.structural_error", reason=reason),
+                          counters, _next_run_iso())
+            _alert_structural(reason, prev_status == "error")
+            return
+
         parts = [f"{v} {k}" for k, v in counters.items() if isinstance(v, (int, float)) and v]
         msg = ", ".join(parts) if parts else "nichts zu tun"
         status.finish("ok", msg, counters, _next_run_iso())
+        if prev_status == "error":
+            notify.send(t("notify.title", service="charts-sync"),
+                        t("sync.notify.structural_recovered"))
     except Exception as e:
         logger.exception(t("sync.unexpected_error", error=e))
         status.finish("error", str(e), {}, _next_run_iso())
+        _alert_structural(str(e), prev_status == "error")
 
 
 def main() -> None:
