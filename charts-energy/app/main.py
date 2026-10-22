@@ -14,10 +14,13 @@ Two decoupled cadences:
     then per channel either write an OWN playlist + missing file, or (FEED mode)
     write the per-theme handoff file charts-sync consumes.
 
-Two integration modes per channel:
-  - OWN:  energy-<slug>.m3u + missing-energy-<slug>.txt (like charts-hitparade).
-  - FEED: a per-theme handoff JSON; charts-sync reads it as an extra feed of an
-          existing theme (so there stays exactly one mundart.m3u).
+Three integration modes per channel:
+  - OWN:     energy-<slug>.m3u + missing-energy-<slug>.txt (like charts-hitparade).
+  - FEED:    a per-theme handoff JSON; charts-sync reads it as an extra feed of
+             an existing theme (so there stays exactly one mundart.m3u).
+  - LIBRARY: download-only (NO .m3u), like charts-flashback: tops up the shared
+             library and records a release year (shared year map) so the song
+             shows up in the right decade via the Navidrome Smart Playlists.
 
 When disabled (ENERGY_ENABLED=0) the container keeps running but does no
 polling/matching/output and writes status "idle" (gray tile, not an error).
@@ -28,7 +31,9 @@ import os
 import time
 from datetime import datetime, timedelta
 
-from . import config, feed, icy, library, notify, playlist, state, status
+from . import (config, feed, icy, library, notify, playlist, playlist_library,
+               state, status)
+from . import year as year_mod
 from .i18n import t
 
 logging.basicConfig(
@@ -73,14 +78,53 @@ def poll_once() -> int:
     return new_count
 
 
+def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
+                           out_missing: list[tuple[int, str, str, str]],
+                           out_present: list[tuple[str, str, str]]) -> int:
+    """
+    Match one LIBRARY-mode channel against the library (no .m3u written).
+
+    For each accumulated track (in the order state.tracks_for returns, currently
+    first_seen DESCENDING): resolve a release year (year.resolve_year, clamped
+    to the channel decade) and look it up in the library.
+      - present -> appended to out_present as (artist, title, year); year is
+        resolved only for the notify body, NEVER written to the year map.
+      - missing -> appended to out_missing as (pos, artist, title, year), where
+        pos is the running position across all library channels.
+    Returns the updated running position.
+    """
+    matched = 0
+    missing = 0
+    pos = start_pos
+    for entry in tracks:
+        artist = entry.get("artist", "")
+        title = entry.get("title", "")
+        yr = year_mod.resolve_year(artist, title, channel.decade)
+        track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
+        if track:
+            out_present.append((artist, title, yr))
+            matched += 1
+        else:
+            pos += 1
+            out_missing.append((pos, artist, title, yr))
+            missing += 1
+    logger.info(t("energy.channel.library_done", slug=channel.slug,
+                  matched=matched, missing=missing))
+    return pos
+
+
 def run_match() -> dict:
     """
     One match + output run over the accumulated state.
 
     Builds the library index once, then for each active channel:
-      - OWN  mode: match the channel's accumulated tracks, write the .m3u and
+      - OWN     mode: match the channel's accumulated tracks, write the .m3u and
         the missing file (synthetic positions by first_seen desc).
-      - FEED mode: gather the channel's tracks per theme for the handoff writer.
+      - FEED    mode: gather the channel's tracks per theme for the handoff
+        writer.
+      - LIBRARY mode: match (no .m3u); collect missing songs + a resolved
+        release year. Written once across all library channels: the single
+        shared missing file + the shared year map (year map for MISSING only).
     FEED themes are written once per theme (merged across all channels sharing
     the theme). Returns a counter dict for the dashboard.
     """
@@ -88,7 +132,8 @@ def run_match() -> dict:
     if not channels:
         # Enabled but no channels declared (or all disabled): nothing to do.
         logger.info(t("energy.config.no_channels"))
-        return {"channels": 0, "tracks": 0, "matched": 0, "missing": 0}
+        return {"channels": 0, "tracks": 0, "matched": 0, "missing": 0,
+                "library_missing": 0}
     logger.info(t("energy.run.start", channels=len(channels)))
 
     st = state.load()
@@ -101,6 +146,12 @@ def run_match() -> dict:
     # Collect FEED-mode track lists grouped by theme.
     feed_themes: dict[str, list[list[dict]]] = {}
     results: list[dict] = []
+    # LIBRARY-mode accumulators, shared across all library channels (one missing
+    # file + the shared year map). 4-tuple (pos, artist, title, year) for the
+    # missing songs; 3-tuple (artist, title, year) for the present ones.
+    library_missing: list[tuple[int, str, str, str]] = []
+    library_present: list[tuple[str, str, str]] = []
+    lib_pos = 0
 
     for channel in channels:
         tracks = state.tracks_for(st, channel.slug)
@@ -110,6 +161,11 @@ def run_match() -> dict:
             feed_themes.setdefault(channel.theme, []).append(tracks)
             logger.info(t("energy.channel.done", slug=channel.slug,
                           tracks=len(tracks)))
+            continue
+
+        if channel.mode == "library":
+            lib_pos = _match_library_channel(
+                channel, tracks, lib, lib_pos, library_missing, library_present)
             continue
 
         # OWN mode: assign a synthetic chart position by recency (newest first).
@@ -148,7 +204,20 @@ def run_match() -> dict:
         feed.write(theme, track_lists)
         feed_results.append({"theme": theme, "count": total})
 
-    _notify(results, feed_results)
+    # LIBRARY output: write the single shared missing file + the shared year map
+    # ONCE across all library channels (year map for the MISSING list only).
+    library_results: dict | None = None
+    if library_missing or library_present:
+        if library_missing:
+            playlist_library.write_missing(
+                library_missing, config.LIBRARY_MISSING_FILE)
+        playlist_library.write_year_map(library_missing)
+        library_results = {
+            "to_load": library_missing,
+            "present": library_present,
+        }
+
+    _notify(results, feed_results, library_results)
 
     logger.info(t("energy.run.done"))
     return {
@@ -156,13 +225,24 @@ def run_match() -> dict:
         "tracks": total_tracks,
         "matched": total_matched,
         "missing": total_missing,
+        "library_missing": len(library_missing),
     }
 
 
-def _notify(results: list[dict], feed_results: list[dict] | None = None) -> None:
-    """Pushover message with the OWN-channel match results + FEED summary."""
+def _library_song_line(artist: str, title: str, yr: str) -> str:
+    """One library song line, with the resolved year when available (no #pos)."""
+    if yr:
+        return t("energy.notify.library_song_entry",
+                 artist=artist, title=title, year=yr)
+    return t("energy.notify.library_song_entry_no_year",
+             artist=artist, title=title)
+
+
+def _notify(results: list[dict], feed_results: list[dict] | None = None,
+            library_results: dict | None = None) -> None:
+    """Pushover message with the OWN match results + FEED summary + LIBRARY."""
     feed_results = feed_results or []
-    if not results and not feed_results:
+    if not results and not feed_results and not library_results:
         return
     total_matched = sum(r["matched"] for r in results)
     total_missing = sum(r["missing"] for r in results)
@@ -187,6 +267,33 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None) -> None
     for fr in feed_results:
         lines.append(t("energy.notify.feed_done",
                        theme=fr["theme"], count=fr["count"]))
+
+    # LIBRARY section (download-only channels): a summary line, then the songs
+    # queued for download (capped) and the ones already present (uncapped, like
+    # charts-flashback; the 1024-char truncation is the only backstop).
+    if library_results:
+        to_load = library_results.get("to_load") or []
+        present = library_results.get("present") or []
+        lines.append("")
+        lines.append(t("energy.notify.library_done",
+                       matched=len(present), missing=len(to_load)))
+        if to_load:
+            lines.append("")
+            lines.append(t("energy.notify.library_to_load_header",
+                           count=len(to_load)))
+            limit = config.NOTIFY_MISSING_LIMIT
+            shown = to_load[:limit] if limit > 0 else to_load
+            for _pos, artist, title, yr in shown:
+                lines.append(_library_song_line(artist, title, yr))
+            if limit > 0 and len(to_load) > limit:
+                lines.append(t("notify.missing.more", count=len(to_load) - limit))
+        if present:
+            lines.append("")
+            lines.append(t("energy.notify.library_present_header",
+                           count=len(present)))
+            for artist, title, yr in present:
+                lines.append(_library_song_line(artist, title, yr))
+
     message = _truncate_for_pushover("\n".join(lines).strip())
     notify.send(push_title, message)
 
@@ -220,6 +327,7 @@ _COUNTER_LABEL_KEYS = {
     "tracks": "energy.counter.tracks",
     "matched": "energy.counter.matched",
     "missing": "energy.counter.missing",
+    "library_missing": "energy.counter.library_missing",
 }
 
 
