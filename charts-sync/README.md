@@ -664,6 +664,8 @@ nächsten Sync automatisch, weil die `.m3u` bei jedem Lauf neu geschrieben wird
 | `MATCH_THRESHOLD`      | `87`            | Ähnlichkeitsschwelle 0–100 (höher = strenger). |
 | `ARTIST_MIN_SCORE`     | `60`            | Mindest-Ähnlichkeit des Künstlers, sonst kein Treffer (verhindert falsche Titel-Gleichnamen wie „Van Halen - Jump"). |
 | `IGNORE_COMPILATIONS`  | `1`             | Compilation-Tracks (Various Artists, Bravo Hits, Top 100 …) beim Abgleich ignorieren, damit die Einzelversion nachgeladen wird. `0` = mitzählen. |
+| `SYNC_DEAD_RUNS_THRESHOLD` | `6`         | **Source-Health (G3):** ein einmal funktionierender Chart-Source gilt nach so vielen aufeinanderfolgenden Leer-/Fehler-Läufen als tot → `status=error` (bei 12h-Intervall ≈ 3 Tage ohne Ertrag). Siehe unten. |
+| `SYNC_HEALTH_FILE`     | `.charts-sync-health.json` | Sidecar-Health-Datei (Detektor-Buchhaltung, **kein** Dashboard-Payload) im `CHARTS_DIR`, fail-open geladen. |
 | `PUID` / `PGID`        | `1027` / `100`  | User/Gruppe (youruser:users, wie Navidrome). |
 | `TZ`                   | `Europe/Zurich` | Zeitzone. |
 | `PUSHOVER_TOKEN`       | *(leer)*        | Optional: Pushover-App-Token. |
@@ -673,6 +675,26 @@ nächsten Sync automatisch, weil die `.m3u` bei jedem Lauf neu geschrieben wird
 | `PUSHOVER_DEVICES_TTL` | `3600`          | Optional: Cache-Dauer (Sekunden) für die zum Filtern geladene Geräteliste des Accounts. |
 | `NOTIFY_ONLY_ON_CHANGE`| `1`             | Nur benachrichtigen, wenn sich etwas geändert hat: Playlist-Treffer **oder** die Liste der fehlenden Songs. `0` = nach jedem Lauf. |
 | `NOTIFY_MISSING_LIMIT` | `40`            | Max. Anzahl fehlender Songs in der Pushover-Meldung (aufs Handy, ohne NAS-Login). `0` = nur die Anzahl. |
+
+### Source-Health (G3): wann charts-sync `status=error` meldet
+
+Neben dem normalen Betrieb überwacht charts-sync, ob seine Chart-Quellen noch
+etwas liefern – sichtbar über den `status` im Dashboard und (per
+[`charts-watchdog`](../charts-watchdog)) als Pushover-Alarm:
+
+- **Ganzer Lauf leer → sofort `error`.** Produziert **keine** aktive Quelle
+  etwas (alle leer/fehlerhaft), ist das ein echter Ausfall (z. B. Deezer-API
+  weg) und wird **unmittelbar** als Fehler gemeldet, nicht erst nach Tagen.
+- **Eine einzelne Quelle leer → bleibt still.** Fällt nur **eine** von mehreren
+  Quellen transient aus, während andere liefern, schlägt das **nicht** sofort
+  Alarm – das wäre Rauschen. Erst wenn eine zuvor funktionierende Quelle
+  `SYNC_DEAD_RUNS_THRESHOLD` Läufe am Stück nichts liefert (bei 12h-Intervall
+  ≈ 3 Tage), gilt sie als tot und der Dienst meldet `error`.
+
+Die dafür nötige Buchhaltung (Lauf-Zähler pro Quelle) liegt in der
+Sidecar-Datei `SYNC_HEALTH_FILE` im `CHARTS_DIR`, getrennt von der
+State-Datei und fail-open geladen (eine kaputte Health-Datei legt den Dienst
+nie lahm).
 
 ### Global, Schweiz und Mundart
 

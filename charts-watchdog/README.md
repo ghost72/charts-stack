@@ -48,6 +48,33 @@ slskd-Check nicht mit dem slskd-**Container** in die Quere kommt).
 Pushover-Störung per Pushover melden zu wollen wäre zirkulär. Ein Ausfall oder
 ungültige Credentials landen daher **nur im Container-Log**, nie als Push.
 
+## Status-Fehler der Dienste (dritte Zustandsmaschine)
+
+Neben den Container-Zuständen und den externen Diensten überwacht der Watchdog
+auch, ob ein Dienst selbst einen **Fehler** meldet: schreibt ein Dienst
+`status="error"` in seine `<dienst>.json` (dieselben Status-Dateien, die auch
+das [`charts-dashboard`](../charts-dashboard) liest), kommt eine Pushover-
+Meldung – und eine Entwarnung, sobald der Dienst wieder `ok`/`idle`/`running`/
+`empty` meldet. So fällt z. B. ein ausgefallener Chart-Source oder eine kaputte
+Energy-ICY-Quelle auf, auch wenn der Container selbst munter „läuft".
+
+Diese **dritte Zustandsmaschine** ist rein additiv – die Container- und die
+Externe-Dienste-Maschine bleiben unberührt. Sie nutzt dieselbe Entprell-/
+Erholungs-/Cooldown-Logik wie die Container (ein Status-Fehler ist ein echtes
+Problem), aber einen **eigenen Marker-Namespace** (`st-…`), damit sie sich mit
+den anderen beiden Maschinen nicht in die Quere kommt. Dafür mountet die
+`compose.yml` das Status-Verzeichnis **read-only** in den Container
+(`${MUSIC_ROOT}/Charts/.charts-status` → `/charts/.charts-status:ro`) – dieselbe
+Host-Quelle, die auch Dashboard und charts-energy nutzen.
+
+- `WATCH_STATUS_ENABLED` (Default `1`) schaltet die ganze Status-Schleife
+  an/aus (`0` = übersprungen).
+- `WATCH_STATUS_DIR` (Default `/charts/.charts-status`) ist das Verzeichnis der
+  `<dienst>.json`-Status-Dateien im Container.
+- `WATCH_STATUS_SERVICES` ist die Leerzeichen-getrennte Liste der zu
+  überwachenden Dienstnamen (die `<dienst>.json`-Basisnamen); Default sind die
+  zehn Status-schreibenden Dienste.
+
 ## Kein Melde-Spam
 
 Pro Problem-Episode gibt es garantiert **eine** Problem-Meldung und **eine**
@@ -71,6 +98,9 @@ Entwarnung:
 | `WATCH_RECOVER_POLLS` | `3` | OK-Polls bis zur Entwarnung |
 | `WATCH_COOLDOWN_SECONDS` | `1800` | Ruhe nach einer Meldung (pro App) |
 | `WATCH_EXTERNAL_DEBOUNCE_SECONDS` | `600` | Sekunden durchgehend nicht erreichbar vor der Meldung (externe Dienste, Default 10 min) |
+| `WATCH_STATUS_ENABLED` | `1` | Status-Fehler-Maschine an/aus (`0` = übersprungen) |
+| `WATCH_STATUS_DIR` | `/charts/.charts-status` | Verzeichnis der `<dienst>.json`-Status-Dateien (neuer ro-Mount) |
+| `WATCH_STATUS_SERVICES` | zehn Status-Dienste | Leerzeichen-getrennte Dienstnamen, deren `status="error"` gemeldet wird |
 | `SLSKD_HOST` / `SLSKD_API_KEY` | `http://slskd:5030` / – | slskd-Check (`/api/v0/server`) |
 | `LIDARR_URL` / `LIDARR_API_KEY` | *(leer)* | optional – nur mit beiden wird Lidarr überwacht |
 | `LASTFM_API_KEY` | *(leer)* | optional – nur mit Key wird Last.fm überwacht |

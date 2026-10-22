@@ -50,6 +50,32 @@ Pushover** – reporting a Pushover outage through Pushover would be circular. A
 outage or invalid credentials therefore only go to the **container log**, never
 as a push.
 
+## Service status errors (third state machine)
+
+On top of the container states and the external services, the watchdog also
+watches whether a service reports an **error** itself: when a service writes
+`status="error"` into its `<service>.json` (the same status files the
+[`charts-dashboard`](../charts-dashboard) reads), you get a Pushover message –
+plus an all-clear once the service reports `ok`/`idle`/`running`/`empty` again.
+This surfaces, for example, a failed chart source or a broken Energy ICY feed
+even while the container itself happily keeps "running".
+
+This **third state machine** is purely additive – the container and the
+external-services machines are untouched. It reuses the same debounce/recovery/
+cooldown logic as the containers (a status error is a real problem) but a
+separate **marker namespace** (`st-…`) so it does not collide with the other two
+machines. For it, `compose.yml` mounts the status directory **read-only** into
+the container (`${MUSIC_ROOT}/Charts/.charts-status` → `/charts/.charts-status:ro`)
+– the same host source the dashboard and charts-energy use.
+
+- `WATCH_STATUS_ENABLED` (default `1`) toggles the whole status loop on/off
+  (`0` = skipped).
+- `WATCH_STATUS_DIR` (default `/charts/.charts-status`) is the directory of the
+  `<service>.json` status files inside the container.
+- `WATCH_STATUS_SERVICES` is the space-separated list of service names (the
+  `<service>.json` basenames) to watch; the default is the ten status-writing
+  services.
+
 ## No notification spam
 
 Per problem episode there is guaranteed to be **one** problem message and **one**
@@ -74,6 +100,9 @@ all-clear:
 | `WATCH_RECOVER_POLLS` | `3` | OK polls before the all-clear |
 | `WATCH_COOLDOWN_SECONDS` | `1800` | quiet period after a message (per app) |
 | `WATCH_EXTERNAL_DEBOUNCE_SECONDS` | `600` | seconds continuously unreachable before a message (external services, default 10 min) |
+| `WATCH_STATUS_ENABLED` | `1` | status-error machine on/off (`0` = skipped) |
+| `WATCH_STATUS_DIR` | `/charts/.charts-status` | directory of the `<service>.json` status files (new ro mount) |
+| `WATCH_STATUS_SERVICES` | ten status services | space-separated service names whose `status="error"` is reported |
 | `SLSKD_HOST` / `SLSKD_API_KEY` | `http://slskd:5030` / – | slskd check (`/api/v0/server`) |
 | `LIDARR_URL` / `LIDARR_API_KEY` | *(empty)* | optional – Lidarr monitored only with both set |
 | `LASTFM_API_KEY` | *(empty)* | optional – Last.fm monitored only with a key |
