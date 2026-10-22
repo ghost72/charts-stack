@@ -198,10 +198,19 @@ body.login {
 .nrj-badge.inactive { background: #2f2742; color: #5a5168; }
 
 /* Energy channel table (6 cols): the finder's 3-col nth-child widths don't fit.
-   Scope overrides to the energy results container so the finder tables are
-   unaffected. The table must stay WITHIN its box (no bleed past the right
-   edge): use fixed layout at full width and let the wide snippet column wrap
-   inside its cell instead of growing the table to the content width. */
+   Scope every override to the energy results container so the finder tables
+   stay untouched. The table must stay WITHIN its box (no bleed past the right
+   edge) at desktop widths.
+
+   Root cause of the earlier right-edge clipping: the generic finder snippet
+   cell lays the <code> and the copy button out in a horizontal flex row
+   (.snip { display:flex }, code flex:1 1 auto, .snip-copy flex:0 0 auto). In
+   the narrow 6-column energy table that row could not shrink enough, so the
+   fixed-width copy button was pushed past the cell and clipped by the generic
+   `td { overflow:hidden }`. Re-basing the energy .snip to a VERTICAL stack
+   (code on top, button below) removes the horizontal competition entirely:
+   the button can never be pushed off the right edge, and the snippet simply
+   wraps inside the cell. */
 #energy-channels .finder-table {
   table-layout: fixed;            /* columns obey our widths, table != content width */
   width: 100%;
@@ -213,17 +222,48 @@ body.login {
   overflow-wrap: anywhere;        /* long tokens (slug, genre) break instead of overflowing */
 }
 /* Snippet is the last (6th) column and gets the remaining room; it wraps
-   inside the cell rather than pushing the table wider. */
+   inside the cell rather than pushing the table wider. overflow:visible so a
+   wrapped copy button is never clipped on the right. */
 #energy-channels .finder-table th:last-child,
-#energy-channels .finder-table td:last-child { width: 40%; }
-#energy-channels .finder-table td .snip { max-width: 100%; }
+#energy-channels .finder-table td:last-child { width: 40%; overflow: visible; }
+/* Stack code + copy button vertically instead of the generic flex row, so the
+   button sits under the (wrapped) snippet and stays inside the cell width. */
+#energy-channels .finder-table td .snip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
 #energy-channels .finder-table td .snip code {
+  width: 100%;                    /* fill the cell, never wider than it */
+  flex: 0 0 auto;
   white-space: pre-wrap;          /* snippet wraps onto multiple lines */
   overflow-wrap: anywhere;
   overflow-x: hidden;             /* no inner horizontal scroll either */
+}
+#energy-channels .finder-table td .snip .snip-copy {
+  flex: 0 0 auto;
+  align-self: flex-start;         /* button under the snippet, left-aligned */
 }
 @media (max-width: 720px) {
   /* Narrow screens: allow horizontal scroll of the whole table rather than
      crushing columns. */
   #energy-channels { overflow-x: auto; }
 }
+
+/* Discreet donate footer (toggled by CONFIG_DONATE). Muted, unobtrusive.
+   Copied verbatim from charts-dashboard so the sibling pages match. */
+.site-footer {
+  margin: 28px auto 14px; padding: 10px 16px; text-align: center;
+  color: var(--muted); font-size: .8rem;
+}
+.site-footer .donate { display: inline-flex; gap: 10px; align-items: center;
+  flex-wrap: wrap; justify-content: center; }
+.site-footer .donate-label { color: var(--muted); }
+.site-footer a {
+  color: var(--accent); text-decoration: none; font-weight: 600;
+  border-bottom: 1px dotted #5a8fe055;
+}
+.site-footer a:hover { color: var(--fg); }

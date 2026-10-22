@@ -50,6 +50,13 @@ DASHBOARD_GENRE_CACHE_TTL = _get_int("DASHBOARD_GENRE_CACHE_TTL", 86400)
 CONFIG_ENABLED = os.environ.get("CONFIG_ENABLED", "true").strip().lower() not in (
     "0", "false", "no")
 
+# --- Discreet donate footer (PayPal/Revolut) ---
+# ON by default. Can be turned off with CONFIG_DONATE=0/false/no; then the
+# footer is not rendered into the page server-side at all. Mirrors the
+# dashboard's DASHBOARD_DONATE flag.
+CONFIG_DONATE = os.environ.get(
+    "CONFIG_DONATE", "1").strip() not in ("0", "false", "no")
+
 # --- Web UI / auth ---
 # charts-config has its OWN login (separate from the dashboard/songrequest)
 # because it shows internal snippets. Fixed user "admin" + CONFIG_PASSWORD.

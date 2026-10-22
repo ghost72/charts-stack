@@ -49,10 +49,34 @@ def _ui_strings() -> dict[str, str]:
     # with the prefix (English fallback already merged in). Re-base here so the
     # client calls t("finder.col.title"), not the full dotted path. The guard
     # (len(k) > len(_UI_PREFIX)) skips any stray prefix-only key defensively.
-    return {k[len(_UI_PREFIX):]: v
-            for k, v in i18n.ui_table(_UI_PREFIX).items()
-            if len(k) > len(_UI_PREFIX)}
+    strings = {k[len(_UI_PREFIX):]: v
+               for k, v in i18n.ui_table(_UI_PREFIX).items()
+               if len(k) > len(_UI_PREFIX)}
+    # The donate footer's label is the SHARED stack key "dashboard.ui.donate.label"
+    # (there is deliberately no separate config.ui.* copy, so i18n parity stays
+    # unchanged). Surface it under the short client key "donate.label" the footer
+    # markup references via data-i18n-html, matching the dashboard's handoff.
+    strings["donate.label"] = i18n.t("dashboard.ui.donate.label")
+    return strings
 
+
+# Discreet donate footer, substituted into {{DONATE}} when CONFIG_DONATE is on
+# (default). The label TEXT itself is populated client-side by the static sweep
+# via data-i18n-html="donate.label"; the server only decides show/hide.
+# NOTE (handle change): these two URLs are intentionally kept in sync with
+# .github/FUNDING.yml by hand (GitHub reads FUNDING.yml statically). If the
+# PayPal/Revolut handles ever change, update BOTH places.
+_DONATE_FOOTER = (
+    '<footer class="site-footer">'
+    '<span class="donate">'
+    '<span class="donate-label" data-i18n-html="donate.label"></span>'
+    '<a href="https://paypal.me/rogerwyss" target="_blank" '
+    'rel="noopener noreferrer">PayPal</a>'
+    '<a href="https://revolut.me/rogerwyss" target="_blank" '
+    'rel="noopener noreferrer">Revolut</a>'
+    '</span>'
+    '</footer>'
+)
 
 app = FastAPI(title="charts-config", docs_url=None, redoc_url=None)
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -128,10 +152,12 @@ async def logout(request: Request):
 async def index(request: Request):
     if not _current_user(request):
         return RedirectResponse(url="/login", status_code=303)
+    footer_html = _DONATE_FOOTER if config.CONFIG_DONATE else ""
     with open(os.path.join(_STATIC_DIR, "index.html"), encoding="utf-8") as fh:
         html = (fh.read()
                 .replace("{{LANG}}", i18n.active_lang())
-                .replace("{{I18N}}", json.dumps(_ui_strings(), ensure_ascii=True)))
+                .replace("{{I18N}}", json.dumps(_ui_strings(), ensure_ascii=True))
+                .replace("{{DONATE}}", footer_html))
     return HTMLResponse(html)
 
 
