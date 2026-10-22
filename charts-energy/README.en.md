@@ -16,17 +16,32 @@ clone never polls Icecast unexpectedly.
 
 ---
 
-## Two integration modes per channel
+## Three integration modes per channel
 
 - **OWN (own playlist)** – e.g. Pop/Hits/Love: charts-energy writes its own
-  `energy-<slug>.m3u` + `missing-energy-<slug>.txt`, exactly like hitparade.
-- **FEED (into an existing theme)** – e.g. Mundart, 80s/90s: charts-energy
-  writes **no** playlist of its own but a **handoff file per theme**
+  `energy-<slug>.m3u` + `missing-energy-<slug>.txt`, exactly like hitparade. The
+  playlist name **must** sit in the reserved `energy-*.m3u` namespace (names are
+  lowercased/normalized; any non-`energy-` name is refused). That way an OWN
+  channel can never collide with a curated charts-sync playlist. Two writers
+  never target the same `.m3u` (nor the same missing file). To write into an
+  existing/shared playlist always use `feed`, never `own`.
+- **FEED (into an existing theme)** – e.g. Mundart: charts-energy writes **no**
+  playlist of its own but a **handoff file per theme**
   (`.charts-energy-feed-<theme>.json`). [`charts-sync`](../charts-sync) reads it
   as an additional feed of an existing theme – so there stays **exactly one**
   `mundart.m3u` (written by charts-sync). Energy tracks are deduped there against
   the Deezer/Last.fm sources and merged **after** them (position priority stays
   with the curated charts).
+- **LIBRARY (download-only, no playlist)** – e.g. decades (80s/90s):
+  charts-energy writes **no** `.m3u`; like [`charts-flashback`](../charts-flashback)
+  it only tops up the **shared library**: per run a shared missing file
+  (`missing-energy-library.txt`, fetched by charts-download) and – for each
+  **missing** song – a release year into the **shared year map**
+  (`.charts-flashback-years.json`, read by charts-import). The year never
+  appears in the path/filename, only as a tag – so the song shows up in the
+  right decade via the **Navidrome Smart Playlists (NSP)**. The **decade** is
+  reliable (from the slug `energy80s` → 1980s + clamp); the exact year is best
+  effort via MusicBrainz.
 
 ## How the data is fetched (no headless browser, no API)
 
@@ -57,7 +72,7 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ENERGY_ENABLED` | `0` (**off**) | On/off switch. `false` = pause the service: the container keeps running, no polling/playlist – status **`idle`** (grey in the dashboard, **not** an error). Tolerant parser (`true`/`1`/`yes`/`on` resp. `false`/`0`/`no`/`off`). |
-| `ENERGY_CHANNELS` | *(empty)* | Channel list as **JSON** (single line). Each entry: `slug`, optional `title`, `enabled`, `mode` (`own`/`feed`), for `own` optional `playlist`/`missing`, for `feed` the `theme`. |
+| `ENERGY_CHANNELS` | *(empty)* | Channel list as **JSON** (single line). Each entry: `slug`, optional `title`, `enabled`, `mode` (`own`/`feed`/`library`), for `own` optional `playlist`/`missing` (namespace `energy-*.m3u`), for `feed` the `theme`, for `library` optional `decade` (overrides the slug decade). |
 | `ENERGY_CHANNELS_FILE` | *(empty)* | Path to a multi-line JSON file – takes priority over `ENERGY_CHANNELS`. |
 | `ENERGY_POLL_SECONDS` | `90` | Poll interval per channel (60–120 s recommended). |
 | `ENERGY_MATCH_INTERVAL_MINUTES` | `30` | How often matching + output runs (expensive library scan, hence decoupled from the poll). |
@@ -66,7 +81,17 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 | `MATCH_THRESHOLD` | `87` | match threshold (like charts-sync). |
 | `ARTIST_MIN_SCORE` | `60` | artist minimum score. |
 | `IGNORE_COMPILATIONS` | `1` | ignore compilation tracks when matching. |
+| `MB_ENABLED` | `1` | **library mode:** MusicBrainz year resolution on/off (for the decade NSPs). |
+| `MB_USER_AGENT_ENERGY` | `charts-energy/1.0 (self-hosted)` | User-Agent for the MusicBrainz lookup (MB requires a meaningful UA). |
+| `MB_RATE_SLEEP` | `1.1` | Sleep (s) before each MB request (~1 req/s, polite to MusicBrainz). |
+| `MB_SCORE_MIN` | `90` | Minimum MB recording score for a hit to count. |
+| `ENERGY_LIBRARY_MISSING_FILE` | `missing-energy-library.txt` | **library mode:** ONE shared missing file for all library channels. Append it to `MISSING_FILES`. |
 | `PUSHOVER_SOUND` | `falling` | Notification sound for this service. Empty = account default. |
+
+> Each `library` channel may carry an optional `decade` override in the JSON
+> (e.g. `"decade":"1980"`); without it the decade is derived from the slug
+> `energy80s` → `1980`. A non-decade slug (e.g. `energypop`) yields "no decade":
+> then only the MusicBrainz year, otherwise no year tag at all.
 
 The state (`.charts-energy-state.json`) and the FEED handoff files
 (`.charts-energy-feed-<theme>.json`) live in `CHARTS_DIR`.
@@ -89,7 +114,7 @@ ENERGY_CHANNELS=[{"slug":"energymadeinswitzerland","mode":"feed","theme":"mundar
 **Pop as its own playlist (OWN):**
 
 ```dotenv
-ENERGY_CHANNELS=[{"slug":"energypop","title":"Energy Pop 🎶","mode":"own","enabled":true}]
+ENERGY_CHANNELS=[{"slug":"energypop","title":"Energy Pop 🎶","mode":"own","playlist":"energy-pop.m3u","enabled":true}]
 ```
 
 For an **OWN** channel, append its generated missing file to `MISSING_FILES`
@@ -104,34 +129,23 @@ MISSING_FILES=/charts/missing.txt;/charts/missing-energy-pop.txt
 > songs go into the theme's missing file (e.g. `missing-mundart.txt`, written by
 > charts-sync).
 
-### Optional: decade theme (80s/90s) as ONE playlist
+### Decades (80s/90s) – download-only via LIBRARY
 
-The 80s/90s channels run in **FEED** mode onto a shared theme. The repo ships
-**no** decade playlist – you create the theme yourself in `charts-sync`'s
-`CHARTS`. The producer and consumer side must be **byte-identical** on the
-`theme`; the block below is meant as **one copy-paste pair**:
+Decades no longer need a playlist of their own: the decade channels run in
+**LIBRARY** mode, top up the shared library and get a release year per song (as
+a tag, **not** in the file/folder name). The decade display is handled by the
+**Navidrome Smart Playlists**, which filter by year. Just append the one shared
+library missing file to `MISSING_FILES`:
 
-```jsonc
-// 1) Producer: charts-energy ENERGY_CHANNELS (.env)
-//    energy80s + energy90s on the same theme "achtziger-neunziger".
-ENERGY_CHANNELS=[{"slug":"energy80s","mode":"feed","theme":"achtziger-neunziger","enabled":true},{"slug":"energy90s","mode":"feed","theme":"achtziger-neunziger","enabled":true}]
-
-// 2) Consumer: charts-sync CHARTS – a new decade playlist that consumes the
-//    Energy feed of the same theme.
-{
-  "sources": [
-    { "service": "energy", "theme": "achtziger-neunziger", "enabled": true }
-  ],
-  "name": "achtziger-neunziger.m3u",
-  "title": "80s & 90s \uD83D\uDCFB",
-  "missing": "missing-achtziger-neunziger.txt"
-}
+```dotenv
+# Decades (download-only -> NSP, no playlist).
+ENERGY_CHANNELS=[{"slug":"energy80s","mode":"library","enabled":true},{"slug":"energy90s","mode":"library","enabled":true}]
+MISSING_FILES=/charts/missing.txt;/charts/missing-energy-library.txt
 ```
 
-> ⚠️ **Lockstep:** change the `theme` value on **both** lines or on neither.
-> charts-energy cannot validate the other side – a typo on one side looks like
-> "Energy contributed nothing," not like a misconfiguration. Hence the
-> copy-paste pair.
+> The **decade** is reliable (from the slug + clamp); the exact year is best
+> effort via MusicBrainz – which is exactly what the decade NSP needs. A
+> per-channel `decade` override is possible (e.g. `"decade":"1980"`).
 
 ## Monitoring
 

@@ -22,6 +22,7 @@
   },
 
   "---- EXAMPLES BELOW: copy into your own playlist to use ----",
+  "---- NOTE: 80s/90s and other decades are handled by charts-energy library mode (NSP by year tag), not a charts-sync playlist ----",
 
   {
     "name": "pop.m3u",
