@@ -193,7 +193,7 @@ function drawFlowLines() {
     return `<path d="M ${x1} ${y1} ${c} ${x2} ${y2}" marker-end="url(#flow-ah)"/>`;
   };
 
-  const sources = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-recommend", "charts-songrequest"];
+  const sources = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-energy", "charts-recommend", "charts-songrequest"];
   const getters = ["charts-download", "charts-upgrade"];
   // Pfeilspitze: klein, gefuellt, in der Linienfarbe (dezent).
   let paths = `<defs><marker id="flow-ah" viewBox="0 0 10 10" refX="8" refY="5" ` +
@@ -693,7 +693,7 @@ function render(d) {
   //     Die Verbindungslinien werden NACH dem Rendern als SVG-Overlay
   //     gezeichnet (drawFlowLines), damit sie sich an die echten Kachel-
   //     Positionen anpassen (responsive: Resize/Orientation zeichnet neu).
-  const SOURCES = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-recommend"];
+  const SOURCES = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-energy", "charts-recommend"];
   const MANUAL = ["charts-songrequest"];
   const GETTERS = ["charts-download", "charts-upgrade"];
   const known = (n) => (n in (d.containers || {})) || (d.services || {})[n];
@@ -702,10 +702,11 @@ function render(d) {
   // linke obere Ecke der Kachel. Werden beim Rendern per Inline-style gesetzt;
   // unter 760px (Handy) ueberschreibt das CSS sie und stapelt alles vertikal.
   const LAYOUT = {
-    "charts-sync":        { x: 1,  y: 3  },
-    "charts-hitparade":   { x: 1,  y: 27 },
-    "charts-flashback":   { x: 1,  y: 51 },
-    "charts-recommend":   { x: 1,  y: 75 },
+    "charts-sync":        { x: 1,  y: 2  },
+    "charts-hitparade":   { x: 1,  y: 21 },
+    "charts-flashback":   { x: 1,  y: 40 },
+    "charts-energy":      { x: 1,  y: 59 },
+    "charts-recommend":   { x: 1,  y: 78 },
     "charts-songrequest": { x: 40, y: 2  },
     "charts-download":    { x: 40, y: 31 },
     "charts-upgrade":     { x: 40, y: 50 },
@@ -769,7 +770,7 @@ function render(d) {
   const reportZone = posCell("report-zone", reportInner, "report-wrap");
 
   const allCells =
-    cell("charts-sync") + cell("charts-hitparade") + cell("charts-flashback") + cell("charts-recommend") +
+    cell("charts-sync") + cell("charts-hitparade") + cell("charts-flashback") + cell("charts-energy") + cell("charts-recommend") +
     cell("charts-songrequest") + cell("charts-download") + cell("charts-upgrade") +
     cell("slskd", "hub") + cell("charts-import") +
     posCell("navidrome", navidromeTile) +
