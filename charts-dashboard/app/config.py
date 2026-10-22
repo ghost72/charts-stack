@@ -28,7 +28,7 @@ WATCH_CONTAINERS = os.environ.get(
     "WATCH_CONTAINERS",
     "slskd charts-sync charts-hitparade charts-flashback charts-energy charts-download "
     "charts-import charts-recommend charts-upgrade charts-songrequest "
-    "charts-digest charts-watchdog charts-dashboard",
+    "charts-digest charts-watchdog charts-dashboard charts-config",
 ).split()
 
 # --- slskd (connection status + transfer numbers) ---
@@ -53,13 +53,6 @@ FLASHBACK_HASH = os.environ.get("FLASHBACK_HASH", "").strip()
 # The dashboard polls every 15s; the external pings, however, go over WAN to
 # third parties. Hence cached (default 2 min), decoupled from the 15s poll.
 EXTERNAL_TTL = _get_int("DASHBOARD_EXTERNAL_TTL", 120)
-
-# --- TTL cache for the source finder's Deezer genre list (seconds) ---
-# The genre list rarely changes. The source finder loads it on the first page
-# view and only refreshes it after this TTL expires (default 24h) on the next
-# call - this covers the "refresh daily" wish (no cronjob). Consistent with the
-# DASHBOARD_*_TTL style.
-DASHBOARD_GENRE_CACHE_TTL = _get_int("DASHBOARD_GENRE_CACHE_TTL", 86400)
 
 # --- Pushover (for the live validate check in _external_status) ---
 # Both set -> real POST /1/users/validate.json (no message budget).
