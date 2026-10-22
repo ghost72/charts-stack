@@ -96,6 +96,12 @@ prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
 | `MB_RATE_SLEEP` | `1.1` | Pause (s) vor jeder MB-Abfrage (~1 req/s, höflich zu MusicBrainz). |
 | `MB_SCORE_MIN` | `90` | Minimaler MB-Recording-Score, damit ein Treffer zählt. |
 | `ENERGY_LIBRARY_MISSING_FILE` | `missing-energy-library.txt` | **library-Modus:** EINE gemeinsame Fehlliste aller library-Kanäle. In `MISSING_FILES` ergänzen. |
+| `ENERGY_DEAD_RUNS_THRESHOLD` | `48` | **Source-Health (G1):** ein zuvor produzierender Kanal gilt nach so vielen Läufen ohne neuen Spin als tot (~30 min/Lauf → 48 ≈ 24 h Stille). |
+| `ENERGY_CANARY_DEAD_RUNS_THRESHOLD` | `4` | **Source-Health (G1):** Format-Canary – feuert, wenn so viele Läufe am Stück **kein** aktiver Kanal einen gültigen Spin liefert (≈ 2 h → Trennzeichen/Typ-Bruch im ICY-Feed). |
+| `ENERGY_LIVENESS_INTERVAL_HOURS` | `24` | **Liveness (G2):** Abstand (h) der täglichen Re-Probe der bekannten Kanalliste. |
+| `ENERGY_LIVENESS_ON_START` | `1` | **Liveness (G2):** zusätzlich eine Probe beim Start (`0` = aus). |
+| `ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD` | `3` | **Liveness (G2):** Alarm nach so vielen aufeinanderfolgenden toten Proben eines zuvor live gewesenen Kanals (3 tägliche Proben ≈ 3 Tage weg). |
+| `ENERGY_HEALTH_FILE` | `.charts-energy-health.json` | Sidecar-Health-Datei (Detektor-Buchhaltung, **kein** Dashboard-Payload) im `CHARTS_DIR`, fail-open geladen. |
 | `PUSHOVER_SOUND` | `falling` | Benachrichtigungston für diesen Dienst. Leer = Account-Default. |
 
 > Pro `library`-Kanal optional ein `decade`-Override im JSON (z. B.

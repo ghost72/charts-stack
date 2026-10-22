@@ -114,6 +114,11 @@ services:
       - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
       - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
       - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      # Source-Health (G3): ein einmal funktionierender Chart-Source gilt nach
+      # so vielen aufeinanderfolgenden Leer-Laeufen als tot -> status=error.
+      # Sidecar-Health-Datei im CHARTS_DIR.
+      - SYNC_DEAD_RUNS_THRESHOLD=${SYNC_DEAD_RUNS_THRESHOLD:-6}
+      - SYNC_HEALTH_FILE=${SYNC_HEALTH_FILE:-.charts-sync-health.json}
       - STATUS_DIR=/music/Charts/.charts-status
       - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
       - PUSHOVER_USER=${PUSHOVER_USER:-}
@@ -224,6 +229,14 @@ services:
       # Retention/Trim des Accumulate-Puffers.
       - ENERGY_TRACK_RETENTION_DAYS=${ENERGY_TRACK_RETENTION_DAYS:-30}
       - ENERGY_MAX_TRACKS_PER_CHANNEL=${ENERGY_MAX_TRACKS_PER_CHANNEL:-500}
+      # Source-Health (G1: dead-channel + Format-Canary, G2: tgl. Liveness-
+      # Re-Probe der bekannten Kanalliste). Sidecar-Health-Datei im CHARTS_DIR.
+      - ENERGY_DEAD_RUNS_THRESHOLD=${ENERGY_DEAD_RUNS_THRESHOLD:-48}
+      - ENERGY_CANARY_DEAD_RUNS_THRESHOLD=${ENERGY_CANARY_DEAD_RUNS_THRESHOLD:-4}
+      - ENERGY_LIVENESS_INTERVAL_HOURS=${ENERGY_LIVENESS_INTERVAL_HOURS:-24}
+      - ENERGY_LIVENESS_ON_START=${ENERGY_LIVENESS_ON_START:-1}
+      - ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD=${ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD:-3}
+      - ENERGY_HEALTH_FILE=${ENERGY_HEALTH_FILE:-.charts-energy-health.json}
       - RUN_ON_START=${RUN_ON_START:-1}
       - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
       - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
@@ -683,12 +696,22 @@ services:
       - LIDARR_API_KEY=${LIDARR_API_KEY:-}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
       - WATCH_EXTERNAL_DEBOUNCE_SECONDS=${WATCH_EXTERNAL_DEBOUNCE_SECONDS:-600}
+      # Status-error machine: pages when a service writes status="error" into
+      # its <service>.json (the same status files the dashboard reads via the
+      # ro mount below). Reuses the debounce/recover/cooldown tunables above.
+      # Listed explicitly because this service has NO env_file: .env.
+      - WATCH_STATUS_ENABLED=${WATCH_STATUS_ENABLED:-1}
+      - WATCH_STATUS_DIR=${WATCH_STATUS_DIR:-/charts/.charts-status}
+      - WATCH_STATUS_SERVICES=${WATCH_STATUS_SERVICES:-charts-sync charts-hitparade charts-flashback charts-energy charts-recommend charts-import charts-download charts-upgrade charts-digest charts-songrequest}
       - TZ=${TZ:-Europe/Zurich}
       # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
       - CHARTS_LANG=${CHARTS_LANG:-}
     volumes:
       # Nur das Monitoring-Skript read-only einhaengen (kein Build noetig).
       - ./charts-watchdog/watch.sh:/watch.sh:ro
+      # Status-Dir der Dienste read-only (dieselbe Host-Quelle wie Dashboard/
+      # charts-energy) fuer die Status-Error-Machine oben.
+      - ${MUSIC_ROOT:-/volume2/music}/Charts/.charts-status:/charts/.charts-status:ro
       # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
       # .env. Read-only nach /lang gemountet; t() liest sie dort.
       - ./lang:/lang:ro
