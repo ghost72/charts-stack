@@ -17,12 +17,14 @@
     "missing": "missing-mundart.txt",
     "exclude_artists": ["Nemo", "Trauffer"],
     "sources": [
-      { "service": "deezer", "type": "playlist", "source": "658561775", "limit": "all", "enabled": true }
+      { "service": "deezer", "type": "playlist", "source": "658561775", "limit": "all", "enabled": true },
+      { "service": "energy", "theme": "mundart", "enabled": true }
     ]
   },
 
   "---- EXAMPLES BELOW: copy into your own playlist to use ----",
   "---- NOTE: 80s/90s and other decades are handled by charts-energy library mode (NSP by year tag), not a charts-sync playlist ----",
+  "---- charts-energy FEED: to top up an EXISTING playlist with an Energy channel, add a {service:energy, theme:<name>} source to that playlist's sources (above). The theme MUST byte-match the channel's theme in ENERGY_CHANNELS (.env). The mundart.m3u block above shows it; the charts.m3u block could likewise carry {service:energy, theme:charts}. ----",
 
   {
     "name": "pop.m3u",

@@ -147,6 +147,26 @@ MISSING_FILES=/charts/missing.txt;/charts/missing-energy-library.txt
 > effort via MusicBrainz – which is exactly what the decade NSP needs. A
 > per-channel `decade` override is possible (e.g. `"decade":"1980"`).
 
+### Combined config (several channels, all modes at once)
+
+The modes mix freely – all in **one** `ENERGY_CHANNELS` line. A realistic
+example: Mundart **and** Hits each as `feed` into the existing playlists
+`mundart.m3u`/`charts.m3u`, the decades as `library`:
+
+```dotenv
+ENERGY_ENABLED=1
+ENERGY_CHANNELS=[{"slug":"energymadeinswitzerland","mode":"feed","theme":"mundart","enabled":true},{"slug":"energyhits","mode":"feed","theme":"charts","enabled":true},{"slug":"energy80s","mode":"library","enabled":true},{"slug":"energy90s","mode":"library","enabled":true}]
+# library channels need the shared missing file in MISSING_FILES:
+MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-energy-library.txt
+```
+
+For every `feed` theme the **other side** in `charts-sync/charts.json` must
+carry the same `theme` value (see `charts-sync/charts.json.example`): in the
+`mundart.m3u` block `{ "service": "energy", "theme": "mundart" }`, in the
+`charts.m3u` block `{ "service": "energy", "theme": "charts" }`. Producer
+(`.env`) and consumer (`charts.json`) must be **byte-identical** on the `theme`
+– a typo looks like "Energy contributed nothing," not like an error.
+
 ## Monitoring
 
 Missed ICY reads are transient (one WARN line, carry on). Only when the

@@ -147,6 +147,27 @@ MISSING_FILES=/charts/missing.txt;/charts/missing-energy-library.txt
 > best effort über MusicBrainz – für die Dekaden-NSP ist genau das, was zählt.
 > Ein `decade`-Override pro Kanal ist möglich (z. B. `"decade":"1980"`).
 
+### Kombinierte Config (mehrere Kanäle, alle Modi auf einmal)
+
+Die Modi lassen sich frei mischen – alles in **einer** `ENERGY_CHANNELS`-Zeile.
+Ein realistisches Beispiel: Mundart **und** Hits je als `feed` in die
+bestehenden Playlists `mundart.m3u`/`charts.m3u`, die Dekaden als `library`:
+
+```dotenv
+ENERGY_ENABLED=1
+ENERGY_CHANNELS=[{"slug":"energymadeinswitzerland","mode":"feed","theme":"mundart","enabled":true},{"slug":"energyhits","mode":"feed","theme":"charts","enabled":true},{"slug":"energy80s","mode":"library","enabled":true},{"slug":"energy90s","mode":"library","enabled":true}]
+# library-Kanäle brauchen die gemeinsame Fehlliste in MISSING_FILES:
+MISSING_FILES=/charts/missing.txt;/charts/missing-mundart.txt;/charts/missing-energy-library.txt
+```
+
+Für jedes `feed`-Thema muss die **Gegenseite** in `charts-sync/charts.json`
+denselben `theme`-Wert tragen (siehe `charts-sync/charts.json.example`): beim
+`mundart.m3u`-Block `{ "service": "energy", "theme": "mundart" }`, beim
+`charts.m3u`-Block `{ "service": "energy", "theme": "charts" }`. Producer
+(`.env`) und Consumer (`charts.json`) müssen beim `theme` **byte-identisch**
+sein – ein Tippfehler sieht aus wie „Energy hat nichts beigetragen", nicht wie
+ein Fehler.
+
 ## Monitoring
 
 Verpasste ICY-Lesevorgänge sind transient (eine WARN-Zeile, weiter geht's). Nur
