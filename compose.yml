@@ -196,6 +196,55 @@ services:
     env_file:
       - .env
 
+  # ── charts-energy ─ Swiss NRJ (energy.ch) Webradio als Quelle ────────────
+  # Pollt die Icecast-ICY-Metadaten der Energy-Kanaele und speist sie in die
+  # charts-download-Pipeline. OFF per Default (ENERGY_ENABLED=false, leere
+  # Kanalliste) - ein frischer Clone pollt Icecast nie ungefragt. Deaktiviert
+  # laeuft der Container weiter und schreibt status=idle (graue Kachel).
+  charts-energy:
+    build: ./charts-energy
+    image: charts-energy:latest
+    container_name: charts-energy
+    restart: unless-stopped
+    user: "${PUID:-1027}:${PGID:-100}"
+    environment:
+      # An/Aus-Schalter (true/false, Default false). false = Dienst pausieren
+      # (Container bleibt, kein Fehler, Status idle).
+      - ENERGY_ENABLED=${ENERGY_ENABLED:-false}
+      - MUSIC_DIR=/music/Music
+      - PLAYLIST_DIR=/music/Music
+      - CHARTS_DIR=/music/Charts
+      - STATUS_DIR=/music/Charts/.charts-status
+      # Kanalliste (JSON, einzeilig). Leer = nichts wird gepollt. Beispiele in
+      # der .env.example und in charts-energy/README.md.
+      - ENERGY_CHANNELS=${ENERGY_CHANNELS:-}
+      # ICY-Poll-Takt (s) und Match-/Output-Takt (min).
+      - ENERGY_POLL_SECONDS=${ENERGY_POLL_SECONDS:-90}
+      - ENERGY_MATCH_INTERVAL_MINUTES=${ENERGY_MATCH_INTERVAL_MINUTES:-30}
+      # Retention/Trim des Accumulate-Puffers.
+      - ENERGY_TRACK_RETENTION_DAYS=${ENERGY_TRACK_RETENTION_DAYS:-30}
+      - ENERGY_MAX_TRACKS_PER_CHANNEL=${ENERGY_MAX_TRACKS_PER_CHANNEL:-500}
+      - RUN_ON_START=${RUN_ON_START:-1}
+      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-87}
+      - ARTIST_MIN_SCORE=${ARTIST_MIN_SCORE:-60}
+      - IGNORE_COMPILATIONS=${IGNORE_COMPILATIONS:-1}
+      - NOTIFY_MISSING_LIMIT=${NOTIFY_MISSING_LIMIT:-40}
+      - PUSHOVER_TOKEN=${PUSHOVER_TOKEN:-}
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_DEVICE=${PUSHOVER_DEVICE:-}
+      - PUSHOVER_SOUND=${PUSHOVER_SOUND_ENERGY:-falling}
+      - PUSHOVER_ENABLED=${PUSHOVER_ENERGY_ENABLED:-1}
+      # Sprache fuer Logs/Pushover/UI (leer = Englisch, de/fr verfuegbar).
+      - CHARTS_LANG=${CHARTS_LANG:-}
+      - TZ=${TZ:-Europe/Zurich}
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}:/music
+      # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
+      # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
+      - ./lang:/lang:ro
+    env_file:
+      - .env
+
   # ── charts-download ─ fehlende Songs via slskd laden ─────────────────────
   charts-download:
     build: ./charts-download
@@ -604,7 +653,7 @@ services:
       - charts-docker-proxy
     environment:
       - DOCKER_HOST=tcp://charts-docker-proxy:2375
-      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
+      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-energy charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
       - WATCH_INTERVAL_SECONDS=${WATCH_INTERVAL_SECONDS:-30}
       # Entprellung/Erholung/Cooldown - MUESSEN hier durchgereicht werden
       # (watch.sh liest sie, aber der Dienst hat bewusst kein env_file: .env).
@@ -662,7 +711,7 @@ services:
       - STATUS_DIR=/charts/.charts-status
       - CHARTS_DIR=/charts
       - MUSIC_DIR=/music/Music
-      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
+      - WATCH_CONTAINERS=${WATCH_CONTAINERS:-slskd charts-sync charts-hitparade charts-flashback charts-energy charts-download charts-import charts-recommend charts-upgrade charts-songrequest charts-digest charts-watchdog charts-dashboard}
       - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:?SLSKD_API_KEY muss in der .env gesetzt sein}
       - LIDARR_URL=${LIDARR_URL:-}

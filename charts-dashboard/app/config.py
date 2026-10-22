@@ -26,7 +26,7 @@ MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music/Music")
 # --- Which containers are monitored (Docker status) ---
 WATCH_CONTAINERS = os.environ.get(
     "WATCH_CONTAINERS",
-    "slskd charts-sync charts-hitparade charts-flashback charts-download "
+    "slskd charts-sync charts-hitparade charts-flashback charts-energy charts-download "
     "charts-import charts-recommend charts-upgrade charts-songrequest "
     "charts-digest charts-watchdog charts-dashboard",
 ).split()

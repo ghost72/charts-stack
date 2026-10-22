@@ -128,8 +128,9 @@ def test_load_corrupt_json_is_empty_with_warn(charts_dir, caplog):
     with caplog.at_level(logging.WARNING):
         tracks = energy_feed.load("mundart")
     assert tracks == []
-    # Assert on behaviour + the key reference (key-name fallback before FEAT-003).
-    assert any("energy_feed_bad_json" in r.getMessage() for r in caplog.records)
+    # The WARN renders via t('sync.config.energy_feed_bad_json'); assert on the
+    # rendered (default English) text now that FEAT-003 added the key.
+    assert any("not valid JSON" in r.getMessage() for r in caplog.records)
 
 
 def test_load_bad_shape_is_empty_with_warn(charts_dir, caplog):
@@ -139,7 +140,7 @@ def test_load_bad_shape_is_empty_with_warn(charts_dir, caplog):
     with caplog.at_level(logging.WARNING):
         tracks = energy_feed.load("mundart")
     assert tracks == []
-    assert any("energy_feed_bad_json" in r.getMessage() for r in caplog.records)
+    assert any("not valid JSON" in r.getMessage() for r in caplog.records)
 
 
 def test_load_stale_file_is_empty_with_warn(charts_dir, caplog, monkeypatch):
@@ -150,7 +151,7 @@ def test_load_stale_file_is_empty_with_warn(charts_dir, caplog, monkeypatch):
     with caplog.at_level(logging.WARNING):
         tracks = energy_feed.load("mundart")
     assert tracks == []
-    assert any("energy_feed_stale" in r.getMessage() for r in caplog.records)
+    assert any("older than the max age" in r.getMessage() for r in caplog.records)
 
 
 def test_load_fresh_within_ttl_is_kept(charts_dir, monkeypatch):
@@ -190,7 +191,8 @@ def test_build_feed_energy_missing_theme_disabled(monkeypatch, caplog):
         feed = _only_feed(_parse(monkeypatch, data))
     assert feed.kind == "energy"
     assert feed.enabled is False
-    assert any("energy_no_theme" in r.getMessage() for r in caplog.records)
+    assert any("energy source without a 'theme'" in r.getMessage()
+               for r in caplog.records)
 
 
 def test_build_feed_energy_theme_not_leaked_as_lastfm_param():
