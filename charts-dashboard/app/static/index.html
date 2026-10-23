@@ -274,13 +274,15 @@ function enableDrag() {
       return;
     }
 
-    // --- Touch/pen on a WIDE screen (iPad, touch laptop): tap to expand, no
-    // drag. The pointerdown drag handler below only runs for a mouse (returns
-    // for touch/pen), so a wide-screen touch device would otherwise have NO way
-    // to expand a tile. We use pointerdown+pointerup (NOT click): iOS Safari
-    // does not reliably fire a `click` on a plain <div>, and a PointerEvent
-    // always carries a correct pointerType, whereas a MouseEvent `click` has
-    // none. A small move threshold distinguishes a tap from a scroll swipe.
+    // --- Touch/pen on a WIDE screen (iPad, touch laptop): tap to expand.
+    // This handler owns ONLY the tap: a short touch (<=10px of movement)
+    // toggles the tile. A larger movement is either a scroll (handled natively)
+    // or a drag (handled by the drag handler below, which commits once movement
+    // passes the same >10px threshold - so a gesture is tap XOR drag, never
+    // both). We use pointerdown+pointerup (NOT click): iOS Safari does not
+    // reliably fire a `click` on a plain <div>, and a PointerEvent always
+    // carries a correct pointerType, whereas a MouseEvent `click` has none.
+    // A small move threshold distinguishes a tap from a scroll/drag.
     if (tiles.length) {
       let tStart = null;  // {x,y} of the touch/pen pointerdown
       cell.addEventListener("pointerdown", (e) => {
@@ -298,39 +300,75 @@ function enableDrag() {
       });
     }
 
-    // --- Desktop: Drag + Klick-Aufklappen ---------------------------------
+    // --- Wide screen: Drag (mouse AND touch/pen) + Klick-Aufklappen -------
+    // Mouse commits to a drag immediately on pointerdown (there is no native
+    // scroll gesture to protect) and uses a 5px click threshold. Touch/pen must
+    // NOT commit on pointerdown: a plain touch may be a scroll or a tap, and
+    // grabbing the pointer early would block native scrolling (the old "UI
+    // hangs" bug on iOS). So for touch/pen we only track the start point and
+    // commit to a drag once movement passes a >10px threshold - the same
+    // boundary the wide-screen tap handler above uses to reject a tap, so a
+    // gesture is EITHER a tap (<=10, handled there) OR a drag (>10, handled
+    // here), never both. Once committed we capture the pointer and call
+    // preventDefault() on every move to suppress the browser's own scroll.
     cell.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;        // nur primaere Taste
-      if (e.pointerType !== "mouse") return; // Touch/Pen: kein Drag (nur click)
+      const isMouse = e.pointerType === "mouse";
       const downTarget = e.target;       // welche Kachel wurde angeklickt
       const start = { x: e.clientX, y: e.clientY };
       const base = _dragPos[name] ? { ..._dragPos[name] } : { x: 0, y: 0 };
-      let moved = false;
-      cell.setPointerCapture(e.pointerId);
-      cell.classList.add("dragging");
+      let moved = false;       // mouse: passed the 5px click threshold
+      let committed = false;   // touch/pen: passed the drag threshold and captured
+      // Mouse commits right away; touch/pen waits until the drag threshold.
+      if (isMouse) {
+        cell.setPointerCapture(e.pointerId);
+        cell.classList.add("dragging");
+        committed = true;
+      }
 
       const onMove = (ev) => {
         const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
-        if (!moved && Math.abs(dx) + Math.abs(dy) < 5) return; // Klick-Schwelle
-        moved = true;
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (isMouse) {
+          if (!moved && dist < 5) return; // Klick-Schwelle
+          moved = true;
+        } else {
+          // Touch/pen: below the drag threshold leave the browser free to
+          // scroll (and let the tap handler decide on pointerup).
+          if (!committed && dist <= 10) return;
+          if (!committed) {
+            committed = true;
+            cell.setPointerCapture(ev.pointerId);
+            cell.classList.add("dragging");
+          }
+          // Suppress native scroll while actively dragging a tile.
+          ev.preventDefault();
+          moved = true;
+        }
         const nx = base.x + dx, ny = base.y + dy;
         _dragPos[name] = { x: nx, y: ny };
         cell.style.transform = `translate(${nx}px, ${ny}px)`;
         requestAnimationFrame(drawFlowLines);
       };
       const onUp = () => {
-        cell.releasePointerCapture(e.pointerId);
-        cell.classList.remove("dragging");
         cell.removeEventListener("pointermove", onMove);
         cell.removeEventListener("pointerup", onUp);
-        // KEINE Bewegung = Klick -> die ANGEKLICKTE Kachel auf/zuklappen
-        // (Pointer-Capture wuerde ein normales click-Event verschlucken, darum
-        // hier selbst togglen). downTarget zeigt auf die konkrete Kachel - so
-        // trifft es im Report-Stapel die richtige, nicht immer die erste.
-        if (!moved && cell._toggleTile) cell._toggleTile(downTarget);
+        // Only release capture / remove the class if we actually committed.
+        if (committed) {
+          cell.releasePointerCapture(e.pointerId);
+          cell.classList.remove("dragging");
+        }
+        // Mouse only: KEINE Bewegung = Klick -> die ANGEKLICKTE Kachel
+        // auf/zuklappen (Pointer-Capture wuerde ein normales click-Event
+        // verschlucken, darum hier selbst togglen). downTarget zeigt auf die
+        // konkrete Kachel - so trifft es im Report-Stapel die richtige, nicht
+        // immer die erste. For touch/pen the separate wide-screen tap handler
+        // above owns the toggle, so we must NOT also toggle here.
+        if (isMouse && !moved && cell._toggleTile) cell._toggleTile(downTarget);
         requestAnimationFrame(drawFlowLines);
       };
-      cell.addEventListener("pointermove", onMove);
+      // passive:false so preventDefault() is honoured for touch drag.
+      cell.addEventListener("pointermove", onMove, { passive: false });
       cell.addEventListener("pointerup", onUp);
     });
   });

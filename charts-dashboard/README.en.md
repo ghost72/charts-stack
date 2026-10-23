@@ -31,9 +31,10 @@ Monitoring service of the `charts-*` family, together with
 - **Storage & inventory:** file count/size of the charts share and the quarantine.
 
 The page refreshes automatically (default every 15 s). The flow tiles can be
-**dragged freely** with the mouse (the connection lines follow); a reload
-restores the default arrangement, and `slskd` is expanded by default as the
-central component.
+**dragged freely** with the mouse on desktop or by touch on a wide-screen touch
+device (e.g. an iPad) (the connection lines follow); a reload restores the
+default arrangement, and `slskd` is expanded by default as the central
+component.
 
 > **A service box is missing?** Services that write **no** status file
 > (`charts-watchdog`, `charts-dashboard`) are only shown if they are listed in

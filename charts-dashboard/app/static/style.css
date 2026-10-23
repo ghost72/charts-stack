@@ -189,11 +189,12 @@ b { font-weight: 600; }
   padding: 8px 16px; white-space: nowrap;
 }
 
-/* Drag: Kacheln sind verschiebbar (nur Desktop). touch-action: manipulation
-   erlaubt natives Scrollen + Tap (verhindert nur die 300ms-Doppeltipp-Zoom-
-   Verzoegerung) - WICHTIG fuer iPhone-Safari, wo 'none' jedes Scrollen auf
-   einer Kachel blockierte. Das eigentliche Drag ist per JS ohnehin auf
-   Viewports > 760px beschraenkt. */
+/* Drag: tiles are draggable on wide screens (>760px) with mouse AND touch/pen.
+   touch-action: manipulation allows native scroll + tap (it only drops the
+   300ms double-tap-zoom delay) - IMPORTANT for iPhone Safari, where 'none'
+   blocked all scrolling on a tile. The JS commits a touch drag only after a
+   movement threshold and then calls preventDefault() on move, so a plain
+   touch still scrolls/taps natively. Drag is JS-limited to viewports > 760px. */
 .flow-cell { cursor: grab; touch-action: manipulation; }
 .flow-cell.dragging { cursor: grabbing; z-index: 5; }
 .flow-cell.dragging .tile { box-shadow: 0 8px 24px rgba(0,0,0,.5); }
