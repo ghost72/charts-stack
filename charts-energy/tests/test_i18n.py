@@ -69,7 +69,6 @@ _ENERGY_KEYS = {
     "energy.notify.body",
     "energy.notify.own_done",
     "energy.notify.feed_done",
-    "energy.notify.feed_note",
     "energy.notify.library_done",
     "energy.notify.library_to_load_header",
     "energy.notify.library_present_header",
