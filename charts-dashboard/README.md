@@ -44,15 +44,30 @@ Touch-Gerät mit breitem Bildschirm (z. B. iPad) per Finger **frei verschieben**
 
 ## Was es zeigt
 
-- **Verbindungen:** EINE Übersicht aller externen/abhängigen Dienste mit
+- **Verbindungen:** eine Übersicht aller externen/abhängigen Dienste mit
   einheitlicher Farbsemantik – **grün** = erreichbar/gültig, **rot** =
   konfiguriert aber nicht erreichbar/ungültig, **grau** = nicht konfiguriert,
-  **gelb** = erreichbar aber eingeschränkt (z. B. iTunes gedrosselt). Enthalten:
-  slskd (beim Soulseek-Server eingeloggt? aktive Downloads), Lidarr, ListenBrainz,
-  Deezer, Last.fm, iTunes, Pushover und **FLASHBACK FM** (GraphQL-Live-Check der
-  LastPlayed-Query: toter persisted-query-Hash → rote Kachel → Signal
-  „`FLASHBACK_HASH` neu holen"; ohne Hash grau/muted). So sieht man auf einen
-  Blick alle möglichen Verbindungen und ihren Live-Zustand.
+  **gelb** = erreichbar aber eingeschränkt (z. B. iTunes gedrosselt). Die
+  Kacheln sind in **drei beschriftete Rollen-Gruppen** aufgeteilt:
+  - **Lokale Dienste** – deine eigene Infrastruktur: slskd (beim Soulseek-Server
+    eingeloggt? aktive Downloads) und Lidarr.
+  - **Chart-Quellen** – woher die Charts/Songs kommen: Deezer, Last.fm,
+    **FLASHBACK FM** (GraphQL-Live-Check der LastPlayed-Query: toter
+    persisted-query-Hash → rote Kachel → Signal „`FLASHBACK_HASH` neu holen";
+    ohne Hash grau/muted) und **Energy (NRJ)** (⚡, Live-ICY-Erreichbarkeit des
+    Schweizer NRJ-Icecast-Streams, den [`charts-energy`](../charts-energy) liest).
+  - **Hilfsdienste** – Metadaten-/Empfehlungs-Helfer, keine Chart-Quellen:
+    **MusicBrainz** (🏷, Live-Erreichbarkeit des Metadaten-/Jahr-Lookup-Helfers),
+    iTunes (Cover), Pushover und **ListenBrainz** (liefert Empfehlungen, keine
+    Charts, und steht deshalb hier statt bei den Chart-Quellen).
+  - **Muted-Zustand „not in use":** die Kacheln **Energy (NRJ)** und
+    **MusicBrainz** werden bei abgeschaltetem Feature **nicht** gepingt, sondern
+    zeigen ein ausgegrautes **„not in use"**-Badge. Gesteuert wird das über die
+    bestehenden Flags `ENERGY_ENABLED` / `MB_ENABLED` (auf `0` gesetzt → die
+    jeweilige Kachel ist muted statt geprüft).
+
+  So sieht man auf einen Blick alle möglichen Verbindungen und ihren
+  Live-Zustand.
 - **Dienste:** je Container der Docker-Zustand (läuft / healthy / gestoppt) in
   der Reihenfolge der Verarbeitungskette, plus die **exakte Lauf-Statistik**:
   wann der letzte Lauf war, ob er erfolgreich war, was er verarbeitet hat
@@ -119,6 +134,8 @@ sein).
 | `LIDARR_URL` / `LIDARR_API_KEY` | – | optional, für den Lidarr-Check |
 | `LASTFM_API_KEY` | – | optional, für den Last.fm-Live-Check (leer = Kachel grau) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, für den Pushover-`validate`-Check |
+| `ENERGY_ENABLED` | `0` | bestehendes charts-energy-Flag – `0` setzt die Energy-(NRJ)-Kachel auf „not in use" statt sie zu pingen |
+| `MB_ENABLED` | `1` | bestehendes stackweites Flag – `0` setzt die MusicBrainz-Kachel auf „not in use" statt sie zu pingen |
 | `DASHBOARD_EXTERNAL_TTL` | `120` | Cache-TTL der externen Live-Checks (Sekunden) |
 | `WATCH_CONTAINERS` | alle charts-Dienste | welche Container angezeigt werden – Dienste **ohne** Statusdatei (z. B. `charts-watchdog`, `charts-dashboard`) erscheinen NUR, wenn sie hier gelistet sind |
 

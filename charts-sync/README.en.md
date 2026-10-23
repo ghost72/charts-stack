@@ -660,6 +660,8 @@ stay untouched).
 | `MATCH_THRESHOLD`      | `87`            | Similarity threshold 0–100 (higher = stricter). |
 | `ARTIST_MIN_SCORE`     | `60`            | Minimum similarity of the artist, otherwise no match (prevents wrong title namesakes like "Van Halen - Jump"). |
 | `IGNORE_COMPILATIONS`  | `1`             | Ignore compilation tracks (Various Artists, Bravo Hits, Top 100 …) during matching, so the single version gets re-fetched. `0` = count them in. |
+| `SYNC_DEAD_RUNS_THRESHOLD` | `6`         | **Source-health (G3):** a once-working chart source counts as dead after this many consecutive empty/error runs → `status=error` (at the 12 h interval ≈ 3 days with no yield). See below. |
+| `SYNC_HEALTH_FILE`     | `.charts-sync-health.json` | Sidecar health file (detector bookkeeping, **not** the dashboard payload) in `CHARTS_DIR`, loaded fail-open. |
 | `PUID` / `PGID`        | `1027` / `100`  | User/group (youruser:users, like Navidrome). |
 | `TZ`                   | `Europe/Zurich` | Time zone. |
 | `PUSHOVER_TOKEN`       | *(empty)*       | Optional: Pushover app token. |
@@ -669,6 +671,25 @@ stay untouched).
 | `PUSHOVER_DEVICES_TTL` | `3600`          | Optional: cache duration (seconds) for the account device list used for filtering. |
 | `NOTIFY_ONLY_ON_CHANGE`| `1`             | Only notify when something has changed: playlist matches **or** the list of missing songs. `0` = after every run. |
 | `NOTIFY_MISSING_LIMIT` | `40`            | Max. number of missing songs in the Pushover message (to the phone, without a NAS login). `0` = only the count. |
+
+### Source-health (G3): when charts-sync reports `status=error`
+
+On top of normal operation, charts-sync watches whether its chart sources are
+still delivering anything – visible via the `status` in the dashboard and (through
+[`charts-watchdog`](../charts-watchdog)) as a Pushover alert:
+
+- **A whole run empty → `error` immediately.** If **no** active source produces
+  anything (all empty/failing), that is a real outage (e.g. the Deezer API is
+  down) and is reported as an error **right away**, not only after days.
+- **A single source empty → stays quiet.** If only **one** of several sources
+  drops out transiently while others deliver, that does **not** raise an alarm
+  immediately – that would be noise. Only when a previously working source
+  produces nothing for `SYNC_DEAD_RUNS_THRESHOLD` runs in a row (at the 12 h
+  interval ≈ 3 days) does it count as dead and the service reports `error`.
+
+The bookkeeping needed for this (a run counter per source) lives in the sidecar
+file `SYNC_HEALTH_FILE` in `CHARTS_DIR`, separate from the state file and loaded
+fail-open (a broken health file never takes the service down).
 
 ### Global, Switzerland and Mundart
 
