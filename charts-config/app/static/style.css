@@ -187,6 +187,10 @@ body.login {
   padding: 4px 6px; border-radius: 6px; flex: 1 1 auto; min-width: 0;
   white-space: nowrap; overflow-x: auto; overflow-y: hidden;
 }
+/* Both copy buttons (Line + Block) sit side by side to the right of the code.
+   The group never shrinks the code into nothing and may wrap its two buttons
+   onto a second row on a very narrow viewport instead of overflowing. */
+.snip-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .snip-copy { flex: 0 0 auto; }
 .lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }

@@ -166,10 +166,22 @@ function fallbackCopy(text, done) {
   if (done) done();
 }
 
-// Builds a snippet cell: readonly <code> (selectable) + copy button.
+// Builds a snippet cell: readonly <code> (the compact single line, selectable)
+// plus two copy buttons. "Line" copies the exact compact snippet (for the
+// ENERGY_CHANNELS= / CHARTS= line in .env); "Block" copies the SAME JSON object
+// pretty-printed (multi-line, 2-space indent) for the energy-channels.json /
+// charts.json file. The block is produced only on copy (never rendered in the
+// cell). Parse-guard: if the snippet is not valid JSON, offer only the Line
+// button so the cell never breaks.
 function snippetCell(snippet) {
+  let block = null;
+  try { block = JSON.stringify(JSON.parse(snippet), null, 2); } catch (e) { block = null; }
+  const lineBtn =
+    `<button type="button" class="btn-sm snip-copy" data-snip-line="${esc(snippet)}">${t("finder.copy_line")}</button>`;
+  const blockBtn = block == null ? "" :
+    `<button type="button" class="btn-sm snip-copy" data-snip-block="${esc(block)}">${t("finder.copy_block")}</button>`;
   return `<div class="snip"><code>${esc(snippet)}</code>` +
-    `<button type="button" class="btn-sm snip-copy" data-snip="${esc(snippet)}">${t("finder.copy")}</button></div>`;
+    `<span class="snip-actions">${lineBtn}${blockBtn}</span></div>`;
 }
 
 function renderGenres(rows) {
@@ -438,7 +450,10 @@ function initFinder(lastfm) {
     finder.addEventListener("click", (e) => {
       const b = e.target.closest(".snip-copy");
       if (!b) return;
-      copySnippet(b.getAttribute("data-snip"), b);
+      // A button carries exactly one of the two attributes: the block button
+      // the pretty JSON, the line button the compact snippet.
+      const text = b.getAttribute("data-snip-block") ?? b.getAttribute("data-snip-line");
+      copySnippet(text, b);
     });
   }
 
@@ -451,7 +466,10 @@ function initFinder(lastfm) {
     energyBox.addEventListener("click", (e) => {
       const b = e.target.closest(".snip-copy");
       if (!b) return;
-      copySnippet(b.getAttribute("data-snip"), b);
+      // Identical read to the finder delegation: block attribute if present,
+      // otherwise the compact line.
+      const text = b.getAttribute("data-snip-block") ?? b.getAttribute("data-snip-line");
+      copySnippet(text, b);
     });
   }
 }
