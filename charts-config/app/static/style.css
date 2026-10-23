@@ -207,7 +207,7 @@ body.login {
   font-size: .74rem; font-weight: 600; white-space: nowrap;
 }
 .nrj-badge.active { background: rgba(63,182,122,.15); color: var(--ok); }
-.nrj-badge.inactive { background: #2f2742; color: #5a5168; }
+.nrj-badge.inactive { background: #37304a; color: #9b90b5; }
 
 /* Energy channel table (6 cols: Kanal/Slug/Genre/Modus/Status/Snippet). The
    section now spans the full content width (.finder-full), so the table has
@@ -230,8 +230,12 @@ body.login {
 #energy-channels .finder-table td {
   padding-top: 26px;
   padding-bottom: 26px;
-  border-bottom: 1px solid #2a2440;
+  border-bottom: 1px solid #453c5e;   /* a touch stronger so rows read as separate */
+  vertical-align: middle;             /* short cells centered against the tall snippet cell */
 }
+/* The snippet cell itself stays top-aligned (its multi-line block starts at the
+   top of the row). */
+#energy-channels .finder-table td:last-child { vertical-align: top; }
 /* Reset the generic nth-child widths, then set per-column proportions below. */
 #energy-channels .finder-table th,
 #energy-channels .finder-table td {
