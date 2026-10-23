@@ -229,30 +229,52 @@ body.login {
   width: auto;
   overflow-wrap: normal;          /* no char-by-char wrapping of the labels */
 }
+/* Column split sums to 100 (Kanal 15 + Slug 11 + Genre 10 + Standard 8 +
+   Status 8 + Snippet 48). The Snippet column is widened to 48% so its 2-column
+   grid can give the code track >=150px AND fit the ~210px stacked buttons; the
+   compact first five columns are trimmed to free that room. */
 /* Kanal: enough room for channel names so they don't wrap char-by-char. */
 #energy-channels .finder-table th:nth-child(1),
-#energy-channels .finder-table td:nth-child(1) { width: 16%; overflow-wrap: break-word; }
-/* Slug / Genre / Modus: compact. */
+#energy-channels .finder-table td:nth-child(1) { width: 15%; overflow-wrap: break-word; }
+/* Slug / Genre: compact. */
 #energy-channels .finder-table th:nth-child(2),
-#energy-channels .finder-table td:nth-child(2) { width: 12%; overflow-wrap: anywhere; }
+#energy-channels .finder-table td:nth-child(2) { width: 11%; overflow-wrap: anywhere; }
 #energy-channels .finder-table th:nth-child(3),
 #energy-channels .finder-table td:nth-child(3) { width: 10%; overflow-wrap: anywhere; }
+/* Standard (4th): the column header is already the short 'Standard'/'Default'
+   label, so it needs little room. */
 #energy-channels .finder-table th:nth-child(4),
-#energy-channels .finder-table td:nth-child(4) { width: 12%; }
-/* Status: must fit the 'aktiv (feed)' / 'aktiv (library)' badge without clip. */
+#energy-channels .finder-table td:nth-child(4) { width: 8%; }
+/* Status (5th): narrower now; the 'aktiv (feed)' / 'aktiv (library)' badge may
+   wrap but overflow:visible keeps it from being clipped. */
 #energy-channels .finder-table th:nth-child(5),
-#energy-channels .finder-table td:nth-child(5) { width: 12%; overflow: visible; }
-/* Snippet (6th) gets the rest; it wraps inside the cell rather than widening
-   the table. overflow:visible so the inline copy button is never clipped. */
+#energy-channels .finder-table td:nth-child(5) { width: 8%; overflow: visible; }
+/* Snippet (6th) gets the rest; overflow:visible so the copy buttons are never
+   clipped. */
 #energy-channels .finder-table th:last-child,
-#energy-channels .finder-table td:last-child { width: 38%; overflow: visible; }
-/* Snippet cell uses the shared vertical layout (code on top, the two stacked
-   buttons below). The code gets the full cell width (38%), so here it WRAPS
-   onto multiple lines instead of scrolling horizontally. */
+#energy-channels .finder-table td:last-child { width: 48%; overflow: visible; }
+/* Snippet cell as a 2-column CSS GRID: the code preview on the LEFT, the two
+   stacked copy buttons on the RIGHT. CSS grid is used here instead of a flex
+   row because a nested flex item holding a long, non-wrapping string inside a
+   table-layout:fixed cell resolves to its min-content width and collapses the
+   code into a one-letter-per-line sliver. The minmax(0,1fr) track lets the
+   code shrink below its content size (so it does NOT blow out the track) while
+   still filling the available width; max-content sizes the second track to the
+   buttons. Scoped to #energy-channels so the Deezer/Last.fm finder snippet
+   cells keep the generic vertical .snip layout. */
+#energy-channels .finder-table td .snip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: 8px;
+}
+/* The code stays a single line and scrolls horizontally inside its grid track
+   instead of dictating the track width or wrapping into a tall sliver. */
 #energy-channels .finder-table td .snip code {
-  white-space: pre-wrap;          /* snippet wraps onto multiple lines */
-  overflow-wrap: anywhere;
-  overflow-x: hidden;             /* no inner horizontal scroll */
+  min-width: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 @media (max-width: 720px) {
   /* Narrow screens: allow horizontal scroll of the whole table rather than
