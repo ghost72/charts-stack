@@ -427,13 +427,6 @@ function render(d) {
     lf.detail || "",
   ].filter(Boolean)));
 
-  // ListenBrainz (WAN, Live-Ping). Heilt charts-recommend-Rot -> Gelb.
-  const lb = ext.listenbrainz || {};
-  sources.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
-    lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
-    lb.detail || "",
-  ].filter(Boolean)));
-
   // FLASHBACK FM (WAN, GraphQL-Live-Check). Heilt charts-flashback-Rot -> Gelb;
   // ein toter persisted-query-Hash -> rot (dann FLASHBACK_HASH neu holen).
   const fb = ext.flashback || {};
@@ -463,6 +456,22 @@ function render(d) {
   helpers.push(tile(itCls, t("tile.title.itunes"), [
     it.ok ? t("tile.reachable") : t("tile.not_reachable"),
     it.detail || "",
+  ].filter(Boolean)));
+
+  // MusicBrainz (WAN, Live-Ping). Metadaten-Helfer (Jahr-Auflösung fuer
+  // charts-energy/-flashback), KEINE Chart-Quelle -> Hilfsdienst.
+  const mb = ext.musicbrainz || {};
+  helpers.push(tile(mb.ok ? "ok" : "err", t("tile.title.musicbrainz"), [
+    mb.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    mb.detail || "",
+  ].filter(Boolean)));
+
+  // ListenBrainz (WAN, Live-Ping). Liefert Empfehlungen fuer charts-recommend,
+  // keine Charts -> Hilfsdienst. Heilt charts-recommend-Rot -> Gelb.
+  const lb = ext.listenbrainz || {};
+  helpers.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
+    lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    lb.detail || "",
   ].filter(Boolean)));
 
   // Pushover (WAN, echter validate-Call d.external.pushover statt nur Config-

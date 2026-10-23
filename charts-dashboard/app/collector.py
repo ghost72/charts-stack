@@ -156,7 +156,8 @@ def _external_status() -> dict:
     polls every 15s - without a cache a real Pushover auth call (among others)
     would go out per refresh.
 
-    Returns: {service: {"ok": bool, "detail": str}} for five services; lastfm +
+    Returns: {service: {"ok": bool, "detail": str}} per service (listenbrainz,
+    deezer, lastfm, itunes, pushover, flashback, energy, musicbrainz); lastfm +
     pushover additionally with "configured": bool.
     """
     global _ext_cache, _ext_ts
@@ -328,8 +329,25 @@ def _external_status() -> dict:
         en["detail"] = i18n.t("dashboard.conn.unreachable",
                               err=e.__class__.__name__)
 
+    # MusicBrainz: metadata helper (release-year lookup used by charts-energy /
+    # charts-flashback), NOT a chart source. Live-ping the recording search with
+    # a tiny query; reachable iff HTTP 200. MusicBrainz requires a User-Agent.
+    # Fail-open like Deezer: any error -> ok=False + detail.
+    mb = {"ok": False, "detail": ""}
+    try:
+        r = httpx.get("https://musicbrainz.org/ws/2/recording",
+                      params={"query": "recording:test", "fmt": "json", "limit": 1},
+                      headers={"User-Agent": "charts-dashboard/1.0 (self-hosted)"},
+                      timeout=8, follow_redirects=True)
+        mb["ok"] = r.status_code == 200
+        mb["detail"] = "" if mb["ok"] else i18n.t(
+            "dashboard.conn.http_error", code=r.status_code)
+    except Exception as e:
+        mb["detail"] = i18n.t("dashboard.conn.unreachable",
+                              err=e.__class__.__name__)
+
     result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "itunes": it,
-              "pushover": po, "flashback": fb, "energy": en}
+              "pushover": po, "flashback": fb, "energy": en, "musicbrainz": mb}
     _ext_cache = result
     _ext_ts = now
     return result
