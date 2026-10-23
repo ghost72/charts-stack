@@ -388,6 +388,11 @@ function render(d) {
   // So sieht man auf einen Blick ALLE moeglichen Verbindungen UND ihren Zustand.
   const ext = d.external || {};
   const c = [];
+  // Full-width group label inside the connections grid (see .conn-group CSS).
+  const group = (key) => `<div class="conn-group">${t(key)}</div>`;
+
+  // --- Group 1: local services (own containers on the LAN) ----------------
+  c.push(group("conn.group.local"));
 
   // slskd (LAN, eigener Live-Check d.slskd).
   const sl = d.slskd || {};
@@ -405,18 +410,28 @@ function render(d) {
     li.detail || "",
   ].filter(Boolean)));
 
-  // ListenBrainz (WAN, Live-Ping). Heilt charts-recommend-Rot -> Gelb.
-  const lb = ext.listenbrainz || {};
-  c.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
-    lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
-    lb.detail || "",
-  ].filter(Boolean)));
+  // --- Group 2: chart sources (external APIs/streams the music comes from) -
+  c.push(group("conn.group.sources"));
 
   // Deezer (WAN, Live-Ping). Heilt charts-sync-Rot -> Gelb.
   const dz = ext.deezer || {};
   c.push(tile(dz.ok ? "ok" : "err", t("tile.title.deezer"), [
     dz.ok ? t("tile.reachable") : t("tile.not_reachable"),
     dz.detail || "",
+  ].filter(Boolean)));
+
+  // Last.fm (WAN, Live-Ping; braucht API-Key). Ohne Key -> muted, nie rot.
+  const lf = ext.lastfm || {};
+  c.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [
+    !lf.configured ? t("tile.lastfm.no_api_key") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    lf.detail || "",
+  ].filter(Boolean)));
+
+  // ListenBrainz (WAN, Live-Ping). Heilt charts-recommend-Rot -> Gelb.
+  const lb = ext.listenbrainz || {};
+  c.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
+    lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    lb.detail || "",
   ].filter(Boolean)));
 
   // FLASHBACK FM (WAN, GraphQL-Live-Check). Heilt charts-flashback-Rot -> Gelb;
@@ -429,20 +444,16 @@ function render(d) {
 
   // Energy (NRJ): Icecast stream of the Swiss NRJ channels that charts-energy
   // reads. Public stream (no credential gate), so same shape as Deezer:
-  // reachable -> ok, not reachable -> err. Placed next to FLASHBACK FM so the
-  // two radio sources sit together.
+  // reachable -> ok, not reachable -> err. Sits next to FLASHBACK FM so the two
+  // radio sources stay together.
   const en = ext.energy || {};
   c.push(tile(en.ok ? "ok" : "err", t("tile.title.energy"), [
     en.ok ? t("tile.reachable") : t("tile.not_reachable"),
     en.detail || "",
   ].filter(Boolean)));
 
-  // Last.fm (WAN, Live-Ping; braucht API-Key). Ohne Key -> muted, nie rot.
-  const lf = ext.lastfm || {};
-  c.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [
-    !lf.configured ? t("tile.lastfm.no_api_key") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
-    lf.detail || "",
-  ].filter(Boolean)));
+  // --- Group 3: helper services (external, not a chart source) ------------
+  c.push(group("conn.group.helpers"));
 
   // iTunes (WAN, Live-Ping; nur Info fuer Cover). NIE err: erreichbar -> ok,
   // gedrosselt (429/403) aber erreichbar -> warn, nicht erreichbar -> muted.
