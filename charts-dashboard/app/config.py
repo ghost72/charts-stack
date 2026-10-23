@@ -13,6 +13,16 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    """Tolerant bool parser (true/1/yes/on vs false/0/no/off), matching the
+    *_ENABLED flags charts-energy / charts-flashback use so the dashboard reads
+    the same on/off semantics."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
 # --- Status files (written by the charts services) ---
 # Directory with the <service>.json status files. Points to the same physical
 # folder as STATUS_DIR of the other services (/volume2/music/Charts/
@@ -61,6 +71,16 @@ ENERGY_STREAM_HOST_TMPL = os.environ.get(
     "https://{slug}.ice.infomaniak.ch/{slug}-high.mp3",
 )
 ENERGY_MAIN_SLUG = os.environ.get("ENERGY_MAIN_SLUG", "energymadeinswitzerland").strip()
+# Whether charts-energy is in use. Mirrors charts-energy's ENERGY_ENABLED
+# (default on there). When off, the Energy tile shows "muted" (not in use)
+# instead of pinging the stream - same treatment as FLASHBACK/Last.fm/Pushover.
+ENERGY_ENABLED = _get_bool("ENERGY_ENABLED", True)
+
+# --- MusicBrainz (reachability live check of the metadata helper) ---
+# Metadata helper (release-year lookup) used by charts-energy / charts-flashback,
+# not a chart source. Mirrors their MB_ENABLED (default on). When off, the
+# MusicBrainz tile shows "muted" (not in use) instead of pinging.
+MB_ENABLED = _get_bool("MB_ENABLED", True)
 
 # --- TTL cache for the external live checks (seconds) ---
 # The dashboard polls every 15s; the external pings, however, go over WAN to

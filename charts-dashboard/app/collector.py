@@ -313,38 +313,45 @@ def _external_status() -> dict:
     # and hang the whole /api/status response. So we STREAM: httpx.stream() hands
     # back the response headers WITHOUT reading the body, and the `with` block
     # closes the connection immediately. We never read a single audio byte.
-    # Public stream, so no "configured" gate: reachable -> ok, otherwise err
-    # (like Deezer/ListenBrainz). Fail-open: any error -> ok=False + detail.
-    en = {"ok": False, "detail": ""}
-    try:
-        url = config.ENERGY_STREAM_HOST_TMPL.format(slug=config.ENERGY_MAIN_SLUG)
-        with httpx.stream("GET", url,
-                          headers={"Icy-MetaData": "1",
-                                   "User-Agent": "Mozilla/5.0"},
-                          timeout=httpx.Timeout(8.0, connect=5.0)) as r:
-            en["ok"] = r.status_code == 200 and bool(r.headers.get("icy-name"))
-            en["detail"] = "" if en["ok"] else i18n.t(
-                "dashboard.conn.http_error", code=r.status_code)
-    except Exception as e:
-        en["detail"] = i18n.t("dashboard.conn.unreachable",
-                              err=e.__class__.__name__)
+    # configured = ENERGY_ENABLED: when off the tile is "muted" (not in use) and
+    # we skip the ping entirely, same as FLASHBACK/Last.fm/Pushover. Fail-open.
+    en = {"configured": config.ENERGY_ENABLED, "ok": False, "detail": ""}
+    if en["configured"]:
+        try:
+            url = config.ENERGY_STREAM_HOST_TMPL.format(slug=config.ENERGY_MAIN_SLUG)
+            with httpx.stream("GET", url,
+                              headers={"Icy-MetaData": "1",
+                                       "User-Agent": "Mozilla/5.0"},
+                              timeout=httpx.Timeout(8.0, connect=5.0)) as r:
+                en["ok"] = r.status_code == 200 and bool(r.headers.get("icy-name"))
+                en["detail"] = "" if en["ok"] else i18n.t(
+                    "dashboard.conn.http_error", code=r.status_code)
+        except Exception as e:
+            en["detail"] = i18n.t("dashboard.conn.unreachable",
+                                  err=e.__class__.__name__)
+    else:
+        en["detail"] = i18n.t("dashboard.conn.not_in_use")
 
     # MusicBrainz: metadata helper (release-year lookup used by charts-energy /
     # charts-flashback), NOT a chart source. Live-ping the recording search with
     # a tiny query; reachable iff HTTP 200. MusicBrainz requires a User-Agent.
-    # Fail-open like Deezer: any error -> ok=False + detail.
-    mb = {"ok": False, "detail": ""}
-    try:
-        r = httpx.get("https://musicbrainz.org/ws/2/recording",
-                      params={"query": "recording:test", "fmt": "json", "limit": 1},
-                      headers={"User-Agent": "charts-dashboard/1.0 (self-hosted)"},
-                      timeout=8, follow_redirects=True)
-        mb["ok"] = r.status_code == 200
-        mb["detail"] = "" if mb["ok"] else i18n.t(
-            "dashboard.conn.http_error", code=r.status_code)
-    except Exception as e:
-        mb["detail"] = i18n.t("dashboard.conn.unreachable",
-                              err=e.__class__.__name__)
+    # configured = MB_ENABLED: when off the tile is "muted" (not in use) and we
+    # skip the ping. Fail-open like Deezer: any error -> ok=False + detail.
+    mb = {"configured": config.MB_ENABLED, "ok": False, "detail": ""}
+    if mb["configured"]:
+        try:
+            r = httpx.get("https://musicbrainz.org/ws/2/recording",
+                          params={"query": "recording:test", "fmt": "json", "limit": 1},
+                          headers={"User-Agent": "charts-dashboard/1.0 (self-hosted)"},
+                          timeout=8, follow_redirects=True)
+            mb["ok"] = r.status_code == 200
+            mb["detail"] = "" if mb["ok"] else i18n.t(
+                "dashboard.conn.http_error", code=r.status_code)
+        except Exception as e:
+            mb["detail"] = i18n.t("dashboard.conn.unreachable",
+                                  err=e.__class__.__name__)
+    else:
+        mb["detail"] = i18n.t("dashboard.conn.not_in_use")
 
     result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "itunes": it,
               "pushover": po, "flashback": fb, "energy": en, "musicbrainz": mb}

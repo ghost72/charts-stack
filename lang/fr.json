@@ -1,6 +1,7 @@
 {
   "dashboard.conn.http_error": "Erreur (HTTP {code})",
   "dashboard.conn.unreachable": "injoignable ({err})",
+  "dashboard.conn.not_in_use": "non utilisé",
   "dashboard.conn.slskd.state_unknown": "inconnu",
   "dashboard.conn.slskd.no_api_key": "aucune clé API configurée",
   "dashboard.conn.lidarr.not_configured": "non configuré",
@@ -52,6 +53,7 @@
   "dashboard.ui.tile.slskd.active_downloads": "téléchargements actifs : {n}",
   "dashboard.ui.tile.reachable": "joignable",
   "dashboard.ui.tile.not_reachable": "injoignable",
+  "dashboard.ui.tile.not_in_use": "non utilisé",
   "dashboard.ui.tile.not_configured": "non configuré",
   "dashboard.ui.tile.flashback.no_hash": "aucun hash",
   "dashboard.ui.tile.lastfm.no_api_key": "aucune clé API",
