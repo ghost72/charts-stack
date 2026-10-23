@@ -436,12 +436,12 @@ function render(d) {
   ].filter(Boolean)));
 
   // Energy (NRJ): Icecast stream of the Swiss NRJ channels that charts-energy
-  // reads. Public stream (no credential gate), so same shape as Deezer:
-  // reachable -> ok, not reachable -> err. Sits next to FLASHBACK FM so the two
-  // radio sources stay together.
+  // reads. Not in use (ENERGY_ENABLED=false) -> muted, same as FLASHBACK; in
+  // use -> reachable (ok) / not reachable (err). Sits next to FLASHBACK FM so
+  // the two radio sources stay together.
   const en = ext.energy || {};
-  sources.push(tile(en.ok ? "ok" : "err", t("tile.title.energy"), [
-    en.ok ? t("tile.reachable") : t("tile.not_reachable"),
+  sources.push(tile(!en.configured ? "muted" : (en.ok ? "ok" : "err"), t("tile.title.energy"), [
+    !en.configured ? t("tile.not_in_use") : (en.ok ? t("tile.reachable") : t("tile.not_reachable")),
     en.detail || "",
   ].filter(Boolean)));
 
@@ -459,10 +459,11 @@ function render(d) {
   ].filter(Boolean)));
 
   // MusicBrainz (WAN, Live-Ping). Metadaten-Helfer (Jahr-Auflösung fuer
-  // charts-energy/-flashback), KEINE Chart-Quelle -> Hilfsdienst.
+  // charts-energy/-flashback), KEINE Chart-Quelle -> Hilfsdienst. Nicht genutzt
+  // (MB_ENABLED=false) -> muted, wie FLASHBACK/Last.fm/Pushover.
   const mb = ext.musicbrainz || {};
-  helpers.push(tile(mb.ok ? "ok" : "err", t("tile.title.musicbrainz"), [
-    mb.ok ? t("tile.reachable") : t("tile.not_reachable"),
+  helpers.push(tile(!mb.configured ? "muted" : (mb.ok ? "ok" : "err"), t("tile.title.musicbrainz"), [
+    !mb.configured ? t("tile.not_in_use") : (mb.ok ? t("tile.reachable") : t("tile.not_reachable")),
     mb.detail || "",
   ].filter(Boolean)));
 
