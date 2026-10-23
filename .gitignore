@@ -3,6 +3,10 @@
 .env
 .env.*
 !.env.example
+# Personal env copies/merges with real secrets (e.g. env_nas, env_new, env.bak).
+# Never commit these - they hold tokens/passwords. Only .env.example is public.
+env_*
+*.env
 
 # Local playlist definition file (optional, CHARTS_FILE). The template
 # charts.json.example stays versioned; charts.json itself is personal config
