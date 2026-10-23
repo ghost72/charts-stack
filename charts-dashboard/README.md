@@ -38,7 +38,8 @@ Jede Dienste-Kachel zeigt kompakt Status-Ampel, „was → wohin" und **wann zul
 gelaufen / wann wieder**; ein Klick/Tap klappt die vollen Details auf
 (Container-Zustand, letzter Lauf, kumulative Gesamtzahlen, bei `charts-upgrade`
 der Scan-Fortschritt). `slskd` ist als zentrale Komponente standardmäßig
-aufgeklappt. Die Kacheln lassen sich mit der Maus **frei verschieben**
+aufgeklappt. Die Kacheln lassen sich am Desktop mit der Maus und auf einem
+Touch-Gerät mit breitem Bildschirm (z. B. iPad) per Finger **frei verschieben**
 (Verbindungslinien folgen); ein Reload stellt die Standard-Anordnung wieder her.
 
 ## Was es zeigt
