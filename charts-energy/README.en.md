@@ -182,6 +182,18 @@ carry the same `theme` value (see `charts-sync/charts.json.example`): in the
 (`.env`) and consumer (`charts.json`) must be **byte-identical** on the `theme`
 – a typo looks like "Energy contributed nothing," not like an error.
 
+### Config from a file instead of env (recommended for several channels)
+
+Instead of the single-line `ENERGY_CHANNELS` variable, the channel list can be
+loaded from a readable, multi-line file – the exact analogue of `CHARTS_FILE`
+for charts-sync. Set `ENERGY_CHANNELS_FILE=/config/energy-channels.json` in your
+`.env` and create `charts-energy/energy-channels.json` (template:
+[`energy-channels.json.example`](energy-channels.json.example)). The file is
+mounted read-only to `/config/energy-channels.json` and takes **priority** over
+the single-line `ENERGY_CHANNELS`. Priority: `ENERGY_CHANNELS_FILE` >
+`ENERGY_CHANNELS` > default (empty). This is the recommended route when you
+configure several channels.
+
 ## Monitoring
 
 Missed ICY reads are transient (one WARN line, carry on). Only when the

@@ -184,6 +184,18 @@ denselben `theme`-Wert tragen (siehe `charts-sync/charts.json.example`): beim
 sein – ein Tippfehler sieht aus wie „Energy hat nichts beigetragen", nicht wie
 ein Fehler.
 
+### Config aus Datei statt Env (empfohlen bei mehreren Kanälen)
+
+Statt der einzeiligen `ENERGY_CHANNELS`-Variable kann die Kanalliste aus einer
+lesbaren, mehrzeiligen Datei geladen werden – genau das Gegenstück zu
+`CHARTS_FILE` bei charts-sync. Dazu `ENERGY_CHANNELS_FILE=/config/energy-channels.json`
+in der `.env` setzen und `charts-energy/energy-channels.json` anlegen (Vorlage:
+[`energy-channels.json.example`](energy-channels.json.example)). Die Datei wird
+read-only unter `/config/energy-channels.json` gemountet und hat **Vorrang** vor
+der einzeiligen `ENERGY_CHANNELS`-Zeile. Priorität: `ENERGY_CHANNELS_FILE` >
+`ENERGY_CHANNELS` > Default (leer). Bei mehreren Kanälen ist das der empfohlene
+Weg.
+
 ## Monitoring
 
 Verpasste ICY-Lesevorgänge sind transient (eine WARN-Zeile, weiter geht's). Nur

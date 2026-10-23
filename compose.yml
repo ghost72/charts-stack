@@ -223,6 +223,12 @@ services:
       # Kanalliste (JSON, einzeilig). Leer = nichts wird gepollt. Beispiele in
       # der .env.example und in charts-energy/README.md.
       - ENERGY_CHANNELS=${ENERGY_CHANNELS:-}
+      # ODER (admin-freundlich): Kanalliste aus einer lesbaren, mehrzeiligen
+      # Datei laden. Prioritaet ENERGY_CHANNELS_FILE > ENERGY_CHANNELS > Default.
+      # Read-only unter /config/energy-channels.json gemountet (siehe volumes);
+      # ENERGY_CHANNELS_FILE=/config/energy-channels.json in der .env setzen UND
+      # charts-energy/energy-channels.json anlegen (Vorlage: energy-channels.json.example).
+      - ENERGY_CHANNELS_FILE=${ENERGY_CHANNELS_FILE:-}
       # ICY-Poll-Takt (s) und Match-/Output-Takt (min).
       - ENERGY_POLL_SECONDS=${ENERGY_POLL_SECONDS:-90}
       - ENERGY_MATCH_INTERVAL_MINUTES=${ENERGY_MATCH_INTERVAL_MINUTES:-30}
@@ -259,6 +265,10 @@ services:
       - TZ=${TZ:-Europe/Zurich}
     volumes:
       - ${MUSIC_ROOT:-/volume2/music}:/music
+      # Optionale Kanal-Definitionsdatei (nur genutzt, wenn ENERGY_CHANNELS_FILE
+      # gesetzt ist). Fehlt die Datei, greift der ENERGY_CHANNELS-Env-Fallback.
+      # Lege charts-energy/energy-channels.json an (Vorlage: energy-channels.json.example).
+      - ./charts-energy/energy-channels.json:/config/energy-channels.json:ro
       # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die
       # .env. Read-only nach /lang gemountet; der i18n-Loader liest sie dort.
       - ./lang:/lang:ro

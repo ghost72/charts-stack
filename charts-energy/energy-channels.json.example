@@ -1,0 +1,14 @@
+[
+  "---- charts-energy channel list. Copy this file to charts-energy/energy-channels.json and set ENERGY_CHANNELS_FILE=/config/energy-channels.json in your .env. It takes priority over the single-line ENERGY_CHANNELS. ----",
+  "---- The three modes: feed = tops up an EXISTING charts-sync playlist via its theme (the theme MUST byte-match the {service:energy, theme:<name>} source in charts-sync/charts.json). library = download-only, year-tagged, shown by decade via Navidrome Smart Playlists (no .m3u). own = writes its own energy-*.m3u (reserved namespace). ----",
+
+  { "slug": "energymadeinswitzerland", "mode": "feed", "theme": "mundart", "enabled": true },
+  { "slug": "energyhits",              "mode": "feed", "theme": "charts",  "enabled": true },
+  { "slug": "energy80s",               "mode": "library",                  "enabled": true },
+  { "slug": "energy90s",               "mode": "library",                  "enabled": true },
+
+  "---- EXAMPLES BELOW: copy into your own list to use ----",
+  "---- own mode: writes its own playlist; the name MUST live in the reserved energy-*.m3u namespace. ----",
+
+  { "slug": "energypop", "title": "Energy Pop 🎶", "mode": "own", "playlist": "energy-pop.m3u", "missing": "missing-energy-pop.txt", "enabled": false }
+]
