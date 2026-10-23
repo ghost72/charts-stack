@@ -180,21 +180,22 @@ body.login {
    vertical letter column in the narrow finder column. Instead single-line with
    a horizontal scroll; it does not need to be read, the copy button copies it
    in full. */
-.snip { display: flex; gap: 6px; align-items: flex-start; max-width: 100%; min-width: 0; }
+/* Snippet cell: the code preview on top, the two copy buttons STACKED below it
+   (not beside it). Laying code and buttons out as a vertical column gives the
+   code the FULL cell width, so it wraps/scrolls normally instead of being
+   squeezed next to the buttons into a one-letter-per-line vertical column (the
+   bug when code and buttons shared a horizontal row in the narrow table). */
+.snip { display: flex; flex-direction: column; gap: 6px; max-width: 100%; min-width: 0; }
 .snip code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .74rem; background: var(--bg); color: #c9bfe0;
-  padding: 4px 6px; border-radius: 6px; flex: 1 1 auto; min-width: 0;
+  padding: 4px 6px; border-radius: 6px; min-width: 0; max-width: 100%;
   white-space: nowrap; overflow-x: auto; overflow-y: hidden;
 }
-/* Both copy buttons (Line + Block) sit side by side to the right of the code.
-   The group never shrinks the code into nothing and may wrap its two buttons
-   onto a second row on a very narrow viewport instead of overflowing. */
-/* The two copy buttons are STACKED (one above the other): the snippet cell is
-   tall enough, and stacking gives each button room for a clear, self-describing
-   label ("Copy for .env (one line)" / "Copy for JSON file (block)") instead of
-   cramming them side by side. */
-.snip-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+/* The two copy buttons (Line + Block) stacked one above the other, below the
+   code. Each gets room for a clear, self-describing label ("Copy for .env (one
+   line)" / "Copy for JSON file (block)"). They size to their content. */
+.snip-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .snip-copy { flex: 0 0 auto; white-space: nowrap; text-align: left; }
 .lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
@@ -245,9 +246,9 @@ body.login {
    the table. overflow:visible so the inline copy button is never clipped. */
 #energy-channels .finder-table th:last-child,
 #energy-channels .finder-table td:last-child { width: 38%; overflow: visible; }
-/* Snippet cell keeps the shared horizontal layout (code + copy button on one
-   row); at full width there is room, so no vertical stacking needed. The code
-   wraps onto multiple lines instead of scrolling. */
+/* Snippet cell uses the shared vertical layout (code on top, the two stacked
+   buttons below). The code gets the full cell width (38%), so here it WRAPS
+   onto multiple lines instead of scrolling horizontally. */
 #energy-channels .finder-table td .snip code {
   white-space: pre-wrap;          /* snippet wraps onto multiple lines */
   overflow-wrap: anywhere;
