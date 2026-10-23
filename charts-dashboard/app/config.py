@@ -49,6 +49,19 @@ LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "").strip()
 # A dead hash -> tile red (signal: fetch a new hash).
 FLASHBACK_HASH = os.environ.get("FLASHBACK_HASH", "").strip()
 
+# --- Energy (NRJ) Icecast stream (reachability live check) ---
+# charts-energy reads the Swiss NRJ (energy.ch) channels via the Infomaniak
+# Icecast ICY metadata. The dashboard pings the main channel's stream mount the
+# same way charts-energy probes liveness (headers-only GET with Icy-MetaData:1,
+# reachable iff HTTP 200 + an icy-name header). Both knobs mirror charts-energy's
+# config.ENERGY_STREAM_HOST_TMPL / main slug so the dashboard points at the same
+# host without importing charts-energy.
+ENERGY_STREAM_HOST_TMPL = os.environ.get(
+    "ENERGY_STREAM_HOST_TMPL",
+    "https://{slug}.ice.infomaniak.ch/{slug}-high.mp3",
+)
+ENERGY_MAIN_SLUG = os.environ.get("ENERGY_MAIN_SLUG", "energymadeinswitzerland").strip()
+
 # --- TTL cache for the external live checks (seconds) ---
 # The dashboard polls every 15s; the external pings, however, go over WAN to
 # third parties. Hence cached (default 2 min), decoupled from the 15s poll.
