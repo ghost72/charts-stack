@@ -427,6 +427,16 @@ function render(d) {
     fb.detail || "",
   ].filter(Boolean)));
 
+  // Energy (NRJ): Icecast stream of the Swiss NRJ channels that charts-energy
+  // reads. Public stream (no credential gate), so same shape as Deezer:
+  // reachable -> ok, not reachable -> err. Placed next to FLASHBACK FM so the
+  // two radio sources sit together.
+  const en = ext.energy || {};
+  c.push(tile(en.ok ? "ok" : "err", t("tile.title.energy"), [
+    en.ok ? t("tile.reachable") : t("tile.not_reachable"),
+    en.detail || "",
+  ].filter(Boolean)));
+
   // Last.fm (WAN, Live-Ping; braucht API-Key). Ohne Key -> muted, nie rot.
   const lf = ext.lastfm || {};
   c.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [

@@ -305,8 +305,24 @@ def _external_status() -> dict:
     else:
         fb["detail"] = i18n.t("dashboard.conn.flashback.no_hash")
 
+    # Energy (NRJ): Icecast ICY reachability of the main channel mount, the same
+    # probe charts-energy uses (headers-only GET with Icy-MetaData:1, reachable
+    # iff HTTP 200 + an icy-name header). Public stream, so no "configured" gate:
+    # reachable -> ok, otherwise err (like Deezer/ListenBrainz). Fail-open.
+    en = {"ok": False, "detail": ""}
+    try:
+        url = config.ENERGY_STREAM_HOST_TMPL.format(slug=config.ENERGY_MAIN_SLUG)
+        r = httpx.get(url, headers={"Icy-MetaData": "1",
+                                    "User-Agent": "Mozilla/5.0"}, timeout=8)
+        en["ok"] = r.status_code == 200 and bool(r.headers.get("icy-name"))
+        en["detail"] = "" if en["ok"] else i18n.t(
+            "dashboard.conn.http_error", code=r.status_code)
+    except Exception as e:
+        en["detail"] = i18n.t("dashboard.conn.unreachable",
+                              err=e.__class__.__name__)
+
     result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "itunes": it,
-              "pushover": po, "flashback": fb}
+              "pushover": po, "flashback": fb, "energy": en}
     _ext_cache = result
     _ext_ts = now
     return result
