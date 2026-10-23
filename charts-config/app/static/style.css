@@ -228,8 +228,8 @@ body.login {
    the channels read as separate rows instead of one dense block. Energy-scoped
    only; the Deezer/Last.fm finder tables keep the compact generic padding. */
 #energy-channels .finder-table td {
-  padding-top: 14px;
-  padding-bottom: 14px;
+  padding-top: 18px;
+  padding-bottom: 18px;
   border-bottom: 1px solid #2a2440;
 }
 /* Reset the generic nth-child widths, then set per-column proportions below. */
@@ -272,7 +272,7 @@ body.login {
 #energy-channels .finder-table td .snip {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   max-width: 100%;
 }
