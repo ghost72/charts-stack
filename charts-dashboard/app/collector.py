@@ -305,18 +305,25 @@ def _external_status() -> dict:
     else:
         fb["detail"] = i18n.t("dashboard.conn.flashback.no_hash")
 
-    # Energy (NRJ): Icecast ICY reachability of the main channel mount, the same
-    # probe charts-energy uses (headers-only GET with Icy-MetaData:1, reachable
-    # iff HTTP 200 + an icy-name header). Public stream, so no "configured" gate:
-    # reachable -> ok, otherwise err (like Deezer/ListenBrainz). Fail-open.
+    # Energy (NRJ): Icecast ICY reachability of the main channel mount, reachable
+    # iff HTTP 200 + an icy-name header on the stream. CRITICAL: an Icecast mount
+    # with Icy-MetaData:1 returns an ENDLESS audio body - a plain httpx.get()
+    # would block reading that body until the timeout on EVERY dashboard refresh
+    # and hang the whole /api/status response. So we STREAM: httpx.stream() hands
+    # back the response headers WITHOUT reading the body, and the `with` block
+    # closes the connection immediately. We never read a single audio byte.
+    # Public stream, so no "configured" gate: reachable -> ok, otherwise err
+    # (like Deezer/ListenBrainz). Fail-open: any error -> ok=False + detail.
     en = {"ok": False, "detail": ""}
     try:
         url = config.ENERGY_STREAM_HOST_TMPL.format(slug=config.ENERGY_MAIN_SLUG)
-        r = httpx.get(url, headers={"Icy-MetaData": "1",
-                                    "User-Agent": "Mozilla/5.0"}, timeout=8)
-        en["ok"] = r.status_code == 200 and bool(r.headers.get("icy-name"))
-        en["detail"] = "" if en["ok"] else i18n.t(
-            "dashboard.conn.http_error", code=r.status_code)
+        with httpx.stream("GET", url,
+                          headers={"Icy-MetaData": "1",
+                                   "User-Agent": "Mozilla/5.0"},
+                          timeout=httpx.Timeout(8.0, connect=5.0)) as r:
+            en["ok"] = r.status_code == 200 and bool(r.headers.get("icy-name"))
+            en["detail"] = "" if en["ok"] else i18n.t(
+                "dashboard.conn.http_error", code=r.status_code)
     except Exception as e:
         en["detail"] = i18n.t("dashboard.conn.unreachable",
                               err=e.__class__.__name__)
