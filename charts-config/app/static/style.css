@@ -223,6 +223,15 @@ body.login {
   width: 100%;
   max-width: 100%;
 }
+/* More vertical breathing room per channel row (the generic 5px is too tight
+   now that each snippet cell is a multi-line block), plus a subtle divider so
+   the channels read as separate rows instead of one dense block. Energy-scoped
+   only; the Deezer/Last.fm finder tables keep the compact generic padding. */
+#energy-channels .finder-table td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #2a2440;
+}
 /* Reset the generic nth-child widths, then set per-column proportions below. */
 #energy-channels .finder-table th,
 #energy-channels .finder-table td {
