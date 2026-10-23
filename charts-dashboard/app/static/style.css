@@ -77,6 +77,17 @@ section h2 {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
+/* Small group label inside the connections grid. Spans the full row (all
+   columns) so the tiles after it wrap onto a fresh line, giving a light
+   subheading per group (local services / chart sources / helpers) without a
+   second heavy section. First label drops its top margin (the section h2 is
+   right above it). */
+.conn-group {
+  grid-column: 1 / -1;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 10px 0 0;
+}
+.conn-group:first-child { margin-top: 0; }
 .tile {
   background: var(--tile);
   border-radius: 12px;
