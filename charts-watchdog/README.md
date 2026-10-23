@@ -95,6 +95,7 @@ Entwarnung:
 | `WATCH_CONTAINERS` | alle Stack-Container | Leerzeichen-getrennte Liste |
 | `WATCH_INTERVAL_SECONDS` | `30` | Poll-Intervall |
 | `WATCH_DEBOUNCE_POLLS` | `2` | Polls bis zur Problem-Meldung |
+| `WATCH_TRANSIENT_DEBOUNCE_POLLS` | `8` | Polls, die ein transienter Zustand (created/starting/restarting) anhalten muss, bevor er als hängend gilt (entprellt kurze Neustarts) |
 | `WATCH_RECOVER_POLLS` | `3` | OK-Polls bis zur Entwarnung |
 | `WATCH_COOLDOWN_SECONDS` | `1800` | Ruhe nach einer Meldung (pro App) |
 | `WATCH_EXTERNAL_DEBOUNCE_SECONDS` | `600` | Sekunden durchgehend nicht erreichbar vor der Meldung (externe Dienste, Default 10 min) |

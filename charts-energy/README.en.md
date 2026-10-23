@@ -67,6 +67,15 @@ docker compose run --rm charts-energy python -m app.discover --probe energypop
 `--list` prints the confirmed slugs (display | slug | genre); `--probe <slug>`
 checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 
+> **Honest limitation (liveness re-check, G2):** the daily liveness check
+> (`ENERGY_LIVENESS_*`) only re-validates the **already-known** slugs from
+> `discover.py::CONFIRMED_CHANNELS` and surfaces their state as a live/offline
+> badge in charts-config. It **cannot** auto-discover brand-new Energy channels
+> – the energy.ch directory is JS-rendered. A genuinely new channel must still
+> be added **by hand** in `CONFIRMED_CHANNELS` (and the charts-config mirror).
+> There is deliberately no speculative "slug guesser". The alarm only fires for
+> a channel that WAS live and has stayed gone past the threshold.
+
 ## Configuration (central `.env`)
 
 | Variable | Default | Purpose |
@@ -86,6 +95,12 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 | `MB_RATE_SLEEP` | `1.1` | Sleep (s) before each MB request (~1 req/s, polite to MusicBrainz). |
 | `MB_SCORE_MIN` | `90` | Minimum MB recording score for a hit to count. |
 | `ENERGY_LIBRARY_MISSING_FILE` | `missing-energy-library.txt` | **library mode:** ONE shared missing file for all library channels. Append it to `MISSING_FILES`. |
+| `ENERGY_DEAD_RUNS_THRESHOLD` | `48` | **Source-health (G1):** a previously producing channel counts as dead after this many runs with no new spin (~30 min/run → 48 ≈ 24 h of silence). |
+| `ENERGY_CANARY_DEAD_RUNS_THRESHOLD` | `4` | **Source-health (G1):** format canary – fires when this many runs in a row produce **no** valid spin from any active channel (≈ 2 h → a separator/type break in the ICY feed). |
+| `ENERGY_LIVENESS_INTERVAL_HOURS` | `24` | **Liveness (G2):** interval (h) of the daily re-probe of the known channel list. |
+| `ENERGY_LIVENESS_ON_START` | `1` | **Liveness (G2):** additionally probe once at start (`0` = off). |
+| `ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD` | `3` | **Liveness (G2):** alarm after this many consecutive dead probes of a channel that was once live (3 daily probes ≈ 3 days gone). |
+| `ENERGY_HEALTH_FILE` | `.charts-energy-health.json` | Sidecar health file (detector bookkeeping, **not** the dashboard payload) in `CHARTS_DIR`, loaded fail-open. |
 | `PUSHOVER_SOUND` | `falling` | Notification sound for this service. Empty = account default. |
 
 > Each `library` channel may carry an optional `decade` override in the JSON

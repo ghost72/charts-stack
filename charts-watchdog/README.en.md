@@ -97,6 +97,7 @@ all-clear:
 | `WATCH_CONTAINERS` | all stack containers | space-separated list |
 | `WATCH_INTERVAL_SECONDS` | `30` | poll interval |
 | `WATCH_DEBOUNCE_POLLS` | `2` | polls before a problem is reported |
+| `WATCH_TRANSIENT_DEBOUNCE_POLLS` | `8` | polls a transient state (created/starting/restarting) must persist before it counts as stuck (debounces brief restarts) |
 | `WATCH_RECOVER_POLLS` | `3` | OK polls before the all-clear |
 | `WATCH_COOLDOWN_SECONDS` | `1800` | quiet period after a message (per app) |
 | `WATCH_EXTERNAL_DEBOUNCE_SECONDS` | `600` | seconds continuously unreachable before a message (external services, default 10 min) |

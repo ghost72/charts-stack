@@ -13,15 +13,29 @@ Monitoring service of the `charts-*` family, together with
 
 ## What it shows
 
-- **Connections:** ONE overview of all external/dependent services with a
+- **Connections:** an overview of all external/dependent services with a
   consistent colour semantic – **green** = reachable/valid, **red** = configured
   but unreachable/invalid, **grey** = not configured, **yellow** = reachable but
-  limited (e.g. iTunes throttled). Covered: slskd (logged in to the Soulseek
-  server? active downloads), Lidarr, ListenBrainz, Deezer, Last.fm, iTunes,
-  Pushover and **FLASHBACK FM** (GraphQL live check of the LastPlayed query: a
-  dead persisted-query hash → red tile → signal "refresh `FLASHBACK_HASH`";
-  without a hash grey/muted). One glance shows every possible connection and its
-  live state.
+  limited (e.g. iTunes throttled). The tiles are grouped into **three labelled
+  role groups**:
+  - **Local services** – your own infrastructure: slskd (logged in to the
+    Soulseek server? active downloads) and Lidarr.
+  - **Chart sources** – where the charts/songs come from: Deezer, Last.fm,
+    **FLASHBACK FM** (GraphQL live check of the LastPlayed query: a dead
+    persisted-query hash → red tile → signal "refresh `FLASHBACK_HASH`"; without
+    a hash grey/muted) and **Energy (NRJ)** (⚡, live ICY reachability of the
+    Swiss NRJ Icecast stream that [`charts-energy`](../charts-energy) reads).
+  - **Helper services** – metadata/recommendation helpers, not chart sources:
+    **MusicBrainz** (🏷, live reachability of the metadata/year-lookup helper),
+    iTunes (covers), Pushover and **ListenBrainz** (it provides recommendations,
+    not charts, so it sits here rather than under chart sources).
+  - **Muted "not in use" state:** the **Energy (NRJ)** and **MusicBrainz** tiles
+    are not pinged when their feature is off; they show a greyed-out **"not in
+    use"** badge instead. This is driven by the existing `ENERGY_ENABLED` /
+    `MB_ENABLED` flags (set one to `0` and the matching tile is muted rather than
+    probed).
+
+  One glance shows every possible connection and its live state.
 - **Services:** per container the Docker state (running / healthy / stopped) in
   processing-chain order, plus the **exact run stats**: when the last run was,
   whether it succeeded, what it processed (e.g. "6 imported, 2 skipped") and the
@@ -93,6 +107,8 @@ Without a valid login the service refuses to start (the page may be exposed).
 | `LIDARR_URL` / `LIDARR_API_KEY` | – | optional, for the Lidarr check |
 | `LASTFM_API_KEY` | – | optional, for the Last.fm live check (empty = tile grey) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, for the Pushover `validate` check |
+| `ENERGY_ENABLED` | `0` | existing charts-energy flag – `0` mutes the Energy (NRJ) tile ("not in use") instead of pinging it |
+| `MB_ENABLED` | `1` | existing stack-wide flag – `0` mutes the MusicBrainz tile ("not in use") instead of pinging it |
 | `DASHBOARD_EXTERNAL_TTL` | `120` | cache TTL of the external live checks (seconds) |
 | `WATCH_CONTAINERS` | all charts services | which containers are shown – services **without** a status file (e.g. `charts-watchdog`, `charts-dashboard`) only appear if listed here |
 
