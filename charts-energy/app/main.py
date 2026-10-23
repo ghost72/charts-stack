@@ -277,6 +277,11 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
     for fr in feed_results:
         lines.append(t("energy.notify.feed_done",
                        theme=fr["theme"], count=fr["count"]))
+    # One shared note under the feed lines (not per line): feed tracks are not
+    # downloaded here, they are handed to charts-sync, which sorts them into the
+    # playlists on its next run.
+    if feed_results:
+        lines.append(t("energy.notify.feed_note"))
 
     # LIBRARY section (download-only channels): a summary line, then the songs
     # queued for download (capped) and the ones already present (uncapped, like
