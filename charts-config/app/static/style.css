@@ -180,7 +180,7 @@ body.login {
    vertical letter column in the narrow finder column. Instead single-line with
    a horizontal scroll; it does not need to be read, the copy button copies it
    in full. */
-.snip { display: flex; gap: 6px; align-items: center; max-width: 100%; min-width: 0; }
+.snip { display: flex; gap: 6px; align-items: flex-start; max-width: 100%; min-width: 0; }
 .snip code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .74rem; background: var(--bg); color: #c9bfe0;
@@ -190,8 +190,12 @@ body.login {
 /* Both copy buttons (Line + Block) sit side by side to the right of the code.
    The group never shrinks the code into nothing and may wrap its two buttons
    onto a second row on a very narrow viewport instead of overflowing. */
-.snip-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; }
-.snip-copy { flex: 0 0 auto; }
+/* The two copy buttons are STACKED (one above the other): the snippet cell is
+   tall enough, and stacking gives each button room for a clear, self-describing
+   label ("Copy for .env (one line)" / "Copy for JSON file (block)") instead of
+   cramming them side by side. */
+.snip-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.snip-copy { flex: 0 0 auto; white-space: nowrap; text-align: left; }
 .lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
 
