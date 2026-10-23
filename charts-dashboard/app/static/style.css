@@ -77,17 +77,22 @@ section h2 {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
-/* Small group label inside the connections grid. Spans the full row (all
-   columns) so the tiles after it wrap onto a fresh line, giving a light
-   subheading per group (local services / chart sources / helpers) without a
-   second heavy section. First label drops its top margin (the section h2 is
-   right above it). */
+/* Role sub-groups inside the connections section (local services / chart
+   sources / helpers) without a second heavy section. Each group is a
+   full-width label followed by its OWN tile grid. We deliberately do NOT use
+   grid-column:1/-1 on a label inside the main grid: the grid uses
+   repeat(auto-fill, ...), where the implicit last line that "-1" would target
+   is not resolved, so such a label renders as a single 240px cell instead of a
+   full row. A per-group grid sidesteps that entirely. */
 .conn-group {
-  grid-column: 1 / -1;
   font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--muted); margin: 10px 0 0;
+  color: var(--muted); margin: 14px 0 10px;
 }
 .conn-group:first-child { margin-top: 0; }
+.conn-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
 .tile {
   background: var(--tile);
   border-radius: 12px;
