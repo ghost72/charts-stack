@@ -12,6 +12,10 @@ env_*
 # charts.json.example stays versioned; charts.json itself is personal config
 # and is not tracked, so your own/private lists are never committed:
 charts-sync/charts.json
+# Local Energy channel definition file (optional, ENERGY_CHANNELS_FILE). Same
+# deal: energy-channels.json.example stays versioned, the real
+# energy-channels.json is personal config and is not tracked:
+charts-energy/energy-channels.json
 
 # Python artifacts
 __pycache__/
