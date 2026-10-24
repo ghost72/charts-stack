@@ -72,9 +72,10 @@ ENERGY_STREAM_HOST_TMPL = os.environ.get(
 )
 ENERGY_MAIN_SLUG = os.environ.get("ENERGY_MAIN_SLUG", "energymadeinswitzerland").strip()
 # Whether charts-energy is in use. Mirrors charts-energy's ENERGY_ENABLED
-# (default on there). When off, the Energy tile shows "muted" (not in use)
-# instead of pinging the stream - same treatment as FLASHBACK/Last.fm/Pushover.
-ENERGY_ENABLED = _get_bool("ENERGY_ENABLED", True)
+# (default OFF there: .env.example ENERGY_ENABLED=0, compose ${ENERGY_ENABLED:-false}).
+# When off, the Energy tile shows "muted" (not in use) instead of pinging the
+# stream - same treatment as FLASHBACK/Last.fm/Pushover.
+ENERGY_ENABLED = _get_bool("ENERGY_ENABLED", False)
 
 # --- Swiss Hitparade (hitparade.ch) reachability live check ---
 # charts-hitparade scrapes the official Swiss chart from hitparade.ch. The

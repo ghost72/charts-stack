@@ -1,6 +1,6 @@
 # charts-stack – EIN Projekt, alle Dienste zusammen.
 #
-# Alle 7 Dienste (slskd + die 6 charts-Dienste) in EINER compose.yml, mit EINER
+# Alle Dienste (slskd + die charts-Dienste) in EINER compose.yml, mit EINER
 # gemeinsamen .env im selben Ordner. So einfach wie moeglich:
 #
 #   1. cp .env.example .env   und die .env ausfuellen (eine einzige Datei!)
@@ -24,8 +24,8 @@ services:
   # kleine Dienst beruehrt den Docker-Socket (als root). Er laesst ausschliess-
   # lich LESENDE Abfragen durch (CONTAINERS, EVENTS, PING, VERSION) - POST ist
   # per Default blockiert, also KEIN Container-Start/-Stop/-exec moeglich.
-  # watchdog + dashboard laufen dadurch als unprivilegierter User (youruser) und
-  # reden nur ueber tcp://charts-docker-proxy:2375 - kein eigener Socket-Mount,
+  # watchdog + dashboard laufen dadurch unprivilegiert als PUID:PGID (nicht root)
+  # und reden nur ueber tcp://charts-docker-proxy:2375 - kein eigener Socket-Mount,
   # kein root. Minimale Angriffsflaeche (keine App-Logik im Proxy).
   charts-docker-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
@@ -675,7 +675,7 @@ services:
     image: docker:28-cli
     container_name: charts-watchdog
     restart: unless-stopped
-    # Laeuft als unprivilegierter User (youruser) - KEIN Socket-Mount, KEIN root.
+    # Laeuft unprivilegiert als PUID:PGID (nicht root) - KEIN Socket-Mount.
     # Der Zugriff auf die Docker-Engine geht ausschliesslich read-only ueber
     # den charts-docker-proxy (DOCKER_HOST). Der Watchdog liest nur Zustaende.
     user: "${PUID:-1027}:${PGID:-100}"
@@ -740,7 +740,7 @@ services:
     image: charts-dashboard:latest
     container_name: charts-dashboard
     restart: unless-stopped
-    # Unprivilegiert (youruser). Docker-Zugriff ausschliesslich read-only ueber
+    # Unprivilegiert als PUID:PGID (nicht root). Docker-Zugriff read-only ueber
     # den Proxy (DOCKER_HOST). Die Python-docker-SDK nutzt DOCKER_HOST
     # automatisch - kein Socket-Mount noetig.
     user: "${PUID:-1027}:${PGID:-100}"

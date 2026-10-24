@@ -68,8 +68,9 @@ Beim ersten Start legt slskd unter `SLSKD_CONFIG_DIR` (Default
 
 `slskd.yml` (in `SLSKD_CONFIG_DIR`) öffnen und zwei Dinge eintragen:
 
-**a) Soulseek-Account** (kostenlos auf dem Soulseek-Netz; die slskd-Doku
-beschreibt die Registrierung):
+**a) Soulseek-Account** – Benutzername und Passwort wählst du **selbst und
+registrierst sie beim ersten Login direkt in slskd** (keine Anmeldung auf einer
+Website; die slskd-Doku beschreibt den Ablauf):
 
 ```yaml
 soulseek:
@@ -110,7 +111,7 @@ docker compose up -d --build
 
 ## Netz
 
-Alle 7 Dienste laufen in **einem** compose-Projekt und teilen sich automatisch
+Alle Dienste laufen in **einem** compose-Projekt und teilen sich automatisch
 dessen Projekt-Netz – die charts-Dienste erreichen slskd über den Containernamen
 `http://slskd:5030`. Du musst **kein** Netz von Hand anlegen.
 
