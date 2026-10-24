@@ -431,53 +431,60 @@ def _walk_count_bytes(root: str) -> tuple[int, int]:
 
 def _library_counts(root: str) -> dict:
     """
-    System-friendly count of the library: directory entries over two levels
-    (artist folders + their album subfolders) plus an EXACT count of the audio
-    files (songs) encountered in the SAME single traversal. NO getsize over tens
-    of thousands of files - we only test the filename extension against the
-    shared _AUDIO_EXT tuple while already scanning each album folder.
+    System-friendly count of the library:
+      - artists = top-level folders, albums = their direct subfolders (two
+        scandir levels, cheap, system-friendly - NO getsize).
+      - songs = EXACT count of audio files anywhere BELOW the music root (full
+        recursive walk), so multi-disc / nested structures (e.g.
+        Artist/Album/CD1/..) are counted too, not only Artist/Album/ depth.
 
-    The song count is the most interesting number for a music library and is
-    produced WITHOUT a second pass: the album-level scandir already visits every
-    album folder, so counting the audio entries there adds no extra traversal.
+    Only PLAYABLE library songs are counted: non-library folders are skipped -
+    `.charts-trash` (replaced versions in the trash), `@eaDir` (Synology
+    thumbnails) and any hidden folder (name starting with '.'). The quarantine
+    (`_rejected`) and the slskd downloads live under CHARTS_DIR, not here (this
+    walks MUSIC_DIR), so they are out of scope by construction.
 
-    This function is expensive (~10s on HDD) and is therefore called only very
-    rarely (see _LIBRARY_TTL, default 24h).
+    Only the filename extension is tested against the shared _AUDIO_EXT tuple;
+    no getsize. This function is expensive (~10s on HDD) and is therefore called
+    only very rarely (see _LIBRARY_TTL, default 24h).
     Returns: {"artists", "albums", "songs"}
     """
     if not os.path.isdir(root):
         return {"artists": 0, "albums": 0, "songs": 0}
+
+    def _skip_dir(name: str) -> bool:
+        # Skip trash, Synology thumbnails and any hidden folder - these are not
+        # playable library content.
+        return name == "@eaDir" or name.startswith(".")
+
     artists = 0
     albums = 0
     songs = 0
+    # artists + albums: two cheap scandir levels (unchanged semantics, minus the
+    # skip-dir filter so a hidden/trash folder is not counted as an artist/album).
     try:
         with os.scandir(root) as it:
             for entry in it:
-                if not entry.is_dir():
+                if not entry.is_dir() or _skip_dir(entry.name):
                     continue
                 artists += 1
                 try:
                     with os.scandir(entry.path) as it2:
                         for sub in it2:
-                            if sub.is_dir():
+                            if sub.is_dir() and not _skip_dir(sub.name):
                                 albums += 1
-                                # Count audio files inside each album folder in
-                                # the same walk (shared _AUDIO_EXT, no getsize).
-                                try:
-                                    with os.scandir(sub.path) as it3:
-                                        for f in it3:
-                                            if (f.is_file() and f.name.lower()
-                                                    .endswith(_AUDIO_EXT)):
-                                                songs += 1
-                                except OSError:
-                                    pass
-                            elif (sub.is_file() and sub.name.lower()
-                                    .endswith(_AUDIO_EXT)):
-                                # Loose tracks sitting directly in an artist
-                                # folder (no album subfolder) still count.
-                                songs += 1
                 except OSError:
                     pass
+    except OSError:
+        pass
+    # songs: full recursive walk so nested (multi-disc) tracks are counted; prune
+    # the skip-dirs in-place so os.walk does not descend into them.
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not _skip_dir(d)]
+            for f in filenames:
+                if f.lower().endswith(_AUDIO_EXT):
+                    songs += 1
     except OSError:
         pass
     return {"artists": artists, "albums": albums, "songs": songs}
