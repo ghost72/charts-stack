@@ -73,7 +73,8 @@ docker exec charts-digest python -m app.main --now
 > The **sender name** shown on your phone is the **name of that Application** —
 > changeable only in the Pushover web UI (edit the Application), not via any
 > variable in this repo. Rename the app and new messages arrive under the new
-> name; already-delivered ones keep the old.
+> name; already-delivered ones keep the old. **Tip:** name the Application
+> `charts-stack` when you create it.
 
 ## Container
 

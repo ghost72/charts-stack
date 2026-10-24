@@ -359,7 +359,9 @@ genau dort sucht charts-import.
 > Der **Absendername** der Push-Nachricht ist der **Name dieser Application** –
 > änderbar **nur im Pushover-Web** (Application bearbeiten), nicht über eine
 > Variable in diesem Repo. Benennst du die App um, kommen neue Nachrichten unter
-> dem neuen Namen; bereits zugestellte behalten den alten.
+> dem neuen Namen; bereits zugestellte behalten den alten. **Tipp:** Nenne die
+> Pushover-Application beim Anlegen `charts-stack`, dann erscheinen die
+> Benachrichtigungen auf dem Handy unter diesem Namen.
 
 ### Installation (ein Projekt, eine `.env`)
 
