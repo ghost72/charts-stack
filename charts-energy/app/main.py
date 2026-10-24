@@ -285,6 +285,11 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
         to_load = library_results.get("to_load") or []
         present = library_results.get("present") or []
         lines.append("")
+        # Clarifying header so the library-mode channels (e.g. 80s/90s) are
+        # visibly a separate block: unlike feed channels they are download-only
+        # and have no "Playlist einsortiert" line, so without this label a user
+        # wonders why there is no third feed entry for the library.
+        lines.append(t("energy.notify.library_section"))
         lines.append(t("energy.notify.library_done",
                        matched=len(present), missing=len(to_load)))
         if to_load:
