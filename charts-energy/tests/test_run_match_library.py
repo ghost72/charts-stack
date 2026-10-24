@@ -36,9 +36,10 @@ def tmp_charts(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
     # No Pushover.
     monkeypatch.setattr(main.notify, "send", lambda *a, **k: None)
-    # Deterministic year resolution (no MB network): year = decade or "".
+    # Deterministic year resolution (no MB network): a real (non-fallback)
+    # year = decade or "" (so write_year_map stores a bare string, as before).
     monkeypatch.setattr(year_mod, "resolve_year",
-                        lambda a, t, decade: decade or "")
+                        lambda a, t, decade: (decade or "", False))
     return tmp_path
 
 

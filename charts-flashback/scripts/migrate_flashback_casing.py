@@ -59,7 +59,7 @@ Robustness:
 IMPORTANT - do NOT touch the year map: the year tags (date/originaldate) of the 7
 songs are already set correctly by hand and are NOT touched here (only folder and
 file names). The key in .charts-flashback-years.json is also lowercase
-'artist|title' (flashback main._key == charts-import importer._flashback_year,
+'artist|title' (flashback main._key == charts-import importer._hint_year,
 both .lower()); casing changes to the name do NOT change the key -> the year map
 stays valid, no intervention needed.
 """

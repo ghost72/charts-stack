@@ -21,17 +21,17 @@ import time
 
 from mutagen import File as MutagenFile
 
-from . import config, cover, quality, replaygain, tags
+from . import config, cover, quality, replaygain, tags, yearmap, mbyear
 from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-# charts-flashback year map (artist|title -> year). charts-flashback writes it
-# (see its main.write_year_map); we read it here to set the correct release
-# year as a tag WITHOUT ever having it in the file/folder name. Path: in the
-# shared charts folder. Loaded lazily once per run.
-_YEAR_MAP_FILE = os.path.join(config.DOWNLOADS_DIR, ".charts-flashback-years.json")
-_year_map: dict | None = None
+# Shared year map (artist|title -> year), written by charts-flashback AND
+# charts-energy (library mode); we read it here to set the correct release year
+# as a tag WITHOUT ever having it in the file/folder name, and charts-import
+# writes its own generic pending markers into it too. Path: in the shared charts
+# folder. Owned schema helpers live in app/yearmap.py.
+_YEAR_MAP_FILE = yearmap.YEAR_MAP_FILE
 
 # Import log (JSON Lines) for the daily summary (charts-digest). One line per
 # actually-filed song {ts, source, artist, title}. Append-only; charts-digest
@@ -55,26 +55,56 @@ def _append_import_log(source: str, artist: str, title: str) -> None:
         logger.debug(t("import.log.write_failed", path=_IMPORT_LOG_FILE, error=e))
 
 
-def _load_year_map() -> dict:
-    global _year_map
-    if _year_map is not None:
-        return _year_map
-    import json
-    try:
-        with open(_YEAR_MAP_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        _year_map = data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        _year_map = {}
-    return _year_map
+def _hint_year(artist: str, title: str) -> "tuple[str, bool]":
+    """
+    Year hint from the shared year map (key = lowercase 'artist|title'), written
+    by charts-flashback (always a real year) AND charts-energy library mode (a
+    real in-decade MB year OR a decade midpoint).
 
-
-def _flashback_year(artist: str, title: str) -> str:
-    """Year from the charts-flashback year map (key = lowercase 'artist|title').
-    Empty if the song is not from flashback / no year is known."""
+    Returns: (year, is_pending_fallback). `year` is the current best year on the
+    map value ("" if none). `is_pending_fallback` is True when the map value is a
+    pending object (a charts-energy midpoint still to be sharpened by the
+    backfill); False for a confirmed bare-string year (flashback real year, or an
+    in-decade MB year from energy) and for a missing entry.
+    """
     key = f"{(artist or '').lower()}|{(title or '').lower()}"
-    val = _load_year_map().get(key, "")
-    return str(val) if val else ""
+    val = yearmap.load().get(key)
+    return yearmap.year_of(val), yearmap.is_pending(val)
+
+
+def _ensure_pending_marker(artist: str, title: str, src: str,
+                           decade: str | None = None) -> None:
+    """
+    The ONLY place charts-import creates a GENERIC pending marker. Runs the
+    give-up guard first so a given-up song is never re-marked:
+
+      - if the key is already present as an object (a charts-energy decade
+        marker OR our own import-generic marker) -> already pending, return;
+      - if present as a bare string -> a confirmed year exists, return;
+      - if the lowercase 'artist|title' is a cached MB miss -> MB already gave
+        up on this song, return.
+
+    The object branch deliberately returns for BOTH src values (no src check),
+    preserving the no-re-mark property. Never blocks the import (OSError -> debug
+    log); does not change import_downloads's return arity.
+    """
+    key = f"{(artist or '').lower()}|{(title or '').lower()}"
+    try:
+        data = yearmap.load()
+        val = data.get(key)
+        if isinstance(val, dict):
+            return  # already pending (decade marker OR our own)
+        if isinstance(val, str) and val:
+            return  # a confirmed year exists
+        if mbyear.is_cached_miss(artist, title):
+            return  # MB already gave up on this song
+        data[key] = yearmap.make_pending(year="", src=src, decade=decade)
+        yearmap.rewrite(data)
+    except OSError:
+        # Fail-open: a missed marker only means the song is picked up by a later
+        # re-mark (subject to the cached-miss guard) or stays unmarked. No new
+        # i18n string for this rare debug case.
+        logger.debug("year marker write failed for %s - %s", artist, title)
 
 
 def _iter_audio_files(root: str):
@@ -477,11 +507,55 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             # Navidrome/charts-sync see correct values.
             if from_manifest:
                 # Year NOT from the file name/title (that polluted path+name
-                # before) - but from the charts-flashback year map, which maps
-                # artist|title -> year. This keeps the file name clean
-                # (Lidarr style) and only the tag carries the year.
-                year = _flashback_year(artist, title)
-                tags.write_tags(target, artist, title, album, year=year)
+                # before) - but a FREE year charts-import already has: the
+                # year-map hint (charts-flashback/charts-energy), else an
+                # existing Lidarr "(YYYY)" album folder. A download file's own
+                # embedded date is NEVER trusted (it is often the upload/encode
+                # year, not the release year). Precedence (Decision 3):
+                #   (a) year-map hint;
+                #   conflict: a PENDING midpoint hint vs. an existing Lidarr
+                #       "(YYYY)" folder -> the folder year WINS (confirm);
+                #   (c') an existing Lidarr "(YYYY)" album folder (read-only,
+                #       trustworthy by provenance) against an ALREADY-present
+                #       library match (never the fresh target);
+                #   else -> mark the song pending for the MB year backfill.
+                hint_year, hint_pending = _hint_year(artist, title)
+                folder_year = yearmap._album_folder_year(existing or "")
+                if hint_pending:
+                    # A charts-energy decade midpoint. Write the midpoint tag
+                    # (so the on-disk invariant holds for the backfill), but if
+                    # a trustworthy Lidarr "(YYYY)" folder exists it wins:
+                    # write + confirm that year, dropping the pending marker.
+                    if folder_year:
+                        tags.write_tags(target, artist, title, album,
+                                        year=folder_year)
+                        data = yearmap.load()
+                        yearmap.confirm(
+                            data, f"{artist.lower()}|{title.lower()}",
+                            folder_year)
+                        yearmap.rewrite(data)
+                        year = folder_year
+                    else:
+                        # Leave the charts-energy object in the map as-is (the
+                        # backfill sharpens it); just tag the midpoint on disk.
+                        tags.write_tags(target, artist, title, album,
+                                        year=hint_year)
+                        year = hint_year
+                elif hint_year:
+                    # Confirmed bare-string hint keeps precedence over (c').
+                    tags.write_tags(target, artist, title, album, year=hint_year)
+                    year = hint_year
+                elif folder_year:
+                    # (c') provenance-trustworthy on-disk year -> resolved, no
+                    # pending marker.
+                    tags.write_tags(target, artist, title, album, year=folder_year)
+                    year = folder_year
+                else:
+                    # No free year -> write base tags (no year) and mark the
+                    # song pending for the MB backfill (cached-miss guard
+                    # inside).
+                    tags.write_tags(target, artist, title, album)
+                    _ensure_pending_marker(artist, title, src="import-generic")
                 logger.info(t("import.file.tags_set", artist=artist, title=title,
                               album=album))
                 # Find a matching cover via COVER_SOURCES (iTunes->Deezer) and

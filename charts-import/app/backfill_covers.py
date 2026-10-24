@@ -95,48 +95,58 @@ def _iter_mp3(root: str):
                 yield os.path.join(dirpath, name)
 
 
-def _iter_manifest_mp3(music_dir: str):
+def build_manifest_index(music_dir: str) -> "dict[str, list[str]]":
     """
-    Yields the MP3 paths of ALL songs ever loaded by charts-download, by
-    reading the manifest (MANIFEST_FILE). Unlike _iter_playlist_mp3 this also
-    covers chart songs that are currently in NO playlist anymore (e.g. fell out
-    of the charts) but still sit in the library.
+    Build the manifest -> on-disk index of ALL songs ever loaded by
+    charts-download, by reading the manifest (MANIFEST_FILE).
+
+    Returns a dict keyed by the normalised lowercase
+    'f"{_clean_component(artist).lower()}|{_title_key(title)}"' -> list of ALL
+    matching MP3 paths (deduped by absolute path, in os.walk order). The SAME
+    'artist|title' can legitimately resolve to several files (e.g. a
+    charts-download single AND a Lidarr '(YYYY)' album track); every match is
+    kept so the cover/ReplayGain pass visits exactly the file set it did before
+    the refactor. The year pass picks ONE target deterministically (see
+    backfill._select_year_target).
 
     Your rest of the (Lidarr) library stays untouched, because only files from
-    the manifest are considered. The song is located via artist/album/title
-    from the manifest in MUSIC_DIR (the file basename in the manifest is the
-    download name, not necessarily the final library path - so we search via
-    the tags/the title in the artist folder).
+    the manifest are considered. The song is located via artist/title from the
+    manifest in MUSIC_DIR (the file basename in the manifest is the download
+    name, not necessarily the final library path - so we search via the title
+    in the artist folder).
     """
     import json
 
-    seen: set[str] = set()
+    index: "dict[str, list[str]]" = {}
     try:
         with open(config.MANIFEST_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         entries = data.get("entries", {}) if isinstance(data, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
         logger.error(t("import.covers.manifest_unreadable", path=config.MANIFEST_FILE, error=e))
-        return
+        return index
     if not entries:
         logger.warning(t("import.covers.manifest_empty", path=config.MANIFEST_FILE))
-        return
+        return index
 
     logger.info(t("import.covers.manifest_scan", count=len(entries), music_dir=music_dir))
-    # Build the index title(normalized) -> paths in MUSIC_DIR once.
     from .importer import _title_key, _extract_title_from_filename
-    for artist_entry, meta in entries.items():
+    from .tags import _clean_component
+    # Dedup by absolute path across the whole index (the former single `seen`
+    # set), so a file reachable from two manifest entries is listed once.
+    seen: set[str] = set()
+    for _artist_entry, meta in entries.items():
         artist = (meta or {}).get("artist", "")
         title = (meta or {}).get("title", "")
         if not artist or not title:
             continue
-        # Determine the (cleaned) artist folder.
-        from .tags import _clean_component
         safe_artist = _clean_component(artist, "Unknown Artist")
         artist_dir = os.path.join(music_dir, safe_artist)
         if not os.path.isdir(artist_dir):
             continue
         want = _title_key(title)
+        key = f"{safe_artist.lower()}|{want}"
+        bucket = index.setdefault(key, [])
         # Search the artist folder for a file with a matching title.
         for dirpath, _d, files in os.walk(artist_dir):
             for name in files:
@@ -146,7 +156,19 @@ def _iter_manifest_mp3(music_dir: str):
                     p = os.path.normpath(os.path.join(dirpath, name))
                     if p not in seen:
                         seen.add(p)
-                        yield p
+                        bucket.append(p)
+    return index
+
+
+def _iter_manifest_mp3(music_dir: str):
+    """
+    Yields the MP3 paths of ALL songs ever loaded by charts-download. Thin
+    wrapper over build_manifest_index so the cover/ReplayGain pass yields the
+    SAME set of files as before the index refactor (every matching path across
+    album subfolders, deduped by absolute path).
+    """
+    for paths in build_manifest_index(music_dir).values():
+        yield from paths
 
 
 def _iter_playlist_mp3(playlist_dir: str, music_dir: str):

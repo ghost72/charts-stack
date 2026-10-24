@@ -79,7 +79,7 @@ def poll_once() -> int:
 
 
 def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
-                           out_missing: list[tuple[int, str, str, str]],
+                           out_missing: list[tuple[int, str, str, str, bool, str]],
                            out_present: list[tuple[str, str, str]]) -> int:
     """
     Match one LIBRARY-mode channel against the library (no .m3u written).
@@ -89,8 +89,11 @@ def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
     to the channel decade) and look it up in the library.
       - present -> appended to out_present as (artist, title, year); year is
         resolved only for the notify body, NEVER written to the year map.
-      - missing -> appended to out_missing as (pos, artist, title, year), where
-        pos is the running position across all library channels.
+      - missing -> appended to out_missing as the 6-tuple (pos, artist, title,
+        year, is_fallback, decade), where pos is the running position across all
+        library channels. is_fallback (from resolve_year) tells the year-map
+        writer a decade midpoint from a real in-decade year; decade carries the
+        channel "from" year so a midpoint can later be clamped.
     Returns the updated running position.
     """
     matched = 0
@@ -99,14 +102,14 @@ def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
     for entry in tracks:
         artist = entry.get("artist", "")
         title = entry.get("title", "")
-        yr = year_mod.resolve_year(artist, title, channel.decade)
+        yr, is_fallback = year_mod.resolve_year(artist, title, channel.decade)
         track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
         if track:
             out_present.append((artist, title, yr))
             matched += 1
         else:
             pos += 1
-            out_missing.append((pos, artist, title, yr))
+            out_missing.append((pos, artist, title, yr, is_fallback, channel.decade))
             missing += 1
     logger.info(t("energy.channel.library_done", slug=channel.slug,
                   matched=matched, missing=missing))
@@ -147,9 +150,10 @@ def run_match() -> dict:
     feed_themes: dict[str, list[list[dict]]] = {}
     results: list[dict] = []
     # LIBRARY-mode accumulators, shared across all library channels (one missing
-    # file + the shared year map). 4-tuple (pos, artist, title, year) for the
-    # missing songs; 3-tuple (artist, title, year) for the present ones.
-    library_missing: list[tuple[int, str, str, str]] = []
+    # file + the shared year map). 6-tuple (pos, artist, title, year,
+    # is_fallback, decade) for the missing songs; 3-tuple (artist, title, year)
+    # for the present ones.
+    library_missing: list[tuple[int, str, str, str, bool, str]] = []
     library_present: list[tuple[str, str, str]] = []
     lib_pos = 0
 
@@ -298,7 +302,7 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
                            count=len(to_load)))
             limit = config.NOTIFY_MISSING_LIMIT
             shown = to_load[:limit] if limit > 0 else to_load
-            for _pos, artist, title, yr in shown:
+            for _pos, artist, title, yr, *_rest in shown:
                 lines.append(_library_song_line(artist, title, yr))
             if limit > 0 and len(to_load) > limit:
                 lines.append(t("notify.missing.more", count=len(to_load) - limit))

@@ -296,14 +296,26 @@ Determines artist/album/title in this order:
    `album`), so that Navidrome and `charts-sync` see correct values. The album
    is thereby set to the title (chart songs are singles), so nothing lands under
    "Unknown Album".
-   **Year tag:** `charts-import` additionally reads the year map
-   `.charts-flashback-years.json` (in the Charts folder, written by
-   `charts-flashback`; key = lowercase `artist|title`, `_flashback_year`). If a
-   year is found there, `charts-import` sets the `date`/`originaldate` tags – for
-   the decade smart playlists in Navidrome. If the entry is absent (all other
-   services), the date tags are left untouched – no overwriting of existing
-   years. The year thus lives **only** in the tag, **never** in the file/folder
-   name.
+   **Year tagging + year backfill for ALL sources:** `charts-import` guarantees
+   a release-year tag on **every** imported song, so Navidrome's decade smart
+   playlists show songs from all sources (not only
+   `charts-energy`/`charts-flashback`). At import a **free** year is written:
+   the hint from the year map `.charts-flashback-years.json` (in the Charts
+   folder, written by `charts-flashback` **and** `charts-energy` library mode;
+   key = lowercase `artist|title`, `_hint_year`) or – if the song already sits
+   in a Lidarr `(YYYY)` album folder – that folder year. A freshly downloaded
+   file's own embedded date is **never** trusted (it is often the upload/encode
+   year, not the release year). Songs with no free year are marked **pending**
+   in the year map. The periodic backfill (folded into the cover/ReplayGain
+   catch-up) resolves the pending songs over time against **MusicBrainz** –
+   rate-limited, capped per pass, mtime-preserving: it corrects the
+   **charts-energy library-mode decade midpoints** to the real year and fills
+   the `sync`/`hitparade` songs. `charts-energy`/`charts-flashback` still
+   pre-resolve their years (`charts-energy` with a decade-midpoint fallback,
+   `charts-flashback` with a title-suffix/MB year). Knobs:
+   `YEAR_BACKFILL_ENABLED`, `YEAR_BACKFILL_LIMIT`, `YEAR_BACKFILL_MAX_TRIES`
+   (see `.env.example`). The year thus lives **only** in the tag, **never** in
+   the file/folder name; an existing good year is never overwritten by a guess.
 2. **File tags** (`mutagen`, `albumartist` preferred).
 3. **Fallback** to the filename or `Unknown Artist` / `Unknown Album`.
 
