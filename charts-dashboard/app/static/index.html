@@ -469,8 +469,14 @@ function render(d) {
   // MusicBrainz (WAN, Live-Ping). Metadaten-Helfer (Jahr-Auflösung fuer
   // charts-energy/-flashback), KEINE Chart-Quelle -> Hilfsdienst. Nicht genutzt
   // (MB_ENABLED=false) -> muted, wie FLASHBACK/Last.fm/Pushover.
+  // MusicBrainz is a free, rate-limited community service with frequent brief
+  // outages (503/timeout). It is only a non-critical helper (year resolution
+  // with a decade-midpoint fallback), so an unreachable ping softens to warn
+  // (amber), NOT err (red) - like iTunes, which is never red. muted when off.
   const mb = ext.musicbrainz || {};
-  helpers.push(tile(!mb.configured ? "muted" : (mb.ok ? "ok" : "err"), t("tile.title.musicbrainz"), [
+  let mbCls = "muted";
+  if (mb.configured) mbCls = mb.ok ? "ok" : "warn";
+  helpers.push(tile(mbCls, t("tile.title.musicbrainz"), [
     !mb.configured ? t("tile.not_in_use") : (mb.ok ? t("tile.reachable") : t("tile.not_reachable")),
     mb.detail || "",
   ].filter(Boolean)));
@@ -835,7 +841,8 @@ function render(d) {
       lib.artists == null
         ? [t("storage.counting")]
         : [t("storage.artists", {n: lib.artists.toLocaleString("de-CH")}),
-           t("storage.albums", {n: (lib.albums ?? 0).toLocaleString("de-CH")})]),
+           t("storage.albums", {n: (lib.albums ?? 0).toLocaleString("de-CH")}),
+           t("storage.songs", {n: (lib.songs ?? 0).toLocaleString("de-CH")})]),
     tile("info", t("storage.charts_share"), [
       t("storage.files", {n: (s.charts_files ?? "–")}),
       fmtBytes(s.charts_bytes),
@@ -843,6 +850,7 @@ function render(d) {
     // Quarantaene ist normal (wird eh automatisch nach 14 Tagen geleert) -
     // nur warnen, wenn sie ungewoehnlich gross wird (> 2 GB).
     tile((s.rejected_bytes ?? 0) > 2e9 ? "warn" : "info", t("storage.quarantine"), [
+      t("storage.quarantine_desc"),
       t("storage.files", {n: (s.rejected_files ?? "–")}),
       fmtBytes(s.rejected_bytes),
     ]),

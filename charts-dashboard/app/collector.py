@@ -431,22 +431,25 @@ def _walk_count_bytes(root: str) -> tuple[int, int]:
 
 def _library_counts(root: str) -> dict:
     """
-    System-friendly count of the library: ONLY directory entries over two
-    levels (artist folders + their album subfolders). NO file walk, NO getsize
-    over tens of thousands of files.
+    System-friendly count of the library: directory entries over two levels
+    (artist folders + their album subfolders) plus an EXACT count of the audio
+    files (songs) encountered in the SAME single traversal. NO getsize over tens
+    of thousands of files - we only test the filename extension against the
+    shared _AUDIO_EXT tuple while already scanning each album folder.
 
-    DELIBERATELY no song count is estimated - the library contains many
-    single/chart folders with only 1 track, a blanket "per album" factor would
-    be strongly misleading. Only the EXACTLY counted artists + albums are shown.
+    The song count is the most interesting number for a music library and is
+    produced WITHOUT a second pass: the album-level scandir already visits every
+    album folder, so counting the audio entries there adds no extra traversal.
 
     This function is expensive (~10s on HDD) and is therefore called only very
     rarely (see _LIBRARY_TTL, default 24h).
-    Returns: {"artists", "albums"}
+    Returns: {"artists", "albums", "songs"}
     """
     if not os.path.isdir(root):
-        return {"artists": 0, "albums": 0}
+        return {"artists": 0, "albums": 0, "songs": 0}
     artists = 0
     albums = 0
+    songs = 0
     try:
         with os.scandir(root) as it:
             for entry in it:
@@ -458,11 +461,26 @@ def _library_counts(root: str) -> dict:
                         for sub in it2:
                             if sub.is_dir():
                                 albums += 1
+                                # Count audio files inside each album folder in
+                                # the same walk (shared _AUDIO_EXT, no getsize).
+                                try:
+                                    with os.scandir(sub.path) as it3:
+                                        for f in it3:
+                                            if (f.is_file() and f.name.lower()
+                                                    .endswith(_AUDIO_EXT)):
+                                                songs += 1
+                                except OSError:
+                                    pass
+                            elif (sub.is_file() and sub.name.lower()
+                                    .endswith(_AUDIO_EXT)):
+                                # Loose tracks sitting directly in an artist
+                                # folder (no album subfolder) still count.
+                                songs += 1
                 except OSError:
                     pass
     except OSError:
         pass
-    return {"artists": artists, "albums": albums}
+    return {"artists": artists, "albums": albums, "songs": songs}
 
 
 _library_lock = threading.Lock()
@@ -500,7 +518,7 @@ def _library_stats() -> dict:
                 threading.Thread(target=_library_refresh_bg, daemon=True).start()
     if _library_cache is not None:
         return _library_cache
-    return {"artists": None, "albums": None, "pending": True}
+    return {"artists": None, "albums": None, "songs": None, "pending": True}
 
 
 def _dir_stats() -> dict:
