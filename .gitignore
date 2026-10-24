@@ -25,6 +25,8 @@ __pycache__/
 # Agent/task working files and OS clutter
 .agents/
 .DS_Store
+# Local git worktrees (e.g. .worktrees/github-ready); never committed.
+.worktrees/
 
 # Internal planning notes (not for public release)
 docs/

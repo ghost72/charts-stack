@@ -7,9 +7,13 @@ listening habits into music playlists for **Navidrome** and fills missing songs
 via **Soulseek (slskd)**. A "Spotify-like" experience for your own music
 collection – no subscription, fully local.
 
-> ⚠️ **Legal notice:** This project downloads music over the Soulseek P2P
-> network. Only download content you are entitled to. You are responsible for
-> complying with copyright law in your country.
+> ⚠️ **Legal notice / Disclaimer.** charts-stack is a personal-use tool. It
+> automates downloads over the Soulseek P2P network and can fetch copyrighted
+> material. You are solely responsible for using it in compliance with the
+> copyright and licensing laws of your jurisdiction, and for only downloading
+> content you are legally entitled to. The authors provide this software "as is",
+> for lawful personal use only, and accept no responsibility or liability for any
+> misuse or for any legal consequences arising from its use. See LICENSE.
 
 ![charts-stack dashboard](screenshots/services.png)
 
@@ -327,6 +331,15 @@ CHARTS_LANG=        # empty = English (default) | de = German | fr = French
 A test (`charts-sync/tests/test_i18n.py`) ensures all shipped language files
 carry the same keys and placeholders.
 
+### Contributing & Issues
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
+opening a pull request – it covers the commit/comment language, the i18n parity
+rule and how to run a service's tests. Found a bug or have an idea? Open an issue
+in the [issue tracker](../../issues) (a bug report template is provided). For
+**security** problems, do **not** open a public issue – see
+[SECURITY.md](SECURITY.md) for the private reporting channel.
+
 ### License
 
 MIT – see [LICENSE](LICENSE).
@@ -334,6 +347,15 @@ MIT – see [LICENSE](LICENSE).
 ---
 
 ## Deutsch
+
+> ⚠️ **Rechtlicher Hinweis / Haftungsausschluss.** charts-stack ist ein Werkzeug
+> für den persönlichen Gebrauch. Es automatisiert Downloads über das
+> Soulseek-P2P-Netzwerk und kann urheberrechtlich geschütztes Material laden. Du
+> bist allein dafür verantwortlich, es im Einklang mit dem Urheber- und
+> Lizenzrecht deines Landes zu nutzen und ausschließlich Inhalte zu laden, zu
+> denen du berechtigt bist. Die Software wird „wie besehen", ausschließlich für
+> den rechtmäßigen privaten Gebrauch bereitgestellt; die Autoren übernehmen keine
+> Verantwortung oder Haftung für Missbrauch oder rechtliche Folgen. Siehe LICENSE.
 
 ### Was macht der Stack?
 
@@ -611,6 +633,12 @@ Container-Start/-Stop). Dashboard und Watchdog laufen dadurch als
 unprivilegierter User, nicht als root. Die Lauf-Statistik stammt aus kleinen
 JSON-Dateien, die jeder Dienst in `Charts/.charts-status/` schreibt.
 
+| Dashboard: Live-Verbindungen | charts-config: Quellen-Finder |
+| --- | --- |
+| ![Dashboard Live-Verbindungen](screenshots/connections.png) | ![charts-config Quellen-Finder](screenshots/source_finder.png) |
+| charts-config: Energy-Kanal-Browser | |
+| ![charts-config Energy-Kanal-Browser](screenshots/energy_channels_finder.png) | |
+
 ### Secrets & Portabilität
 
 - **Keine Secrets im Repo.** Alle Keys/Passwörter kommen aus der `.env` (per
@@ -656,6 +684,16 @@ CHARTS_LANG=        # leer = Englisch (Default) | de = Deutsch | fr = Français
 
 Ein Test (`charts-sync/tests/test_i18n.py`) stellt sicher, dass alle
 mitgelieferten Sprachdateien dieselben Schlüssel und Platzhalter haben.
+
+### Mitwirken & Issues
+
+Beiträge sind willkommen. Bitte lies [CONTRIBUTING.md](CONTRIBUTING.md), bevor du
+einen Pull Request öffnest – dort stehen die Sprache für Commits/Kommentare, die
+i18n-Parität und wie du die Tests eines Dienstes ausführst. Einen Fehler
+gefunden oder eine Idee? Öffne ein Issue im
+[Issue-Tracker](../../issues) (eine Bug-Report-Vorlage ist hinterlegt). Für
+**Sicherheitsprobleme** bitte **kein** öffentliches Issue öffnen – der private
+Meldeweg steht in [SECURITY.md](SECURITY.md).
 
 ### Lizenz
 
