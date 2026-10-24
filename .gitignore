@@ -24,6 +24,8 @@ __pycache__/
 
 # Local workspace files and OS clutter
 .DS_Store
+# Local git worktrees (e.g. .worktrees/github-ready); never committed.
+.worktrees/
 
 # Internal planning notes (not for public release)
 docs/
