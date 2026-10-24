@@ -28,13 +28,19 @@ re-resolved. Can be disabled via BACKFILL_RECANON=0.
 import json
 import logging
 import os
+import re
 import time
 
-from . import config, cover, recanon, replaygain
-from .backfill_covers import _iter_manifest_mp3, _read_artist_title
+from mutagen import File as MutagenFile
+
+from . import config, cover, mbyear, recanon, replaygain, tags, yearmap
+from .backfill_covers import (_iter_manifest_mp3, _read_artist_title,
+                              build_manifest_index)
 from .i18n import t
 
 logger = logging.getLogger("charts-import.backfill")
+
+_YEAR_FOLDER_RE = re.compile(r"\((\d{4})\)")
 
 # Timestamp of the last backfill run (monotonic clock, process-local). None =
 # never run -> the first scheduler tick after start triggers it.
@@ -109,6 +115,9 @@ def run_once() -> dict:
             logger.info(t("import.backfill.limit_reached", limit=config.BACKFILL_LIMIT))
             break
 
+    # --- Release-year backfill for all pending songs (MusicBrainz) ---
+    year_result = _year_pass(music_dir)
+
     # --- UPPERCASE flashback names against the official Deezer spelling ---
     recanon_fixed, recanon_manual = _recanon_pass(music_dir)
 
@@ -122,7 +131,208 @@ def run_once() -> dict:
         "recanon_fixed": recanon_fixed,
         "recanon_manual": recanon_manual,
         "errors": errors,
+        "year_corrected": year_result["corrected"],
+        "year_adopted": year_result["adopted"],
+        "year_kept": year_result["kept"],
+        "year_gave_up": year_result["gave_up"],
+        "year_errors": year_result["errors"],
     }
+
+
+def _write_year_tag(path: str, year: str) -> None:
+    """
+    Write ONLY the release year (date + originaldate) into a library file,
+    mtime-preserving. Mirrors tags.write_tags's save sequence minus the
+    artist/title/album writes, so canonical spelling and the Deezer UPPERCASE
+    path are left undisturbed. PRESERVE_MTIME keeps "date added" stable.
+    """
+    with tags.preserve_mtime(path):
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            logger.debug(t("import.tags.not_writable", path=path))
+            return
+        audio["date"] = str(year)
+        audio["originaldate"] = str(year)
+        audio.save()
+    tags.strip_provenance_tags(path)
+
+
+def _select_year_target(paths: "list[str]") -> str:
+    """
+    Deterministically pick the ONE file the year pass inspects/retags when a
+    manifest key maps to several paths: (1) prefer the path whose album-folder
+    component matches "(YYYY)" (the Lidarr-managed copy with a trustworthy
+    year); (2) else the lexicographically first path.
+    """
+    for p in sorted(paths):
+        for comp in p.replace("\\", "/").split("/"):
+            if _YEAR_FOLDER_RE.search(comp):
+                return p
+    return sorted(paths)[0]
+
+
+def _split_key(key: str) -> "tuple[str, str]":
+    """Split a year-map key on the FIRST '|' into (artist_raw, title_raw)."""
+    if "|" in key:
+        a, t_ = key.split("|", 1)
+        return a, t_
+    return key, ""
+
+
+def _norm_lookup_key(artist_raw: str, title_raw: str) -> str:
+    """Normalised manifest-index lookup key for a raw year-map artist/title,
+    matching build_manifest_index's keying (clean artist folder + _title_key)."""
+    from .importer import _title_key
+    safe_artist = tags._clean_component(artist_raw, "Unknown Artist")
+    return f"{safe_artist.lower()}|{_title_key(title_raw)}"
+
+
+def _year_pass(music_dir: str) -> dict:
+    """
+    Resolve pending year-map objects against MusicBrainz, rate-limited and
+    capped per pass (Decision 5). Iterates ONLY the pending objects in the year
+    map, builds the manifest index once, locates each file via the normalised
+    key, clamps charts-energy decade fallbacks to the channel decade, writes a
+    strictly-better year (mtime-preserving), confirms/gives-up, and honours
+    YEAR_BACKFILL_ENABLED / YEAR_BACKFILL_LIMIT / YEAR_BACKFILL_MAX_TRIES.
+    Returns a counter dict. Per-song errors never abort the pass.
+    """
+    result = {"corrected": 0, "adopted": 0, "kept": 0, "gave_up": 0, "errors": 0}
+    if not config.YEAR_BACKFILL_ENABLED:
+        return result
+
+    data = yearmap.load()
+    pending = [(k, v) for k, v in data.items() if yearmap.is_pending(v)]
+    if not pending:
+        return result
+
+    logger.info(t("import.yearfill.started", count=len(pending)))
+    index = build_manifest_index(music_dir)
+    dirty = False
+    queries = 0
+
+    for key, obj in pending:
+        artist_raw, title_raw = _split_key(key)
+        # Locate the on-disk file via the normalised manifest index.
+        paths = index.get(_norm_lookup_key(artist_raw, title_raw))
+        if not paths:
+            # File not on disk yet / not in the manifest: silent skip, marker
+            # stays, retried next pass (no new i18n string for this debug case).
+            logger.debug("year pass: file not locatable for %s - %s",
+                         artist_raw, title_raw)
+            continue
+        path = _select_year_target(paths)
+
+        decade = str(obj.get("decade") or "")
+        decade_valid = bool(re.fullmatch(r"\d{4}", decade))
+        src = str(obj.get("src") or "")
+        if src not in ("energy-library", "import-generic"):
+            # Scope guard: unknown provenance -> never touched (no MB, no write).
+            continue
+
+        try:
+            # A Lidarr "(YYYY)" folder retag since import -> adopt that
+            # provenance-trustworthy year, no MB call.
+            file_year = yearmap._album_folder_year(path)
+            if file_year:
+                yearmap.confirm(data, key, file_year)
+                dirty = True
+                result["adopted"] += 1
+                logger.info(t("import.yearfill.adopted", artist=artist_raw,
+                              title=title_raw, year=file_year))
+                continue
+
+            # Per-pass MB budget: peek the cache first (no network); only issue
+            # a LIVE query when under the cap. The cap check is BEFORE the live
+            # call so query LIMIT+1 (and its MB_RATE_SLEEP) never runs.
+            if mbyear.is_cached(artist_raw, title_raw):
+                new, ok, _was_cached = mbyear.resolve_mb_year(artist_raw, title_raw)
+            else:
+                if queries >= config.YEAR_BACKFILL_LIMIT:
+                    logger.info(t("import.yearfill.skipped_cap",
+                                  limit=config.YEAR_BACKFILL_LIMIT))
+                    break
+                new, ok, _was_cached = mbyear.resolve_mb_year(artist_raw, title_raw)
+                queries += 1
+
+            if not ok:
+                # Transient MB/network error: leave marker, do NOT bump tries.
+                continue
+
+            if decade_valid:                       # DECADE-AWARE (energy-library)
+                frm = int(decade)
+                if new and frm <= int(new) <= frm + 9 and new != obj.get("year"):
+                    _write_year_tag(path, new)
+                    yearmap.confirm(data, key, new)
+                    dirty = True
+                    result["corrected"] += 1
+                    logger.info(t("import.yearfill.corrected", artist=artist_raw,
+                                  title=title_raw, year=new))
+                elif new and frm <= int(new) <= frm + 9 and new == obj.get("year"):
+                    # Promote, NO rewrite: the midpoint was already written to
+                    # the file tag at import, so disk == new; only collapse the
+                    # map object to the bare string.
+                    yearmap.confirm(data, key, new)
+                    dirty = True
+                    result["corrected"] += 1
+                    logger.info(t("import.yearfill.corrected", artist=artist_raw,
+                                  title=title_raw, year=new))
+                else:                              # MB empty / out of decade
+                    if _bump_or_give_up(data, key, obj, "midpoint",
+                                        artist_raw, title_raw, result):
+                        dirty = True
+            else:                                  # GENERIC (no valid decade)
+                if new:
+                    _write_year_tag(path, new)
+                    yearmap.confirm(data, key, new)
+                    dirty = True
+                    result["corrected"] += 1
+                    logger.info(t("import.yearfill.corrected", artist=artist_raw,
+                                  title=title_raw, year=new))
+                else:
+                    if _bump_or_give_up(data, key, obj, "delete+cache",
+                                        artist_raw, title_raw, result):
+                        dirty = True
+        except Exception as e:  # a broken song must not abort the pass
+            result["errors"] += 1
+            logger.warning(t("import.tags.write_failed", path=path, error=e))
+
+    if dirty:
+        try:
+            yearmap.rewrite(data)
+        except OSError as e:
+            logger.warning(t("import.yearfill.mb_cache_write_failed", error=e))
+
+    logger.info(t("import.yearfill.done", corrected=result["corrected"],
+                  kept=result["kept"], gave_up=result["gave_up"],
+                  errors=result["errors"]))
+    return result
+
+
+def _bump_or_give_up(data: dict, key: str, obj: dict, give_up_as: str,
+                     artist: str, title: str, result: dict) -> bool:
+    """
+    Increment the try counter FIRST; give up on the pass where tries reaches
+    YEAR_BACKFILL_MAX_TRIES. On give-up a decade fallback is confirmed to the
+    bare-string midpoint; a generic song is deleted from the map AND its MB miss
+    is cached (so it is not re-marked). Otherwise the object keeps the bumped
+    tries for the next pass. Returns True when the map changed.
+    """
+    tries = int(obj.get("tries", 0)) + 1
+    if tries >= config.YEAR_BACKFILL_MAX_TRIES:
+        if give_up_as == "midpoint":
+            yearmap.confirm(data, key, obj.get("year", ""))
+        else:
+            yearmap.give_up(data, key)
+            mbyear.cache_miss(artist, title)
+        result["gave_up"] += 1
+        logger.info(t("import.yearfill.gave_up", tries=tries, artist=artist,
+                      title=title))
+        return True
+    obj["tries"] = tries
+    result["kept"] += 1
+    logger.info(t("import.yearfill.kept", artist=artist, title=title, tries=tries))
+    return True
 
 
 def _recanon_pass(music_dir: str) -> "tuple[int, int]":

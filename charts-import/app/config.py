@@ -167,6 +167,46 @@ BACKFILL_LIMIT = _get_int("BACKFILL_LIMIT", 0)
 # folder/file + updates tags/manifest). 1 = on, 0 = off.
 BACKFILL_RECANON = _get_bool("BACKFILL_RECANON", True)
 
+# --- Year backfill (release-year tagging for ALL imported songs) ---
+# charts-import guarantees a release-year tag on every imported song (so
+# Navidrome's decade smart playlists show songs from EVERY source, not only
+# charts-energy/charts-flashback). At import time a free year is written (the
+# energy/flashback year-map hint, or an existing Lidarr "(YYYY)" album folder);
+# everything else is marked pending in the shared year map. This year pass -
+# folded into the periodic cover/ReplayGain backfill - resolves the pending
+# songs against MusicBrainz over time: rate-limited, capped per pass, decade-
+# clamped only for charts-energy midpoint fallbacks, mtime-preserving.
+# Master switch for the year pass only (0 = the pass is a no-op; the
+# cover/ReplayGain backfill keeps running independently).
+YEAR_BACKFILL_ENABLED = _get_bool("YEAR_BACKFILL_ENABLED", True)
+# Max LIVE MusicBrainz queries per pass (cache hits do not count). At
+# ~1.1s/query this bounds the daily MB traffic; a backlog drains over several
+# passes.
+YEAR_BACKFILL_LIMIT = _get_int("YEAR_BACKFILL_LIMIT", 50)
+# Give-up after this many failed re-resolve attempts: a decade fallback keeps
+# its in-decade midpoint; a generic song drops its marker and the MB miss is
+# cached so it is not re-marked.
+YEAR_BACKFILL_MAX_TRIES = _get_int("YEAR_BACKFILL_MAX_TRIES", 6)
+
+# --- MusicBrainz year resolution (for the year backfill) ---
+# These constants mirror charts-energy so the MB machinery copied into
+# app/mbyear.py dereferences them unedited. HTTP_TIMEOUT (defined above, 15s) is
+# reused - no separate MB timeout constant is added.
+MB_ENABLED = _get_bool("MB_ENABLED", True)
+# Constant name stays MB_USER_AGENT (the copied _mb_year reads
+# config.MB_USER_AGENT); the env var is MB_USER_AGENT_IMPORT so charts-import
+# and charts-energy can carry different User-Agents.
+MB_USER_AGENT = os.environ.get("MB_USER_AGENT_IMPORT",
+                               "charts-import/1.0 (self-hosted)")
+# Rate limit: MusicBrainz allows ~1 request/second. 1.1s buffer.
+MB_RATE_SLEEP = _get_float("MB_RATE_SLEEP", 1.1)
+# Minimum score of a recording hit for it to be considered.
+MB_SCORE_MIN = _get_int("MB_SCORE_MIN", 90)
+# Import-OWNED year cache (misses too); NOT shared with charts-energy's cache to
+# avoid cross-service write races on one JSON file. A plain constant so the
+# copied _load_cache/_save_cache work unedited.
+MB_CACHE_FILE = os.path.join(DOWNLOADS_DIR, ".charts-import-mbcache.json")
+
 # --- File types ---
 # File extensions considered music files (identical to charts-sync).
 AUDIO_EXTENSIONS = {

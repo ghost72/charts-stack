@@ -298,14 +298,27 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    (`artist`, `albumartist`, `title`, `album`), damit Navidrome und `charts-sync`
    korrekte Werte sehen. Das Album wird dabei auf den Titel gesetzt (Chart-Songs
    sind Singles), sodass nichts unter „Unknown Album" landet.
-   **Jahr-Tag:** `charts-import` liest zusätzlich die Jahr-Map
-   `.charts-flashback-years.json` (im Charts-Ordner, von `charts-flashback`
-   geschrieben; Key = lowercase `artist|title`, `_flashback_year`). Findet sich
-   dort ein Jahr, setzt `charts-import` die Tags `date`/`originaldate` – für die
-   Dekaden-Smart-Playlists in Navidrome. Fehlt der Eintrag (alle anderen
-   Dienste), bleiben die Datum-Tags unangetastet – kein Überschreiben
-   vorhandener Jahre. Das Jahr steht so **nur** im Tag, **nie** im
-   Datei-/Ordnernamen.
+   **Jahr-Tagging + Jahr-Nachlauf für ALLE Quellen:** `charts-import` sorgt
+   dafür, dass **jeder** importierte Song ein Jahr-Tag bekommt, damit die
+   Dekaden-Smart-Playlists in Navidrome Songs aus allen Quellen zeigen (nicht
+   nur `charts-energy`/`charts-flashback`). Beim Import wird ein **kostenloses**
+   Jahr gesetzt: der Hinweis aus der Jahr-Map `.charts-flashback-years.json` (im
+   Charts-Ordner, von `charts-flashback` **und** `charts-energy` library-mode
+   geschrieben; Key = lowercase `artist|title`, `_hint_year`) oder – falls der
+   Song bereits in einem Lidarr-`(JJJJ)`-Albumordner liegt – dessen Ordnerjahr.
+   Das eingebettete Datum einer frisch geladenen Download-Datei wird **nie**
+   vertraut (oft das Upload-/Encode-Jahr, nicht das Release-Jahr). Songs ohne
+   freies Jahr werden **pending** in der Jahr-Map markiert. Der periodische
+   Backfill (zusammen mit dem Cover/ReplayGain-Nachlauf) löst die pending-Songs
+   über die Zeit gegen **MusicBrainz** auf – ratenbegrenzt, pro Lauf gedeckelt,
+   mtime-erhaltend: er korrigiert die **charts-energy library-mode
+   Dekaden-Mittelwerte** zum echten Jahr und füllt die `sync`/`hitparade`-Songs.
+   `charts-energy`/`charts-flashback` lösen ihr Jahr weiterhin selbst vor
+   (`charts-energy` mit Dekaden-Mittelwert-Fallback, `charts-flashback` mit
+   Titel-Suffix-/MB-Jahr). Knöpfe: `YEAR_BACKFILL_ENABLED`,
+   `YEAR_BACKFILL_LIMIT`, `YEAR_BACKFILL_MAX_TRIES` (siehe `.env.example`). Das
+   Jahr steht so **nur** im Tag, **nie** im Datei-/Ordnernamen; vorhandene gute
+   Jahre werden nie durch eine Vermutung überschrieben.
 2. **Datei-Tags** (`mutagen`, `albumartist` bevorzugt).
 3. **Fallback** auf den Dateinamen bzw. `Unknown Artist` / `Unknown Album`.
 

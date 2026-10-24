@@ -25,28 +25,33 @@ def _stub_mb(monkeypatch, value, ok=True):
 
 
 def test_mb_inside_decade_returns_mb_year(monkeypatch):
+    # (A) MB inside the decade -> (mb, False) real year.
     _stub_mb(monkeypatch, "1983")
-    assert year.resolve_year("A", "B", "1980") == "1983"
+    assert year.resolve_year("A", "B", "1980") == ("1983", False)
 
 
 def test_mb_outside_decade_returns_midpoint(monkeypatch):
+    # (B) MB outside the decade -> (midpoint, True) fallback.
     _stub_mb(monkeypatch, "1975")
-    assert year.resolve_year("A", "B", "1980") == "1985"
+    assert year.resolve_year("A", "B", "1980") == ("1985", True)
 
 
 def test_mb_empty_with_decade_returns_midpoint(monkeypatch):
+    # (B) MB empty with a decade -> (midpoint, True) fallback.
     _stub_mb(monkeypatch, "")
-    assert year.resolve_year("A", "B", "1980") == "1985"
+    assert year.resolve_year("A", "B", "1980") == ("1985", True)
 
 
 def test_mb_year_no_decade_returns_mb_year(monkeypatch):
+    # (C) non-decade channel with a MB year -> (mb, False).
     _stub_mb(monkeypatch, "1999")
-    assert year.resolve_year("A", "B", "") == "1999"
+    assert year.resolve_year("A", "B", "") == ("1999", False)
 
 
 def test_mb_empty_no_decade_returns_empty(monkeypatch):
+    # (C) non-decade channel, MB empty -> ("", False).
     _stub_mb(monkeypatch, "")
-    assert year.resolve_year("A", "B", "") == ""
+    assert year.resolve_year("A", "B", "") == ("", False)
 
 
 def test_transient_mb_error_not_cached(monkeypatch):
@@ -61,4 +66,4 @@ def test_transient_mb_error_not_cached(monkeypatch):
 def test_non_four_digit_decade_treated_as_no_decade(monkeypatch):
     # A non-4-digit decade string falls through to branch C (MB or "").
     _stub_mb(monkeypatch, "1999")
-    assert year.resolve_year("A", "B", "80s") == "1999"
+    assert year.resolve_year("A", "B", "80s") == ("1999", False)

@@ -183,7 +183,7 @@ def test_importer_upgrade_inherits_old_mtime(tmp_path, monkeypatch):
                         lambda *a, **k: False)
     monkeypatch.setattr(importer.replaygain, "apply_track_gain",
                         lambda *a, **k: False)
-    monkeypatch.setattr(importer, "_flashback_year", lambda a, t: "")
+    monkeypatch.setattr(importer, "_hint_year", lambda a, t: ("", False))
     monkeypatch.setattr(importer, "_append_import_log", lambda *a, **k: None)
 
     # Point config at the temp dirs; enable copy mode + preservation; relax gates.

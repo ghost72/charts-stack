@@ -146,9 +146,15 @@ def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
     return str(min(years)), True
 
 
-def resolve_year(artist: str, title: str, decade: str) -> str:
+def resolve_year(artist: str, title: str, decade: str) -> "tuple[str, bool]":
     """
-    Resolve a release year "YYYY" (or "") for a library-mode Energy song.
+    Resolve a release year for a library-mode Energy song.
+
+    Returns (year, is_fallback): `year` is "YYYY" or ""; `is_fallback` is True
+    ONLY for the decade-midpoint fallback (branch B), so the caller can mark a
+    midpoint as a PENDING object the charts-import backfill later sharpens,
+    while a real in-decade/non-decade MB year (branches A/C) is written as a
+    confirmed bare string.
 
     `decade` is a 4-digit "from" year string (e.g. "1980") or "" (no decade).
     NEW logic for charts-energy (flashback's resolve_year has no decade clamp);
@@ -161,10 +167,10 @@ def resolve_year(artist: str, title: str, decade: str) -> str:
 
         if from_year is not None:                      # decade channel
             if mb and from_year <= int(mb) <= from_year + 9:
-                return mb                              # (A) MB inside decade
-            return str(from_year + 5)                  # (B) MB outside/empty
+                return (mb, False)                     # (A) MB inside decade
+            return (str(from_year + 5), True)          # (B) MB outside/empty
         else:                                          # non-decade channel
-            return mb                                  # (C) MB year or ""
+            return (mb, False)                         # (C) MB year or ""
 
     The MB result itself is resolved via the copied _mb_year + a lowercase
     'artist|title' cache lookup (misses cached, transient errors not cached),
@@ -190,6 +196,6 @@ def resolve_year(artist: str, title: str, decade: str) -> str:
 
     if from_year is not None:                      # decade channel
         if mb and from_year <= int(mb) <= from_year + 9:
-            return mb                              # (A) MB inside the decade
-        return str(from_year + 5)                  # (B) MB outside/empty -> mid
-    return mb                                      # (C) MB year, or ""
+            return mb, False                       # (A) MB inside the decade
+        return str(from_year + 5), True            # (B) MB outside/empty -> mid
+    return mb, False                               # (C) MB year, or ""
