@@ -288,6 +288,8 @@ run stats come from small JSON files each service writes into
 | Dashboard: live connections | charts-config: source finder |
 | --- | --- |
 | ![Dashboard connections view](screenshots/connections.png) | ![charts-config source finder](screenshots/source_finder.png) |
+| charts-config: Energy channel browser | |
+| ![charts-config Energy channel browser](screenshots/energy_channels_finder.png) | |
 
 ### Language (logs, Pushover, dashboard)
 
