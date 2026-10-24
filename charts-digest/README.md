@@ -74,6 +74,7 @@ docker exec charts-digest python -m app.main --now
 > Der **Absendername** der Nachricht ist der **Name dieser Application** –
 > änderbar nur im Pushover-Web (Application bearbeiten), nicht über eine Variable
 > hier. Benennst du die App um, kommen neue Nachrichten unter dem neuen Namen.
+> **Tipp:** Nenne die Application beim Anlegen `charts-stack`.
 
 ## Container
 
