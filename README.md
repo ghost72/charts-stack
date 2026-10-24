@@ -136,8 +136,14 @@ restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
 rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
 
 > **Synology tip:** `docker compose up -d --build` can reuse stale build layers
-> on Synology, so a code change may not take effect. If that happens, use the
-> Container Manager rebuild (Project → Action → Build / Clean build) instead.
+> on Synology, so a code change may not take effect (the `COPY app/` layer is
+> served from cache and your new files are not picked up). The reliable fix is a
+> **cache-free rebuild** of the affected service:
+> ```bash
+> docker compose build --no-cache <service> && docker compose up -d <service>
+> ```
+> (or the Container Manager's **Clean build**). After deploying code, verify the
+> container actually has it, e.g. `docker exec <service> grep -c <a-new-marker> /app/app/<file>.py` should be > 0.
 >
 > **After rebuilding a web UI** (dashboard, config, songrequest), hard-reload
 > the browser (Cmd/Ctrl+Shift+R) – Safari in particular caches CSS/JS
@@ -475,9 +481,16 @@ kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
 `docker compose up -d`.
 
 > **Synology-Tipp:** `docker compose up -d --build` kann auf Synology alte
-> Build-Layer wiederverwenden, sodass eine Code-Änderung nicht greift. Dann
-> stattdessen den Rebuild im Container Manager nutzen (Projekt → Aktion →
-> Erstellen / Neu erstellen).
+> Build-Layer wiederverwenden, sodass eine Code-Änderung nicht greift (die
+> `COPY app/`-Schicht kommt aus dem Cache, die neuen Dateien landen nicht im
+> Image). Der zuverlässige Weg ist ein **Rebuild ohne Cache** des betroffenen
+> Dienstes:
+> ```bash
+> docker compose build --no-cache <dienst> && docker compose up -d <dienst>
+> ```
+> (oder im Container Manager „Neu erstellen" / Clean build). Nach einem
+> Code-Deploy prüfen, ob der Container ihn wirklich hat, z. B.
+> `docker exec <dienst> grep -c <neuer-marker> /app/app/<datei>.py` muss > 0 sein.
 >
 > **Nach dem Neubauen einer Web-UI** (Dashboard, Config, Songrequest) den
 > Browser hart neu laden (Cmd/Ctrl+Shift+R) – gerade Safari cacht CSS/JS
