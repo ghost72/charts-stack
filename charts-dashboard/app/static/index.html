@@ -445,6 +445,14 @@ function render(d) {
     en.detail || "",
   ].filter(Boolean)));
 
+  // Swiss Hitparade (hitparade.ch, WAN scrape-Quelle). Nicht genutzt
+  // (HITPARADE_ENABLED=false) -> muted; sonst erreichbar/nicht erreichbar.
+  const hp = ext.hitparade || {};
+  sources.push(tile(!hp.configured ? "muted" : (hp.ok ? "ok" : "err"), t("tile.title.hitparade"), [
+    !hp.configured ? t("tile.not_in_use") : (hp.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    hp.detail || "",
+  ].filter(Boolean)));
+
   // --- Group 3: helper services (external, not a chart source) ------------
   const helpers = [];
 

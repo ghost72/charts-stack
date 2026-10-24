@@ -157,8 +157,8 @@ def _external_status() -> dict:
     would go out per refresh.
 
     Returns: {service: {"ok": bool, "detail": str}} per service (listenbrainz,
-    deezer, lastfm, itunes, pushover, flashback, energy, musicbrainz); lastfm +
-    pushover additionally with "configured": bool.
+    deezer, lastfm, itunes, pushover, flashback, energy, musicbrainz, hitparade);
+    lastfm + pushover additionally with "configured": bool.
     """
     global _ext_cache, _ext_ts
     now = time.time()
@@ -353,8 +353,31 @@ def _external_status() -> dict:
     else:
         mb["detail"] = i18n.t("dashboard.conn.not_in_use")
 
+    # Swiss Hitparade (hitparade.ch): HTTP reachability of the chart page with a
+    # real browser User-Agent (the site returns an empty placeholder without
+    # one). Chart source like FLASHBACK/Energy. configured = HITPARADE_ENABLED:
+    # when off the tile is "muted" (not in use) and we skip the ping. Fail-open.
+    hp = {"configured": config.HITPARADE_ENABLED, "ok": False, "detail": ""}
+    if hp["configured"]:
+        try:
+            r = httpx.get(config.HITPARADE_URL,
+                          headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel "
+                                   "Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, "
+                                   "like Gecko) Chrome/120.0 Safari/537.36",
+                                   "Accept-Language": "de-CH,de;q=0.9"},
+                          timeout=8, follow_redirects=True)
+            hp["ok"] = r.status_code == 200
+            hp["detail"] = "" if hp["ok"] else i18n.t(
+                "dashboard.conn.http_error", code=r.status_code)
+        except Exception as e:
+            hp["detail"] = i18n.t("dashboard.conn.unreachable",
+                                  err=e.__class__.__name__)
+    else:
+        hp["detail"] = i18n.t("dashboard.conn.not_in_use")
+
     result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "itunes": it,
-              "pushover": po, "flashback": fb, "energy": en, "musicbrainz": mb}
+              "pushover": po, "flashback": fb, "energy": en, "musicbrainz": mb,
+              "hitparade": hp}
     _ext_cache = result
     _ext_ts = now
     return result

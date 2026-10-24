@@ -76,6 +76,14 @@ ENERGY_MAIN_SLUG = os.environ.get("ENERGY_MAIN_SLUG", "energymadeinswitzerland")
 # instead of pinging the stream - same treatment as FLASHBACK/Last.fm/Pushover.
 ENERGY_ENABLED = _get_bool("ENERGY_ENABLED", True)
 
+# --- Swiss Hitparade (hitparade.ch) reachability live check ---
+# charts-hitparade scrapes the official Swiss chart from hitparade.ch. The
+# dashboard pings the same page with a real browser User-Agent (the site serves
+# an empty placeholder without one). Mirrors charts-hitparade's HITPARADE_ENABLED
+# (default on): when off the tile shows "not in use" instead of pinging.
+HITPARADE_ENABLED = _get_bool("HITPARADE_ENABLED", True)
+HITPARADE_URL = os.environ.get("HITPARADE_URL", "https://hitparade.ch/charts").strip()
+
 # --- MusicBrainz (reachability live check of the metadata helper) ---
 # Metadata helper (release-year lookup) used by charts-energy / charts-flashback,
 # not a chart source. Mirrors their MB_ENABLED (default on). When off, the
