@@ -71,6 +71,22 @@ charts-import looks.
 - Optional: **Last.fm** API key (genre filter + recommendations), **ListenBrainz**
   account (recommendations), **Lidarr** (unmonitor), **Pushover** (notifications).
 
+> **Setting up Pushover (optional).** Notifications are completely optional –
+> without `PUSHOVER_TOKEN`/`PUSHOVER_USER` all services keep running silently
+> (log only). If you want them, you need **two** values from your Pushover
+> account ([pushover.net](https://pushover.net)):
+> 1. `PUSHOVER_USER` – your personal **user key** (shown at the top of the
+>    dashboard after you log in).
+> 2. `PUSHOVER_TOKEN` – the **API token of your own Application**, which you
+>    create once under "Create an Application/API Token".
+>
+> The **sender name** of the push message is the **name of that Application** –
+> changeable **only in the Pushover web UI** (edit the Application), not via a
+> variable in this repo. If you rename the app, new messages arrive under the
+> new name; already delivered ones keep the old one. **Tip:** name the Pushover
+> Application `charts-stack` when you create it, so the notifications show up
+> under that name on your phone.
+
 ### Installation (one project, one `.env`)
 
 The whole stack is **one** project: a single `compose.yml` with all services
@@ -79,20 +95,27 @@ and one central `.env`. You only copy one folder and fill in one file.
 ```bash
 # 1. Copy this charts-stack folder to your server.
 
-# 2. Set up slskd first (API key + Soulseek login) – see slskd/README.md.
+# 2. Set up slskd first (API key + Soulseek login) – see slskd/README.en.md.
 #    This produces the API key you enter into the .env next.
 
 # 3. Create and fill in one central .env:
 cp .env.example .env
 #    REQUIRED (otherwise at least one service will NOT start):
-#      MUSIC_ROOT, SLSKD_API_KEY, PUID/PGID,
+#      MUSIC_ROOT, SLSKD_API_KEY, PUID, PGID,
 #      SONGREQUEST_USERS   (charts-songrequest crashes otherwise - security gate),
-#      DASHBOARD_PASSWORD  (charts-dashboard crashes otherwise - security gate).
+#      DASHBOARD_PASSWORD  (charts-dashboard crashes otherwise - security gate),
+#      CONFIG_PASSWORD     (charts-config crashes otherwise - security gate).
+#    Shortcut: ONE shared APP_USERS (or APP_PASSWORD) covers BOTH the dashboard
+#      and the config login instead of DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
 # 4. Create the three data subfolders BEFORE the first start with the right
 #    ownership (otherwise Docker creates them as root on bind-mount and the
-#    services, running as PUID:PGID, cannot write):
+#    services, running as PUID:PGID, cannot write).
+#    NOTE: $MUSIC_ROOT lives in your .env, it is NOT a shell variable - export
+#    it first with the SAME value you set in the .env, otherwise the commands
+#    would target the filesystem root:
+export MUSIC_ROOT=/volume2/music   # use the SAME value as in your .env
 mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
 chown -R 1027:100 "$MUSIC_ROOT"   # use your own PUID:PGID (Synology default here)
 
@@ -107,6 +130,21 @@ Project → Action → Build; CLI: `docker compose up -d --build <service>`).
 `charts-watchdog` is a pure shell script with no image of its own – there a
 restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
 rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
+
+> **Synology tip:** `docker compose up -d --build` can reuse stale build layers
+> on Synology, so a code change may not take effect. If that happens, use the
+> Container Manager rebuild (Project → Action → Build / Clean build) instead.
+>
+> **After rebuilding a web UI** (dashboard, config, songrequest), hard-reload
+> the browser (Cmd/Ctrl+Shift+R) – Safari in particular caches CSS/JS
+> aggressively and otherwise serves the old assets.
+
+> **First run / what healthy looks like.** The three web UIs are always started,
+> so their passwords are part of the minimum config: songrequest on `:5056`,
+> dashboard on `:5057`, config on `:5058`. After the first start the services
+> sit **idle** until charts-sync (runs every 12 h) has written the first
+> `missing-*.txt` – that is normal, nothing is broken. Watch the dashboard at
+> `http://<host>:5057`; slskd must show **logged in** to the Soulseek server.
 
 ### Connecting Navidrome
 
@@ -125,7 +163,10 @@ not part of this stack). To make them work together:
 - Navidrome scans periodically; new songs/playlists appear after the next scan.
 
 A minimal Navidrome `compose.yml` that works with charts-stack (it is a separate
-project, not part of this stack; the placeholders read the same central `.env`):
+project, not part of this stack; the placeholders read the same central `.env`).
+Note: because this is a separate compose project, make sure it also has access
+to the `MUSIC_ROOT` value (the same one as in the charts-stack `.env`) – e.g.
+keep its `.env` next to it or hard-code the path:
 
 ```yaml
 services:
@@ -378,14 +419,21 @@ ausfüllen.
 # 3. Eine zentrale .env anlegen und ausfuellen:
 cp .env.example .env
 #    PFLICHT (sonst startet mind. ein Dienst NICHT):
-#      MUSIC_ROOT, SLSKD_API_KEY, PUID/PGID,
+#      MUSIC_ROOT, SLSKD_API_KEY, PUID, PGID,
 #      SONGREQUEST_USERS   (charts-songrequest crasht sonst - Sicherheits-Gate),
-#      DASHBOARD_PASSWORD  (charts-dashboard crasht sonst - Sicherheits-Gate).
+#      DASHBOARD_PASSWORD  (charts-dashboard crasht sonst - Sicherheits-Gate),
+#      CONFIG_PASSWORD     (charts-config crasht sonst - Sicherheits-Gate).
+#    Abkuerzung: EIN gemeinsames APP_USERS (oder APP_PASSWORD) deckt BEIDE Logins
+#      ab - Dashboard UND Config - statt DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
 # 4. Die drei Daten-Unterordner VOR dem Start mit den richtigen Rechten anlegen
 #    (sonst legt Docker sie beim Bind-Mount als root an -> die Dienste laufen
-#    unter PUID:PGID und koennen nicht schreiben):
+#    unter PUID:PGID und koennen nicht schreiben).
+#    ACHTUNG: $MUSIC_ROOT steht in deiner .env, ist KEINE Shell-Variable - zuerst
+#    mit DEMSELBEN Wert wie in der .env exportieren, sonst zielen die Befehle auf
+#    das Wurzelverzeichnis des Dateisystems:
+export MUSIC_ROOT=/volume2/music   # DENSELBEN Wert wie in deiner .env verwenden
 mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
 chown -R 1027:100 "$MUSIC_ROOT"   # eigene PUID:PGID einsetzen (hier Synology-Default)
 
@@ -401,6 +449,23 @@ Manager: Projekt → Aktion → Erstellen; per CLI: `docker compose up -d --buil
 dort reicht ein Neustart (`docker compose up -d --force-recreate charts-watchdog`),
 kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
 `docker compose up -d`.
+
+> **Synology-Tipp:** `docker compose up -d --build` kann auf Synology alte
+> Build-Layer wiederverwenden, sodass eine Code-Änderung nicht greift. Dann
+> stattdessen den Rebuild im Container Manager nutzen (Projekt → Aktion →
+> Erstellen / Neu erstellen).
+>
+> **Nach dem Neubauen einer Web-UI** (Dashboard, Config, Songrequest) den
+> Browser hart neu laden (Cmd/Ctrl+Shift+R) – gerade Safari cacht CSS/JS
+> aggressiv und zeigt sonst die alten Dateien.
+
+> **Erster Start / wie „gesund" aussieht.** Die drei Web-UIs werden immer
+> gestartet, daher gehören ihre Passwörter zur Minimal-Konfiguration:
+> Songrequest auf `:5056`, Dashboard auf `:5057`, Config auf `:5058`. Nach dem
+> ersten Start stehen die Dienste **im Leerlauf**, bis charts-sync (alle 12 h)
+> die erste `missing-*.txt` geschrieben hat – das ist normal, nichts ist kaputt.
+> Beobachte das Dashboard unter `http://<host>:5057`; slskd muss beim
+> Soulseek-Server als **eingeloggt** erscheinen.
 
 Das war's. Die Dienste reden über das automatisch angelegte Projekt-Netz
 miteinander (z. B. charts-download → `http://slskd:5030`); ein eigenes Netz musst
@@ -426,7 +491,10 @@ nicht Teil dieses Stacks). Damit es zusammenspielt:
 
 Eine minimale Navidrome-`compose.yml`, die mit charts-stack zusammenspielt (es
 ist ein separates Projekt, nicht Teil dieses Stacks; die Platzhalter lesen
-dieselbe zentrale `.env`):
+dieselbe zentrale `.env`). Hinweis: Da es ein separates compose-Projekt ist,
+muss auch dieses Zugriff auf den `MUSIC_ROOT`-Wert haben (derselbe wie in der
+charts-stack-`.env`) – z. B. seine `.env` daneben legen oder den Pfad fest
+eintragen:
 
 ```yaml
 services:

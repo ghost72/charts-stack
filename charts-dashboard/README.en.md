@@ -11,6 +11,39 @@ Monitoring service of the `charts-*` family, together with
 
 ---
 
+## Layout
+
+The services are shown as a **data flow** – at a glance you see what flows
+where, what runs automatically and what is started manually. **slskd** sits at
+the centre as the hub every download passes through.
+
+![charts-dashboard – flow of services, connections and storage](docs/dashboard-flow.svg)
+
+- **Sources** (scheduled) produce download lists: `charts-sync`,
+  `charts-hitparade`, `charts-recommend`. `charts-songrequest` is the **manual**
+  entry point (marked "MANUAL" on its tile).
+- **Fetch:** `charts-download` (from the download lists) and `charts-upgrade`
+  (library scan for poor quality) trigger downloads via **slskd**.
+- **Import:** `charts-import` files the downloaded songs, tagged, into the
+  library → **Navidrome** (external target, drawn as a green pill).
+- **Monitoring & report:** `charts-watchdog`, `charts-dashboard`,
+  `charts-digest` (daily Pushover summary) and `charts-config` (snippet/config
+  UI) sit on the right in their own "monitoring & report" zone (not in the data
+  flow), as stacked tiles with even spacing.
+
+> **A service box is missing?** Services that write **no** status file
+> (`charts-watchdog`, `charts-dashboard`) are only shown if they are listed in
+> the `WATCH_CONTAINERS` variable (central `.env`). If a box does not appear,
+> check there first – the `.env` overrides the code default.
+
+Each service tile compactly shows a status light, "what → where" and **when it
+last ran / when next**; a click/tap expands the full details (container state,
+last run, cumulative totals, and for `charts-upgrade` the scan progress).
+`slskd` is expanded by default as the central component. The tiles can be
+**dragged freely** with the mouse on desktop or by touch on a wide-screen touch
+device (e.g. an iPad) (the connection lines follow); a reload restores the
+default arrangement.
+
 ## What it shows
 
 - **Connections:** an overview of all external/dependent services with a
@@ -44,16 +77,7 @@ Monitoring service of the `charts-*` family, together with
   as "in 1 h"; an overdue run is honestly labelled "overdue".
 - **Storage & inventory:** file count/size of the charts share and the quarantine.
 
-The page refreshes automatically (default every 15 s). The flow tiles can be
-**dragged freely** with the mouse on desktop or by touch on a wide-screen touch
-device (e.g. an iPad) (the connection lines follow); a reload restores the
-default arrangement, and `slskd` is expanded by default as the central
-component.
-
-> **A service box is missing?** Services that write **no** status file
-> (`charts-watchdog`, `charts-dashboard`) are only shown if they are listed in
-> the `WATCH_CONTAINERS` variable (central `.env`). If a box does not appear,
-> check there first – the `.env` overrides the code default.
+The page refreshes automatically (default every 15 s).
 
 The dashboard is a **pure status monitor**: it shows state, connections and run
 stats, nothing more. The source finder and the Energy-channel browser that used
