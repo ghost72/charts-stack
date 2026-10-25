@@ -357,13 +357,26 @@ def main() -> None:
 
     if config.RUN_ON_START:
         _guarded_run()
+        status.set_last_fired(date.today().isoformat())  # stamp the gate too
         _clear_hitparade_resync_signal()  # clear a signal set during the run
 
     # Sleep the shorter of the weekly check and the resync probe so a signal is
     # seen within ~HITPARADE_RESYNC_CHECK_SECONDS; keep the existing 30s floor.
     check = max(30, min(config.CHECK_INTERVAL_SECONDS,
                         config.HITPARADE_RESYNC_CHECK_SECONDS))
-    last_run_day: date | None = date.today() if config.RUN_ON_START else None
+    # Seed last_run_day from the persisted last-fired date so a restart inside
+    # the due window (same weekday, past RUN_HOUR) after the weekly run does not
+    # re-fire. Fall back to the old in-memory behaviour only when nothing is
+    # persisted (first-ever start / cleared status): today if RUN_ON_START
+    # (which just fired and stamped above), else None (never fired).
+    _persisted = status.get_last_fired()  # "YYYY-MM-DD" or ""
+    try:
+        last_run_day: date | None = (
+            date.fromisoformat(_persisted) if _persisted
+            else (date.today() if config.RUN_ON_START else None))
+    except ValueError:
+        logger.debug("ignoring malformed last_fired_local_date %r", _persisted)
+        last_run_day = date.today() if config.RUN_ON_START else None
 
     while True:
         time.sleep(check)
@@ -394,6 +407,7 @@ def main() -> None:
                           hour=config.RUN_HOUR, minute=config.RUN_MINUTE))
             _guarded_run()
             last_run_day = now.date()
+            status.set_last_fired(now.date().isoformat())  # persist the gate
 
 
 if __name__ == "__main__":

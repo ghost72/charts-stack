@@ -25,6 +25,12 @@ logging.basicConfig(
 logger = logging.getLogger("charts-digest")
 
 
+def _now() -> datetime:
+    """Current local naive time. Indirection so the scheduler loop clock can be
+    monkeypatched in tests without touching datetime used elsewhere."""
+    return datetime.now()
+
+
 def _next_run_dt(now: datetime) -> datetime:
     """Next target time (today DIGEST_HOUR:MINUTE, otherwise tomorrow)."""
     target = now.replace(hour=config.DIGEST_HOUR, minute=config.DIGEST_MINUTE,
@@ -105,24 +111,42 @@ def main() -> None:
                   hour=config.DIGEST_HOUR, minute=config.DIGEST_MINUTE,
                   hours=config.DIGEST_WINDOW_HOURS, log=config.IMPORT_LOG_FILE))
 
+    # Seed the once-per-day gate from the persisted date so a restart inside the
+    # same local day (after the digest already fired) does not re-fire. "" when
+    # never recorded -> treated as "not fired today".
+    last_fired = status.get_last_fired()  # "YYYY-MM-DD" or ""
+
     if config.RUN_ON_START:
         logger.info(t("digest.scheduler.run_on_start"))
         run_once()
+        last_fired = _now().date().isoformat()
+        status.set_last_fired(last_fired)
 
+    # Short-poll loop: never hold a single wall-clock-derived sleep across the
+    # DST fold. Poll at DIGEST_POLL_SECONDS (clamped 60..300) and fire at the
+    # first poll at/after local HH:MM, at most once per local calendar date.
+    check = max(60, min(300, config.DIGEST_POLL_SECONDS))
     while True:
-        now = datetime.now()
-        target = _next_run_dt(now)
-        wait_s = (target - now).total_seconds()
-        next_iso = target.strftime("%Y-%m-%dT%H:%M:%S%z")
-        status.set_next_run(next_iso)
-        logger.info(t("digest.scheduler.next_run", next=next_iso, hours=wait_s / 3600))
-        # Sleep in chunks so set_next_run/signals do not block forever and a
-        # restart takes effect promptly.
-        while wait_s > 0:
-            chunk = min(wait_s, 3600)
-            time.sleep(chunk)
-            wait_s -= chunk
-        run_once()
+        now = _now()
+        today = now.date().isoformat()
+
+        due = ((now.hour > config.DIGEST_HOUR
+                or (now.hour == config.DIGEST_HOUR
+                    and now.minute >= config.DIGEST_MINUTE))
+               and last_fired != today)
+        if due:
+            logger.info(t("digest.scheduler.due",
+                          hour=config.DIGEST_HOUR, minute=config.DIGEST_MINUTE))
+            run_once()
+            last_fired = today
+            status.set_last_fired(last_fired)
+
+        # Keep the dashboard next_run fresh AFTER the fire decision so a firing
+        # poll still shows today's run rather than flipping to tomorrow early
+        # (see the set_next_run ordering note).
+        status.set_next_run(_next_run_dt(now).strftime("%Y-%m-%dT%H:%M:%S%z"))
+
+        time.sleep(check)
 
 
 if __name__ == "__main__":

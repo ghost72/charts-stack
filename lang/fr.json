@@ -193,6 +193,7 @@
   "digest.scheduler.started": "charts-digest démarré | quotidien {hour:02d}:{minute:02d} | fenêtre {hours}h | journal : {log}",
   "digest.scheduler.run_on_start": "RUN_ON_START=1 – envoi immédiat d'un résumé.",
   "digest.scheduler.next_run": "Prochaine exécution : {next} (dans {hours:.1f} h)",
+  "digest.scheduler.due": "Heure du digest atteinte ({hour:02d}:{minute:02d}) – exécution.",
   "digest.cli.description": "charts-digest - résumé quotidien des nouveaux morceaux de la bibliothèque.",
   "digest.cli.help_now": "Envoyer IMMÉDIATEMENT un résumé et quitter (déclenchement manuel, s'exécute en parallèle du planificateur dans le conteneur). Envoie aussi une réponse même avec 0 nouveau morceau.",
   "download.run.start": "=== Lancement de charts-download (DRY_RUN={dry_run}) ===",

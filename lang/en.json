@@ -193,6 +193,7 @@
   "digest.scheduler.started": "charts-digest started | daily {hour:02d}:{minute:02d} | window {hours}h | log: {log}",
   "digest.scheduler.run_on_start": "RUN_ON_START=1 – sending a summary immediately.",
   "digest.scheduler.next_run": "Next run: {next} (in {hours:.1f} h)",
+  "digest.scheduler.due": "Digest window reached ({hour:02d}:{minute:02d}) – running now.",
   "digest.cli.description": "charts-digest - daily summary of new library songs.",
   "digest.cli.help_now": "Send a summary IMMEDIATELY and exit (manual trigger, runs alongside the scheduler in the container). Also sends a reply when there are 0 new songs.",
   "download.run.start": "=== charts-download run started (DRY_RUN={dry_run}) ===",

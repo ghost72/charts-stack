@@ -31,6 +31,11 @@ DIGEST_MINUTE = _get_int("DIGEST_MINUTE", 0)
 # message would come on every container restart.
 RUN_ON_START = _get_bool("RUN_ON_START", False)
 
+# How often the scheduler polls whether the run time has been reached (seconds).
+# Clamped to 60..300 in main(). A short poll so no single wall-clock-derived
+# sleep ever spans the DST fold (the autumn double-fire root cause).
+DIGEST_POLL_SECONDS = _get_int("DIGEST_POLL_SECONDS", 300)
+
 # --- Time window ----------------------------------------------------------
 # Look-back window in hours. Default 24 = "since yesterday at the same time".
 # With DIGEST_HOUR=9, 24h cleanly covers the previous day 09:00 -> today 09:00.
