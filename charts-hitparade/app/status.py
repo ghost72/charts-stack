@@ -156,6 +156,27 @@ def set_next_run(next_run: str) -> None:
     _write(data)
 
 
+def get_last_fired() -> str:
+    """Return the persisted local calendar date of the last successful fire
+    (YYYY-MM-DD), or "" if never recorded. Used by scheduler services to gate a
+    once-per-day/once-per-slot run across restarts and the DST fold."""
+    data = _read()
+    val = data.get("last_fired_local_date")
+    return val if isinstance(val, str) else ""
+
+
+def set_last_fired(date_str: str) -> None:
+    """Persist the local calendar date (YYYY-MM-DD) of the last successful fire.
+    Touches ONLY this field (like set_next_run), so run status/counters are
+    preserved."""
+    if not date_str:
+        return
+    data = _read()
+    data["service"] = _service
+    data["last_fired_local_date"] = date_str
+    _write(data)
+
+
 def heartbeat(message: str = "", next_run: str = "") -> None:
     """
     Sign of life without a full run (e.g. an event-driven service like

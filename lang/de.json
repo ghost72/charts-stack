@@ -193,6 +193,7 @@
   "digest.scheduler.started": "charts-digest gestartet | täglich {hour:02d}:{minute:02d} | Fenster {hours}h | Log: {log}",
   "digest.scheduler.run_on_start": "RUN_ON_START=1 - sende sofort eine Zusammenfassung.",
   "digest.scheduler.next_run": "Nächster Lauf: {next} (in {hours:.1f} h)",
+  "digest.scheduler.due": "Digest-Zeitpunkt erreicht ({hour:02d}:{minute:02d}) – starte jetzt.",
   "digest.cli.description": "charts-digest - tägliche Zusammenfassung neuer Library-Songs.",
   "digest.cli.help_now": "SOFORT eine Zusammenfassung senden und beenden (manuelle Auslösung, läuft parallel zum Scheduler im Container). Sendet auch bei 0 neuen Songs eine Rückmeldung.",
   "download.run.start": "=== charts-download-Lauf gestartet (DRY_RUN={dry_run}) ===",
