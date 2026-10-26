@@ -139,6 +139,8 @@ def test_index_render_handoff(monkeypatch, lang):
     i18n_obj = _extract_i18n(html)
     # a known UI key is present
     assert "subtitle" in i18n_obj
+    # the manual-upload section's heading reaches the frontend handoff
+    assert "upload_heading" in i18n_obj
     # language-correct sample string
     expected = {
         "de": "Song suchen, laden und in die Library holen",

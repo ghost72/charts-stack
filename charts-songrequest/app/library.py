@@ -93,6 +93,48 @@ def read_bitrate(path: str) -> int:
     return 0
 
 
+def read_mp3_bitrate(path: str) -> int | None:
+    """
+    Bitrate (kbps) if the file is really an MP3, else None (upload gate).
+
+    Unlike read_bitrate (which returns the kbps of ANY format and 0 on failure,
+    used for the request-flow comparison), this reader is MP3-specific: it only
+    returns a number when mutagen parses the file as a real MP3. A file named
+    .mp3 that is actually FLAC/m4a/etc. yields None so the upload endpoint can
+    reject it as "not an MP3".
+    """
+    try:
+        from mutagen.mp3 import MP3
+        audio = MP3(path)
+        return int((getattr(audio.info, "bitrate", 0) or 0) / 1000)
+    except Exception:
+        return None
+
+
+def parse_upload_name(filename: str) -> tuple[str, str]:
+    """
+    Parse an uploaded basename "<artist> - <title>.ext" into (artist, title).
+
+    Rules:
+      - Strip the directory and the extension.
+      - Split on the FIRST " - ": artist = text before it, title = the rest
+        (so a multi-part title like "Intro - Outro" stays intact; the artist is
+        never multi-part in the user's convention).
+      - No " - " at all -> ("", base) so the user fills in the artist.
+      - Both parts are stripped.
+
+    This deliberately differs from charts-import's last-separator heuristic,
+    which is tuned for Lidarr-renamed library files, not the upload convention.
+    The result only pre-fills the editable UI fields; the authoritative values
+    come from what the user submits.
+    """
+    base = os.path.splitext(os.path.basename(filename.replace("\\", "/")))[0]
+    if " - " in base:
+        artist, title = base.split(" - ", 1)
+        return artist.strip(), title.strip()
+    return "", base.strip()
+
+
 def find_existing(music_dir: str, artist: str, title: str) -> str | None:
     """
     Returns the path if the song already exists under MUSIC_DIR/<Artist>/

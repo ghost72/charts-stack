@@ -30,6 +30,7 @@ _SOURCE_LABELS = {
     "mundart": ("🇨🇭", "digest.source.mundart"),
     "flashback": ("📻", "digest.source.flashback"),
     "manuell": ("🙋", "digest.source.manuell"),
+    "upload": ("📤", "digest.source.upload"),
     "upgrade": ("⬆️", "digest.source.upgrade"),
     "hitparade": ("🏆", "digest.source.hitparade"),
     "recommend": ("🎧", "digest.source.recommend"),

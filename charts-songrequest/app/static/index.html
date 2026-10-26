@@ -35,6 +35,26 @@
     <div class="hint" data-i18n-html="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
   </div>
 
+  <div class="card">
+    <h1 data-i18n="upload_heading">Song hochladen</h1>
+
+    <form id="upform">
+      <input id="upfile" name="file" type="file" accept="audio/mpeg,.mp3">
+
+      <label for="up_artist" data-i18n="label_artist">Künstler</label>
+      <input id="up_artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off">
+
+      <label for="up_title" data-i18n="label_title">Titel</label>
+      <input id="up_title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
+
+      <button id="upbtn" type="submit" data-i18n="upload_btn">Hochladen &amp; prüfen</button>
+    </form>
+
+    <div id="upstatus" class="status"></div>
+
+    <div class="hint" data-i18n="upload_hint">Nur MP3 · benannt "Künstler - Titel.mp3"</div>
+  </div>
+
 <script>
 // Injected i18n subset (songrequest.ui.* re-based) + client translator. Mirrors
 // the Python loader's {name} substitution (split/join, not regex) and its
@@ -137,6 +157,132 @@ form.addEventListener('submit', (e) => {
     return;
   }
   sendRequest(artist, title);
+});
+
+// --- Manual MP3 upload -----------------------------------------------------
+const upform = document.getElementById('upform');
+const upbtn = document.getElementById('upbtn');
+const upfile = document.getElementById('upfile');
+const upartist = document.getElementById('up_artist');
+const uptitle = document.getElementById('up_title');
+const upstatus = document.getElementById('upstatus');
+// Token of a staged sub-threshold upload awaiting "add it anyway".
+let upPendingToken = null;
+
+function showUpStatus(cls, iconHtml, html) {
+  upstatus.className = 'status show ' + cls;
+  upstatus.innerHTML = '<span class="ic">' + iconHtml + '</span><span>' + html + '</span>';
+}
+
+// Mirror parse_upload_name: split the basename on the FIRST " - ".
+function parseUploadName(name) {
+  const base = name.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '');
+  const i = base.indexOf(' - ');
+  if (i >= 0) return [base.slice(0, i).trim(), base.slice(i + 3).trim()];
+  return ['', base.trim()];
+}
+
+upfile.addEventListener('change', () => {
+  upPendingToken = null;
+  const f = upfile.files && upfile.files[0];
+  if (!f) return;
+  // Pre-fill the editable fields from the filename.
+  const [a, ti] = parseUploadName(f.name);
+  upartist.value = a;
+  uptitle.value = ti;
+  // Early, friendly client-side extension warning (server is authoritative).
+  if (!/\.mp3$/i.test(f.name)) {
+    showUpStatus('err', '⚠️', t('js_upload_not_mp3'));
+  } else {
+    upstatus.className = 'status';
+  }
+});
+
+async function sendConfirm() {
+  upbtn.disabled = true;
+  showUpStatus('searching', '<span class="spinner"></span>', t('js_uploading'));
+  try {
+    const resp = await fetch('/api/upload/confirm', {
+      method: 'POST', body: new URLSearchParams({
+        token: upPendingToken,
+        artist: upartist.value.trim(),
+        title: uptitle.value.trim(),
+      })
+    });
+    const data = await resp.json();
+    renderUpload(data);
+  } catch (err) {
+    showUpStatus('err', '⚠️', t('js_network_error'));
+  } finally {
+    upbtn.disabled = false;
+  }
+}
+
+function renderUpload(data) {
+  if (data.ok && data.needs_confirm) {
+    // Below threshold, nothing better online -> honest message + confirm button.
+    upPendingToken = data.token;
+    showUpStatus('ok', 'ℹ️',
+      esc(data.message) + '<br>' +
+      '<button type="button" id="upconfirm">' + esc(t('js_upload_confirm_btn')) + '</button>');
+    document.getElementById('upconfirm').addEventListener('click', sendConfirm);
+  } else if (data.ok && data.accepted) {
+    upPendingToken = null;
+    showUpStatus('ok', '✅',
+      t('js_upload_accepted') + '<br>' +
+      esc(data.artist) + ' – ' + esc(data.title) + ' (' + data.bitrate + ' kbps)<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' + esc(data.message) + '</span>');
+    upform.reset();
+  } else if (data.ok && data.upgrade) {
+    // A better version was found online and is downloading instead.
+    upPendingToken = null;
+    var newBr = data.bitrate > 0 ? (data.bitrate + ' kbps') : ('≥ ' + 256 + ' kbps');
+    showUpStatus('ok', '⬆️',
+      t('js_upgrade_head') + '<br>' +
+      esc(data.artist) + ' – ' + esc(data.title) + '<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' +
+      t('js_upgrade_tail', {new: newBr, old: data.old_bitrate}) + '</span>');
+    upform.reset();
+  } else if (data.ok) {
+    // New addition downloaded from slskd instead of the uploaded file.
+    upPendingToken = null;
+    showUpStatus('ok', '✅',
+      t('js_found_head') + '<br>' +
+      esc(data.artist) + ' – ' + esc(data.title) + ' (' + data.bitrate + ' kbps)<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' + t('js_found_tail') + '</span>');
+    upform.reset();
+  } else {
+    showUpStatus('err', '⚠️', esc(data.error) || t('js_unknown_error'));
+  }
+}
+
+upform.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = upfile.files && upfile.files[0];
+  if (!f) {
+    showUpStatus('err', '⚠️', t('js_upload_not_mp3'));
+    return;
+  }
+  if (!uptitle.value.trim()) {
+    showUpStatus('err', '⚠️', t('js_upload_need_title'));
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('artist', upartist.value.trim());
+  fd.append('title', uptitle.value.trim());
+  upbtn.disabled = true;
+  upPendingToken = null;
+  showUpStatus('searching', '<span class="spinner"></span>', t('js_uploading'));
+  try {
+    const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    renderUpload(data);
+  } catch (err) {
+    showUpStatus('err', '⚠️', t('js_network_error'));
+  } finally {
+    upbtn.disabled = false;
+  }
 });
 
 applyStaticI18n();
