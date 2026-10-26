@@ -148,6 +148,15 @@ rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
 > **After rebuilding a web UI** (dashboard, config, songrequest), hard-reload
 > the browser (Cmd/Ctrl+Shift+R) – Safari in particular caches CSS/JS
 > aggressively and otherwise serves the old assets.
+>
+> **When a change adds or edits i18n keys** (`lang/{en,de,fr}.json`): those files
+> are bind-mounted (not baked into the image by `COPY app/`), so a `--no-cache`
+> rebuild alone does **not** pick them up. Two things are needed: (1) the updated
+> `lang/*.json` must reach the mounted folder (the NAS checkout, via `git pull`),
+> and (2) **restart the service** so its process reloads the table into memory
+> (`docker restart <service>`). A service whose process is still running keeps the
+> old table in RAM and renders raw key names (e.g. `tab_request`) until restarted.
+> Verify with `docker exec <service> grep -c <new.key> /lang/en.json` (> 0).
 
 > **First run / what healthy looks like.** The three web UIs are always started,
 > so their passwords are part of the minimum config: songrequest on `:5056`,
@@ -495,6 +504,16 @@ kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
 > **Nach dem Neubauen einer Web-UI** (Dashboard, Config, Songrequest) den
 > Browser hart neu laden (Cmd/Ctrl+Shift+R) – gerade Safari cacht CSS/JS
 > aggressiv und zeigt sonst die alten Dateien.
+>
+> **Wenn eine Änderung i18n-Keys hinzufügt oder ändert** (`lang/{en,de,fr}.json`):
+> Diese Dateien sind per Bind-Mount eingebunden (nicht via `COPY app/` ins Image
+> gebacken), ein `--no-cache`-Rebuild allein zieht sie also **nicht**. Zwei Dinge
+> sind nötig: (1) die aktualisierten `lang/*.json` müssen in den gemounteten
+> Ordner (NAS-Checkout, per `git pull`), und (2) den Dienst **neu starten**, damit
+> der Prozess die Tabelle neu in den Speicher lädt (`docker restart <dienst>`).
+> Ein noch laufender Prozess behält die alte Tabelle im RAM und zeigt rohe
+> Key-Namen (z. B. `tab_request`) bis zum Neustart. Prüfen mit
+> `docker exec <dienst> grep -c <neuer.key> /lang/en.json` (> 0).
 
 > **Erster Start / wie „gesund" aussieht.** Die drei Web-UIs werden immer
 > gestartet, daher gehören ihre Passwörter zur Minimal-Konfiguration:
