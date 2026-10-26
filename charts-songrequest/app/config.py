@@ -66,6 +66,13 @@ REJECT_UPSAMPLED = _get_bool("REJECT_UPSAMPLED", True)
 REJECT_UPSAMPLED_MIN_BITRATE = _get_int("REJECT_UPSAMPLED_MIN_BITRATE", 256)
 CUTOFF_TOLERANCE_KHZ = _get_float("CUTOFF_TOLERANCE_KHZ", 2.0)
 
+# --- YouTube download (third tab) ---
+# Duration ceiling (seconds) that bounds a YouTube download: a video longer than
+# this (or a live stream) is rejected before anything is written, so a
+# pathological URL (hours-long stream, live) cannot hang the single-worker
+# process or fill the disk. A normal song stays well under the default 15 min.
+YOUTUBE_MAX_DURATION_SECONDS = _get_int("YOUTUBE_MAX_DURATION_SECONDS", 900)
+
 # --- Search ---
 SEARCH_TIMEOUT_MS = _get_int("SEARCH_TIMEOUT_MS", 15000)
 SEARCH_WAIT_SECONDS = _get_int("SEARCH_WAIT_SECONDS", 25)

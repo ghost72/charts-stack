@@ -5,6 +5,8 @@ WORKDIR /app
 # ffmpeg: fuer die FFT-Qualitaetsmessung (quality.py) von Uploads - misst den
 # echten Frequenz-Cutoff, um hochskalierte/gefakte MP3s zu erkennen. Nur Lesen/
 # Dekodieren, schreibt nichts. ffmpeg ist in jedem Debian-Repo verfuegbar.
+# ffmpeg wird zusaetzlich von yt-dlp (YouTube-Tab) fuer die MP3-Extraktion und
+# das Einbetten des Thumbnails als Cover genutzt.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*

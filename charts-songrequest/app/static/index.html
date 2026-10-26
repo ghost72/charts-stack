@@ -25,6 +25,7 @@
     <div class="tabs">
       <button type="button" class="tab active" data-tab="request" data-i18n="tab_request">Song Request</button>
       <button type="button" class="tab" data-tab="upload" data-i18n="tab_upload">Song Upload</button>
+      <button type="button" class="tab" data-tab="youtube" data-i18n="tab_youtube">Song von YouTube</button>
     </div>
 
     <!-- Request pane (default visible): search slskd and download. -->
@@ -61,6 +62,27 @@
       <div id="upstatus" class="status"></div>
 
       <div class="hint" data-i18n="upload_hint">Nur MP3 · benannt "Künstler - Titel.mp3"</div>
+    </div>
+
+    <!-- YouTube pane (hidden until its tab is selected): paste a YouTube URL,
+         the artist/title are suggested from the video metadata and editable. -->
+    <div class="tabpane" data-pane="youtube" hidden>
+      <form id="ytform">
+        <label for="yt_url" data-i18n="yt_url_label">YouTube-URL</label>
+        <input id="yt_url" name="url" type="text" data-i18n-ph="yt_url_ph" placeholder="z. B. https://www.youtube.com/watch?v=…" autocomplete="off">
+
+        <label for="yt_artist" data-i18n="label_artist">Künstler</label>
+        <input id="yt_artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off">
+
+        <label for="yt_title" data-i18n="label_title">Titel</label>
+        <input id="yt_title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
+
+        <button id="ytbtn" type="submit" data-i18n="yt_btn">Laden &amp; übernehmen</button>
+      </form>
+
+      <div id="ytstatus" class="status"></div>
+
+      <div class="hint" data-i18n="yt_hint">YouTube-Link einfügen · Künstler/Titel werden vorgeschlagen, bei Bedarf anpassen</div>
     </div>
   </div>
 
@@ -291,6 +313,110 @@ upform.addEventListener('submit', async (e) => {
     showUpStatus('err', '⚠️', t('js_network_error'));
   } finally {
     upbtn.disabled = false;
+  }
+});
+
+// --- YouTube URL import ----------------------------------------------------
+const ytform = document.getElementById('ytform');
+const ytbtn = document.getElementById('ytbtn');
+const yturl = document.getElementById('yt_url');
+const ytartist = document.getElementById('yt_artist');
+const yttitle = document.getElementById('yt_title');
+const ytstatus = document.getElementById('ytstatus');
+// Set once the user edits a field so a late metadata fetch never clobbers it.
+let ytArtistTouched = false;
+let ytTitleTouched = false;
+let ytFetchTimer = null;
+
+function showYtStatus(cls, iconHtml, html) {
+  ytstatus.className = 'status show ' + cls;
+  ytstatus.innerHTML = '<span class="ic">' + iconHtml + '</span><span>' + html + '</span>';
+}
+
+ytartist.addEventListener('input', () => { ytArtistTouched = true; });
+yttitle.addEventListener('input', () => { ytTitleTouched = true; });
+
+// Fetch the metadata suggestion and pre-fill ONLY the fields the user has not
+// touched (never clobber what they typed). Fails soft: on error the fields
+// stay as they are and the user can type/submit anyway.
+async function fetchYtSuggestion() {
+  const u = yturl.value.trim();
+  if (!u) return;
+  showYtStatus('searching', '<span class="spinner"></span>', t('js_yt_fetching'));
+  try {
+    const resp = await fetch('/api/youtube/fetch', {
+      method: 'POST', body: new URLSearchParams({ url: u })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (!ytArtistTouched && data.artist) ytartist.value = data.artist;
+      if (!ytTitleTouched && data.title) yttitle.value = data.title;
+      ytstatus.className = 'status';
+    } else {
+      showYtStatus('err', '⚠️', esc(data.error) || t('yt_fetch_failed'));
+    }
+  } catch (err) {
+    // Network error on the suggestion is non-fatal: keep the fields, let the
+    // user fill them and submit.
+    ytstatus.className = 'status';
+  }
+}
+
+yturl.addEventListener('blur', fetchYtSuggestion);
+yturl.addEventListener('input', () => {
+  // Debounce: fetch ~600 ms after the last change. A new URL re-enables the
+  // pre-fill (treat it as a fresh video).
+  ytArtistTouched = false;
+  ytTitleTouched = false;
+  if (ytFetchTimer) clearTimeout(ytFetchTimer);
+  ytFetchTimer = setTimeout(fetchYtSuggestion, 600);
+});
+
+function renderYoutube(data) {
+  if (data.ok && data.already) {
+    // Already present, nothing downloaded. Honest backend message.
+    showYtStatus('ok', 'ℹ️',
+      esc(data.artist) + ' – ' + esc(data.title) +
+      (data.bitrate ? ' (' + data.bitrate + ' kbps)' : '') + '<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' +
+      esc(data.message || t('js_no_download')) + '</span>');
+  } else if (data.ok && data.accepted) {
+    showYtStatus('ok', '✅',
+      t('js_yt_accepted') + '<br>' +
+      esc(data.artist) + ' – ' + esc(data.title) + '<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' + esc(data.message) + '</span>');
+    ytform.reset();
+    ytArtistTouched = false;
+    ytTitleTouched = false;
+  } else {
+    showYtStatus('err', '⚠️', esc(data.error) || t('js_unknown_error'));
+  }
+}
+
+ytform.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const u = yturl.value.trim();
+  if (!u) {
+    showYtStatus('err', '⚠️', t('js_yt_need_url'));
+    return;
+  }
+  if (ytFetchTimer) clearTimeout(ytFetchTimer);
+  ytbtn.disabled = true;
+  showYtStatus('searching', '<span class="spinner"></span>', t('js_yt_downloading'));
+  try {
+    const resp = await fetch('/api/youtube', {
+      method: 'POST', body: new URLSearchParams({
+        url: u,
+        artist: ytartist.value.trim(),
+        title: yttitle.value.trim(),
+      })
+    });
+    const data = await resp.json();
+    renderYoutube(data);
+  } catch (err) {
+    showYtStatus('err', '⚠️', t('js_network_error'));
+  } finally {
+    ytbtn.disabled = false;
   }
 });
 
