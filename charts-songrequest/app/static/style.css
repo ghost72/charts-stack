@@ -88,3 +88,29 @@ input:focus { border-color: #d76d77; background: rgba(0,0,0,0.4); }
   border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Hidden iOS Taptic switch (<input type="checkbox" switch>). Visually hidden
+   via the off-screen clip pattern. Deliberately NOT display:none and NOT
+   visibility:hidden, because either of those can stop the Taptic engine from
+   firing when the switch is toggled inside a user gesture. It stays in the
+   layout-less off-screen box (1px, absolute), so there is no layout shift, and
+   pointer-events:none keeps it out of the user's way. */
+.haptic-switch {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+  pointer-events: none;
+}
+
+/* One-shot attention pulse: a single non-looping box-shadow flash on the
+   element waiting for a user decision. box-shadow only, so no layout shift.
+   The 0.28 alpha is a deliberately softer value than the 0.35 resting glow
+   (.tab.active / .tabpane button) so the pulse reads as a gentle nudge. */
+@keyframes attention-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(215,109,119,0.0); }
+  30%  { box-shadow: 0 0 0 6px rgba(215,109,119,0.28); }
+  100% { box-shadow: 0 0 0 0 rgba(215,109,119,0.0); }
+}
+.pulse { animation: attention-pulse .6s ease-out 1; }
