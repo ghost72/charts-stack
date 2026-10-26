@@ -70,7 +70,8 @@ def _basename_key(filename: str) -> str:
 
 
 def record(filename: str, artist: str, title: str, source: str = "",
-           replace: bool = False, notify_device: str = "") -> None:
+           replace: bool = False, notify_device: str = "",
+           accept_anyway: bool = False) -> None:
     """
     Records the clean chart metadata for the downloaded file.
     Album is set to the title (chart songs are singles) so charts-import does
@@ -87,6 +88,11 @@ def record(filename: str, artist: str, title: str, source: str = "",
     requests via charts-songrequest). If set, charts-import sends an
     availability message to EXACTLY this device after a successful import.
     Empty -> no field written -> no message (never send to everyone).
+
+    accept_anyway = True is set on a confirmed "add it anyway" for an upsampled
+    manual upload; it tells charts-import to skip ONLY its upsampling rejection
+    for this file (all other rejections still apply). Written only when True,
+    identical style to replace.
     """
     data = _load(config.MANIFEST_FILE)
     entry = {
@@ -98,6 +104,8 @@ def record(filename: str, artist: str, title: str, source: str = "",
         entry["source"] = source
     if replace:
         entry["replace"] = True
+    if accept_anyway:
+        entry["accept_anyway"] = True
     if notify_device:
         entry["notify_device"] = notify_device
     data["entries"][_basename_key(filename)] = entry

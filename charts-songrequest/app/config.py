@@ -20,6 +20,13 @@ def _get_bool(name: str, default: bool) -> bool:
     return os.environ.get(name, "1" if default else "0") == "1"
 
 
+def _get_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # --- slskd API (identical to charts-download) ---
 SLSKD_HOST = os.environ.get("SLSKD_HOST", "http://slskd:5030")
 SLSKD_API_KEY = os.environ.get("SLSKD_API_KEY", "").strip()
@@ -47,6 +54,17 @@ else:
 # Manual requests should get a real single/album version, not a sampler
 # track. Default on.
 REJECT_COMPILATIONS = _get_bool("REJECT_COMPILATIONS", True)
+
+# --- Upload real-quality check (upsampling) — same knobs as charts-import ---
+# On an MP3 upload the service measures the REAL frequency cutoff (FFT via
+# ffmpeg/quality.py) and routes an upsampled/faked file (a low real cutoff
+# despite a high tag bitrate) through the same slskd-search -> confirm path as a
+# sub-MIN_BITRATE upload. These are the EXACT names/defaults charts-import uses,
+# so both services agree on what "upsampled" means (no new knob invented;
+# MIN_BITRATE above stays the tag-bitrate floor).
+REJECT_UPSAMPLED = _get_bool("REJECT_UPSAMPLED", True)
+REJECT_UPSAMPLED_MIN_BITRATE = _get_int("REJECT_UPSAMPLED_MIN_BITRATE", 256)
+CUTOFF_TOLERANCE_KHZ = _get_float("CUTOFF_TOLERANCE_KHZ", 2.0)
 
 # --- Search ---
 SEARCH_TIMEOUT_MS = _get_int("SEARCH_TIMEOUT_MS", 15000)
