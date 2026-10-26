@@ -145,6 +145,14 @@ rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
 > (or the Container Manager's **Clean build**). After deploying code, verify the
 > container actually has it, e.g. `docker exec <service> grep -c <a-new-marker> /app/app/<file>.py` should be > 0.
 >
+> **Rebuild EVERY service a change touches, not just the obvious one.** A single
+> feature often spans several services (e.g. an upload flow that also edits
+> `charts-import`'s rejection logic and `charts-digest`'s labels). If you rebuild
+> only the front-facing service, the others keep running old code and silently
+> misbehave (e.g. `charts-import` kept rejecting an `accept_anyway` upload because
+> it had not been rebuilt). Check the commit's file list and rebuild each service
+> whose `app/` changed; verify with the `grep -c <marker>` check above per service.
+>
 > **After rebuilding a web UI** (dashboard, config, songrequest), hard-reload
 > the browser (Cmd/Ctrl+Shift+R) – Safari in particular caches CSS/JS
 > aggressively and otherwise serves the old assets.
@@ -500,6 +508,16 @@ kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
 > (oder im Container Manager „Neu erstellen" / Clean build). Nach einem
 > Code-Deploy prüfen, ob der Container ihn wirklich hat, z. B.
 > `docker exec <dienst> grep -c <neuer-marker> /app/app/<datei>.py` muss > 0 sein.
+>
+> **JEDEN Dienst neu bauen, den eine Änderung berührt – nicht nur den
+> offensichtlichen.** Ein Feature erstreckt sich oft über mehrere Dienste (z. B.
+> ein Upload-Flow, der auch die Ablehn-Logik von `charts-import` und die Labels
+> von `charts-digest` ändert). Baut man nur den sichtbaren Dienst neu, laufen die
+> anderen mit altem Code weiter und verhalten sich still falsch (z. B. hat
+> `charts-import` einen `accept_anyway`-Upload weiter abgelehnt, weil es nicht neu
+> gebaut war). Die Dateiliste des Commits prüfen und jeden Dienst neu bauen,
+> dessen `app/` sich geändert hat; pro Dienst mit dem `grep -c <marker>`-Check
+> oben verifizieren.
 >
 > **Nach dem Neubauen einer Web-UI** (Dashboard, Config, Songrequest) den
 > Browser hart neu laden (Cmd/Ctrl+Shift+R) – gerade Safari cacht CSS/JS
