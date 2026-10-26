@@ -41,6 +41,23 @@ def _title_key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", t)
 
 
+def _artist_key(artist: str) -> str:
+    """
+    Normalized artist key for MATCHING only (never for on-disk folder names).
+
+    Mirrors _title_key: lowercase, then strip to [a-z0-9]. This folds the
+    deterministic spelling variants of the SAME artist - dot, underscore and
+    whitespace runs plus case - to one key, so e.g.
+    'DJ.ILHAM' == 'DJ ILHAM' == 'dj  ilham' == 'DJ_ILHAM' -> 'djilham'. It only
+    folds punctuation/whitespace/case; it never collapses genuinely different
+    artists ('DJ ILHAM' != 'DJ ADONI'). No fuzzy/typo matching.
+
+    Do NOT use this to build folder names - _clean_component stays the literal
+    on-disk vehicle so existing folders are never renamed.
+    """
+    return re.sub(r"[^a-z0-9]+", "", (artist or "").lower())
+
+
 def _extract_title_from_filename(filename: str) -> str:
     """Gets the song title from a file name (identical to charts-import)."""
     base = os.path.splitext(os.path.basename(filename))[0]
@@ -54,23 +71,27 @@ def _extract_title_from_filename(filename: str) -> str:
 
 def _find_artist_dir(music_dir: str, artist: str) -> str | None:
     """
-    Finds the artist folder under music_dir - CASE-INSENSITIVELY. On ext4
-    (Linux) folder names are case-sensitive, i.e. 'dermot kennedy' would
-    otherwise miss the folder 'Dermot Kennedy'. We therefore compare normalized
-    (sanitized + lowercase) so the input casing does not matter.
+    Finds the artist folder under music_dir - folding dot/underscore/whitespace
+    and case via _artist_key. On ext4 (Linux) folder names are case-sensitive,
+    i.e. 'dermot kennedy' would otherwise miss the folder 'Dermot Kennedy'; and
+    'DJ ILHAM' would miss an existing 'DJ.ILHAM' folder. We therefore compare on
+    the normalized match key so punctuation/whitespace/case in the input do not
+    matter. Matching only - the on-disk literal is still tried first.
     """
     safe_artist = _clean_component(artist, "")
     if not safe_artist:
         return None
-    # 1. Fast path: the exact folder exists.
+    # 1. Fast path: the exact (filesystem-literal) folder exists.
     exact = os.path.join(music_dir, safe_artist)
     if os.path.isdir(exact):
         return exact
-    # 2. Case-insensitive comparison across all artist folders.
-    target = safe_artist.lower()
+    # 2. Match-key comparison across all artist folders (folds dot/space/case).
+    target = _artist_key(artist)
+    if not target:
+        return None
     try:
         for name in os.listdir(music_dir):
-            if name.lower() == target and os.path.isdir(os.path.join(music_dir, name)):
+            if _artist_key(name) == target and os.path.isdir(os.path.join(music_dir, name)):
                 return os.path.join(music_dir, name)
     except OSError:
         pass
