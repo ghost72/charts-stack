@@ -567,35 +567,39 @@ async def api_upload(request: Request, file: UploadFile = None,
     existing_bitrate = library.read_bitrate(existing) if existing else 0
     notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
 
+    # Library-first reject (authoritative, BEFORE the quality/upsampling branch):
+    # if the song is already present at equal-or-better quality there is no point
+    # keeping ANY upload - good-quality or upsampled alike. Only a genuinely NEW
+    # or better file continues to the upsampling -> slskd -> confirm route below.
+    if existing and measured <= existing_bitrate:
+        # Already present and not better -> discard the staged upload and report
+        # honestly (same shape as the request flow's "good quality" / "nothing
+        # better" case; renderUpload handles it).
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        logger.info(t("songrequest.request.existing_equal_or_better",
+                      existing=existing_bitrate, new=measured, effective=measured))
+        if existing_bitrate >= config.MIN_BITRATE:
+            msg = t("songrequest.ui.good_quality", bitrate=existing_bitrate)
+        else:
+            msg = t("songrequest.ui.nothing_better",
+                    bitrate=existing_bitrate, min=config.MIN_BITRATE)
+        return JSONResponse(content={
+            "ok": True, "already": True, "artist": artist, "title": title,
+            "bitrate": existing_bitrate, "message": msg})
+
     # 4. Real-quality check (FFT cutoff) on the staged file. An upsampled file
     #    (low real cutoff despite a high tag bitrate) must NOT be accepted on the
     #    tag bitrate alone - it takes the same slskd-search -> confirm route as a
     #    sub-threshold upload.
     upsampled, cutoff_khz, expected_khz = _upload_upsampled(staged, measured)
 
-    # 4a. Genuinely good (good tag bitrate AND not upsampled) -> but first check
-    #     the library (mirror api_request): if the song is already present with
-    #     equal-or-better quality there is no point accepting the upload. Only
-    #     accept when it is NEW or genuinely better than the existing copy.
+    # 4a. Genuinely good (good tag bitrate AND not upsampled) -> accept. The
+    #     already-present reject ran above, so reaching here means the file is
+    #     NEW or genuinely better than the existing copy.
     if measured >= config.MIN_BITRATE and not upsampled:
-        if existing and measured <= existing_bitrate:
-            # Already present and not better -> discard the staged upload and
-            # report honestly (same shape as the request flow's "nothing
-            # better" / "good quality" case; renderUpload handles it).
-            try:
-                os.remove(staged)
-            except OSError:
-                pass
-            logger.info(t("songrequest.request.existing_equal_or_better",
-                          existing=existing_bitrate, new=measured, effective=measured))
-            if existing_bitrate >= config.MIN_BITRATE:
-                msg = t("songrequest.ui.good_quality", bitrate=existing_bitrate)
-            else:
-                msg = t("songrequest.ui.nothing_better",
-                        bitrate=existing_bitrate, min=config.MIN_BITRATE)
-            return JSONResponse(content={
-                "ok": True, "already": True, "artist": artist, "title": title,
-                "bitrate": existing_bitrate, "message": msg})
         fname = _promote_upload(staged, artist, title,
                                 is_upgrade=bool(existing), notify_device=notify_device)
         logger.info(t("songrequest.request.upload_accepted",
@@ -725,7 +729,29 @@ async def api_upload_confirm(request: Request, token: str = Form(""),
     _pending_uploads.pop(token, None)
     measured = entry.get("bitrate", 0)
     existing = library.find_existing(config.MUSIC_DIR, artist, title)
+    existing_bitrate = library.read_bitrate(existing) if existing else 0
     notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
+
+    # Library-first reject (defense-in-depth): the same guard as api_upload, in
+    # case the song became present at equal-or-better quality while this confirm
+    # token was held (e.g. a concurrent import filed it). Discard the staged
+    # bytes and report honestly instead of filing a duplicate.
+    if existing and measured <= existing_bitrate:
+        try:
+            os.remove(entry["path"])
+        except OSError:
+            pass
+        logger.info(t("songrequest.request.existing_equal_or_better",
+                      existing=existing_bitrate, new=measured, effective=measured))
+        if existing_bitrate >= config.MIN_BITRATE:
+            msg = t("songrequest.ui.good_quality", bitrate=existing_bitrate)
+        else:
+            msg = t("songrequest.ui.nothing_better",
+                    bitrate=existing_bitrate, min=config.MIN_BITRATE)
+        return JSONResponse(content={
+            "ok": True, "already": True, "artist": artist, "title": title,
+            "bitrate": existing_bitrate, "message": msg})
+
     # Only a confirmed UPSAMPLED upload carries accept_anyway (defensive default:
     # anything other than "upsampled" -> False, so a sub-256 confirm files with
     # no flag, exactly as before).
