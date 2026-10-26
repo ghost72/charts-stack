@@ -25,7 +25,7 @@ from fastapi import FastAPI, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import blocklist, config, i18n, library, manifest, slsk, status
+from . import blocklist, config, i18n, library, manifest, quality, slsk, status
 from .i18n import t
 
 logging.basicConfig(
@@ -391,11 +391,34 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
 # reads its bitrate and routes it through the SAME manifest -> charts-import
 # pipeline every other song uses (so tags/cover/ReplayGain/year/Lidarr are not
 # re-implemented here):
-#   - bitrate >= MIN_BITRATE -> accept straight away (drop into /charts +
-#     manifest source="upload", no slskd search).
-#   - bitrate <  MIN_BITRATE -> search slskd for something better. If a better
-#     copy delivers, download THAT instead (normal upgrade/new). If nothing
-#     better is found, offer "add it anyway" (confirm round-trip).
+#   - tag bitrate >= MIN_BITRATE AND not upsampled (real FFT cutoff ok) ->
+#     accept straight away (drop into /charts + manifest source="upload", no
+#     slskd search).
+#   - tag bitrate < MIN_BITRATE OR upsampled (a low real cutoff despite a high
+#     tag bitrate) -> search slskd for something better. If a better copy
+#     delivers, download THAT instead (normal upgrade/new). If nothing better is
+#     found, offer "add it anyway" (confirm round-trip) with an honest message.
+#     For a confirmed upsampled upload the manifest entry carries
+#     accept_anyway=true so charts-import skips ONLY its upsampling rejection.
+
+
+def _upload_upsampled(staged_path: str, tag_bitrate: int):
+    """
+    Real-quality (FFT cutoff) check for an uploaded MP3. Returns
+    (is_upsampled, measured_cutoff_khz_or_None, expected_cutoff_khz). Honours the
+    shared REJECT_UPSAMPLED* / CUTOFF_TOLERANCE_KHZ knobs; conservative: not
+    measurable or check disabled -> (False, None, expected). is_upsampled itself
+    short-circuits to not-upsampled when the tag bitrate is below
+    REJECT_UPSAMPLED_MIN_BITRATE, so a sub-256 file is never flagged here and
+    correctly continues down the below-threshold branch.
+    """
+    if not config.REJECT_UPSAMPLED:
+        return False, None, 0.0
+    return quality.is_upsampled(
+        staged_path, tag_bitrate,
+        tolerance_khz=config.CUTOFF_TOLERANCE_KHZ,
+        min_check_bitrate=config.REJECT_UPSAMPLED_MIN_BITRATE,
+    )
 
 
 def _sweep_staging(now: float) -> None:
@@ -445,11 +468,14 @@ def _stage_upload(upload: "UploadFile") -> tuple[str, str]:
 
 
 def _promote_upload(staged_path: str, artist: str, title: str,
-                    is_upgrade: bool, notify_device: str) -> str:
+                    is_upgrade: bool, notify_device: str,
+                    accept_anyway: bool = False) -> str:
     """
     Move a validated staged file into the /charts drop folder under a
     collision-free "<artist> - <title>.mp3" basename and write the manifest
-    entry (source="upload"). Returns the final basename.
+    entry (source="upload"). Returns the final basename. accept_anyway=True is
+    passed through to the manifest only for a confirmed upsampled upload (tells
+    charts-import to skip ONLY its upsampling rejection for this file).
     """
     charts_dir = os.path.dirname(config.MANIFEST_FILE)
     os.makedirs(charts_dir, exist_ok=True)
@@ -466,7 +492,8 @@ def _promote_upload(staged_path: str, artist: str, title: str,
     # Record EXACTLY what the user submitted (artist may be empty: charts-import
     # turns an empty manifest artist into "Unknown Artist" via its own floor).
     manifest.record(fname, artist, title, source="upload",
-                    replace=is_upgrade, notify_device=notify_device)
+                    replace=is_upgrade, notify_device=notify_device,
+                    accept_anyway=accept_anyway)
     return fname
 
 
@@ -529,8 +556,35 @@ async def api_upload(request: Request, file: UploadFile = None,
     existing_bitrate = library.read_bitrate(existing) if existing else 0
     notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
 
-    # 4a. Good enough -> accept immediately, no slskd search.
-    if measured >= config.MIN_BITRATE:
+    # 4. Real-quality check (FFT cutoff) on the staged file. An upsampled file
+    #    (low real cutoff despite a high tag bitrate) must NOT be accepted on the
+    #    tag bitrate alone - it takes the same slskd-search -> confirm route as a
+    #    sub-threshold upload.
+    upsampled, cutoff_khz, expected_khz = _upload_upsampled(staged, measured)
+
+    # 4a. Genuinely good (good tag bitrate AND not upsampled) -> but first check
+    #     the library (mirror api_request): if the song is already present with
+    #     equal-or-better quality there is no point accepting the upload. Only
+    #     accept when it is NEW or genuinely better than the existing copy.
+    if measured >= config.MIN_BITRATE and not upsampled:
+        if existing and measured <= existing_bitrate:
+            # Already present and not better -> discard the staged upload and
+            # report honestly (same shape as the request flow's "nothing
+            # better" / "good quality" case; renderUpload handles it).
+            try:
+                os.remove(staged)
+            except OSError:
+                pass
+            logger.info(t("songrequest.request.existing_equal_or_better",
+                          existing=existing_bitrate, new=measured, effective=measured))
+            if existing_bitrate >= config.MIN_BITRATE:
+                msg = t("songrequest.ui.good_quality", bitrate=existing_bitrate)
+            else:
+                msg = t("songrequest.ui.nothing_better",
+                        bitrate=existing_bitrate, min=config.MIN_BITRATE)
+            return JSONResponse(content={
+                "ok": True, "already": True, "artist": artist, "title": title,
+                "bitrate": existing_bitrate, "message": msg})
         fname = _promote_upload(staged, artist, title,
                                 is_upgrade=bool(existing), notify_device=notify_device)
         logger.info(t("songrequest.request.upload_accepted",
@@ -541,9 +595,18 @@ async def api_upload(request: Request, file: UploadFile = None,
             "bitrate": measured,
             "message": t("songrequest.ui.upload_accepted", bitrate=measured)})
 
-    # 4b. Below threshold -> search slskd for something better.
-    logger.info(t("songrequest.request.upload_sub_threshold",
-                  bitrate=measured, min=config.MIN_BITRATE))
+    # 4b. Below threshold OR upsampled -> search slskd for something better.
+    #     Same slskd search + _download_best logic for both reasons; the reason
+    #     only differs for the honest confirm message and the accept_anyway flag.
+    reason = "upsampled" if upsampled else "below_min"
+    if upsampled:
+        logger.info(t("songrequest.request.upload_upsampled",
+                      bitrate=measured,
+                      cutoff=f"{cutoff_khz:.0f}" if cutoff_khz is not None else "?",
+                      expected=f"{expected_khz:.0f}"))
+    else:
+        logger.info(t("songrequest.request.upload_sub_threshold",
+                      bitrate=measured, min=config.MIN_BITRATE))
     try:
         client = slsk.connect()
     except slsk.SlskdError as e:
@@ -602,15 +665,26 @@ async def api_upload(request: Request, file: UploadFile = None,
             "message": msg})
 
     # 4c. Nothing better online -> keep the staged file and ask the user to
-    #     confirm "add it anyway".
+    #     confirm "add it anyway". Carry the reason (+ measured/expected cutoff)
+    #     so the confirm path knows whether to set accept_anyway and the message
+    #     can be honest about the real quality.
     _pending_uploads[token] = {
-        "path": staged, "bitrate": measured, "user": user, "created": time.time()}
+        "path": staged, "bitrate": measured, "user": user,
+        "created": time.time(), "reason": reason,
+        "cutoff": cutoff_khz, "expected": expected_khz}
     logger.info(t("songrequest.request.upload_confirm_pending", bitrate=measured))
+    if reason == "upsampled":
+        msg = t("songrequest.ui.upload_upsampled_prompt",
+                bitrate=measured,
+                cutoff=f"{cutoff_khz:.0f}" if cutoff_khz is not None else "?",
+                expected=f"{expected_khz:.0f}")
+    else:
+        msg = t("songrequest.ui.upload_confirm_prompt",
+                bitrate=measured, min=config.MIN_BITRATE)
     return JSONResponse(content={
         "ok": True, "needs_confirm": True, "token": token,
         "artist": artist, "title": title, "bitrate": measured,
-        "message": t("songrequest.ui.upload_confirm_prompt",
-                     bitrate=measured, min=config.MIN_BITRATE)})
+        "message": msg})
 
 
 @app.post("/api/upload/confirm")
@@ -641,8 +715,13 @@ async def api_upload_confirm(request: Request, token: str = Form(""),
     measured = entry.get("bitrate", 0)
     existing = library.find_existing(config.MUSIC_DIR, artist, title)
     notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
+    # Only a confirmed UPSAMPLED upload carries accept_anyway (defensive default:
+    # anything other than "upsampled" -> False, so a sub-256 confirm files with
+    # no flag, exactly as before).
+    accept_anyway = entry.get("reason") == "upsampled"
     _promote_upload(entry["path"], artist, title,
-                    is_upgrade=bool(existing), notify_device=notify_device)
+                    is_upgrade=bool(existing), notify_device=notify_device,
+                    accept_anyway=accept_anyway)
     logger.info(t("songrequest.request.upload_accepted",
                   artist=artist, title=title, bitrate=measured))
     _record_request(f"{artist} - {title}")

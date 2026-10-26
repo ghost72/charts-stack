@@ -161,17 +161,25 @@ def _rejection_reason(src: str, artist: str) -> str | None:
     # Upsampling/fake-bitrate check (frequency cutoff). Conservative: only kicks
     # in with a high CLAIMED bitrate and a clearly too-low real cutoff. Not
     # measurable -> no reject (quality.is_upsampled then returns False).
+    # Skipped ONLY when the manifest entry carries accept_anyway (a user
+    # confirmed a poor-quality manual upload "add it anyway" in
+    # charts-songrequest). The keyword / unknown-artist / too-short rejections
+    # above stay unconditional - this gate bypasses the upsampling branch alone.
+    # The manifest lookup sits INSIDE the REJECT_UPSAMPLED block so no extra read
+    # happens when the check is disabled.
     if config.REJECT_UPSAMPLED:
-        claimed = _read_bitrate(src)
-        upsampled, measured, expected = quality.is_upsampled(
-            src, claimed,
-            tolerance_khz=config.CUTOFF_TOLERANCE_KHZ,
-            min_check_bitrate=config.REJECT_UPSAMPLED_MIN_BITRATE,
-        )
-        if upsampled:
-            # No '<'/'>' in the reason (Pushover HTML). measured/expected in kHz.
-            return t("import.reject.upsampled", claimed=claimed,
-                     measured=f"{measured:.1f}", expected=f"{expected:.0f}")
+        _m = tags.manifest_lookup(src)
+        if not (_m and _m.get("accept_anyway")):
+            claimed = _read_bitrate(src)
+            upsampled, measured, expected = quality.is_upsampled(
+                src, claimed,
+                tolerance_khz=config.CUTOFF_TOLERANCE_KHZ,
+                min_check_bitrate=config.REJECT_UPSAMPLED_MIN_BITRATE,
+            )
+            if upsampled:
+                # No '<'/'>' in the reason (Pushover HTML). measured/expected in kHz.
+                return t("import.reject.upsampled", claimed=claimed,
+                         measured=f"{measured:.1f}", expected=f"{expected:.0f}")
 
     return None
 

@@ -272,6 +272,172 @@ def test_upload_confirm_unknown_token(monkeypatch, tmp_path):
     assert _manifest(charts_dir)["entries"] == {}
 
 
+# --- Upsampling / real-quality upload path ---------------------------------
+# The FFT verdict (_upload_upsampled) and slskd are mocked; no real ffmpeg/numpy
+# decode and no network.
+
+def test_upload_upsampled_triggers_search(monkeypatch, tmp_path):
+    # Tag claims 320 but the real cutoff is low -> upsampled. slskd delivers a
+    # genuinely better copy -> that download is filed, the uploaded bytes go.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (True, 16.0, 19.0))
+    monkeypatch.setattr(main_mod.slsk, "connect", lambda: object())
+    cand = ("Peer", {"filename": "best.mp3", "bitRate": 320}, 95)
+    monkeypatch.setattr(main_mod.slsk, "find_candidates", lambda *a, **k: [cand])
+    monkeypatch.setattr(main_mod, "_download_best",
+                        lambda *a, **k: ("Peer", {"filename": "best.mp3", "bitRate": 320}, 320))
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("accepted") is not True  # not an upload-accept
+    assert body["ok"] is True
+    # The manifest entry is the slskd download (source="manuell"), NOT upload.
+    entry = _manifest(charts_dir)["entries"]["best.mp3"]
+    assert entry["source"] == config.MANUAL_SOURCE_LABEL
+    assert all(e.get("source") != "upload"
+               for e in _manifest(charts_dir)["entries"].values())
+    # Staged bytes removed, nothing in /charts from the upload.
+    assert not list(staging_dir.glob("*.mp3")) if staging_dir.exists() else True
+
+
+def test_upload_upsampled_nothing_better_needs_confirm(monkeypatch, tmp_path):
+    # Upsampled tag 320, but slskd has nothing better -> honest confirm prompt
+    # naming BOTH the tag bitrate and the measured cutoff; file stays staged.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (True, 16.0, 19.0))
+    monkeypatch.setattr(main_mod.slsk, "connect", lambda: object())
+    monkeypatch.setattr(main_mod.slsk, "find_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(main_mod, "_download_best", lambda *a, **k: None)
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["needs_confirm"] is True
+    assert body["bitrate"] == 320
+    # Honest message mentions both the claimed bitrate and the measured cutoff.
+    assert "320" in body["message"]
+    assert "16" in body["message"]
+    token = body["token"]
+    assert (staging_dir / f"{token}.mp3").exists()
+    assert not (charts_dir / "Artist - Title.mp3").exists()
+    assert _manifest(charts_dir)["entries"] == {}
+    assert main_mod._pending_uploads[token]["reason"] == "upsampled"
+
+
+def test_upload_upsampled_confirm_sets_accept_anyway(monkeypatch, tmp_path):
+    # Confirming an upsampled pending upload files it WITH accept_anyway=true.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (True, 16.0, 19.0))
+    monkeypatch.setattr(main_mod.slsk, "connect", lambda: object())
+    monkeypatch.setattr(main_mod.slsk, "find_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(main_mod, "_download_best", lambda *a, **k: None)
+    token = _upload(client, artist="Artist", title="Title").json()["token"]
+    r = client.post("/api/upload/confirm", data={
+        "token": token, "artist": "Artist", "title": "Title"})
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    assert (charts_dir / "Artist - Title.mp3").exists()
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert entry["accept_anyway"] is True
+
+
+def test_upload_good_not_upsampled_accepts(monkeypatch, tmp_path):
+    # Good tag AND not upsampled -> straight accept, no slskd, no accept_anyway.
+    client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 300)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (False, 20.0, 18.0))
+    called = []
+    monkeypatch.setattr(main_mod.slsk, "find_candidates",
+                        lambda *a, **k: called.append(1) or [])
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    assert not called  # slskd never searched
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert "accept_anyway" not in entry
+
+
+def test_upload_sub256_confirm_no_accept_anyway(monkeypatch, tmp_path):
+    # The existing sub-256 confirm path must NOT set accept_anyway (regression).
+    client, main_mod, charts_dir, staging_dir, token = _needs_confirm(
+        monkeypatch, tmp_path)
+    r = client.post("/api/upload/confirm", data={
+        "token": token, "artist": "Artist", "title": "Title"})
+    assert r.status_code == 200
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert "accept_anyway" not in entry
+
+
+# --- Early library check on the good-quality direct-accept branch ----------
+
+def test_upload_already_present_equal_or_better_not_staged(monkeypatch, tmp_path):
+    # Good tag + not upsampled, but the library already has an equal-or-better
+    # copy -> do NOT accept/stage; report already:true, no manifest entry.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 256)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (False, 20.0, 18.0))
+    monkeypatch.setattr(main_mod.library, "find_existing",
+                        lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 320)
+    called = []
+    monkeypatch.setattr(main_mod.slsk, "find_candidates",
+                        lambda *a, **k: called.append(1) or [])
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("already") is True
+    assert body.get("accepted") is not True
+    assert body["bitrate"] == 320
+    # slskd not searched, nothing staged, no manifest entry, nothing in /charts.
+    assert not called
+    assert not (charts_dir / "Artist - Title.mp3").exists()
+    assert _manifest(charts_dir)["entries"] == {}
+    assert not list(staging_dir.glob("*.mp3")) if staging_dir.exists() else True
+
+
+def test_upload_better_than_existing_proceeds(monkeypatch, tmp_path):
+    # Good tag + not upsampled + a worse existing copy -> the upload is a
+    # genuine upgrade and is accepted (with the replace flag).
+    client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (False, 20.0, 18.0))
+    monkeypatch.setattr(main_mod.library, "find_existing",
+                        lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 192)
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert entry.get("replace") is True
+
+
+# --- manifest.record flag -------------------------------------------------
+
+def test_record_accept_anyway(monkeypatch, tmp_path):
+    from app import manifest as manifest_mod
+    manifest_file = str(tmp_path / ".charts-manifest.json")
+    monkeypatch.setattr(manifest_mod.config, "MANIFEST_FILE", manifest_file)
+    manifest_mod.record("a.mp3", "Artist", "Title", source="upload",
+                        accept_anyway=True)
+    manifest_mod.record("b.mp3", "Artist", "Title", source="upload",
+                        accept_anyway=False)
+    data = json.loads(open(manifest_file, encoding="utf-8").read())
+    assert data["entries"]["a.mp3"]["accept_anyway"] is True
+    assert "accept_anyway" not in data["entries"]["b.mp3"]
+
+
 def test_upload_upgrade_sets_replace(monkeypatch, tmp_path):
     client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
     monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 300)
