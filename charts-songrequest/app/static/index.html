@@ -20,39 +20,48 @@
     <h1 data-i18n="heading">Song Request</h1>
     <div class="subtitle" data-i18n="subtitle">Song suchen, laden und in die Library holen</div>
 
-    <form id="form">
-      <label for="artist" data-i18n="label_artist">Künstler</label>
-      <input id="artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off" autofocus>
+    <!-- Tab bar: switch between the search/download form and the manual upload
+         form inside this single card. Request tab is active on load. -->
+    <div class="tabs">
+      <button type="button" class="tab active" data-tab="request" data-i18n="tab_request">Song Request</button>
+      <button type="button" class="tab" data-tab="upload" data-i18n="tab_upload">Song Upload</button>
+    </div>
 
-      <label for="title" data-i18n="label_title">Titel</label>
-      <input id="title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
+    <!-- Request pane (default visible): search slskd and download. -->
+    <div class="tabpane" data-pane="request">
+      <form id="form">
+        <label for="artist" data-i18n="label_artist">Künstler</label>
+        <input id="artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off" autofocus>
 
-      <button id="btn" type="submit" data-i18n="btn_search">Suchen &amp; laden</button>
-    </form>
+        <label for="title" data-i18n="label_title">Titel</label>
+        <input id="title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
 
-    <div id="status" class="status"></div>
+        <button id="btn" type="submit" data-i18n="btn_search">Suchen &amp; laden</button>
+      </form>
 
-    <div class="hint" data-i18n-html="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
-  </div>
+      <div id="status" class="status"></div>
 
-  <div class="card">
-    <h1 data-i18n="upload_heading">Song hochladen</h1>
+      <div class="hint" data-i18n-html="hint">Nur Originalversionen · MP3 ≥ 256 kbps<br>Import erfolgt automatisch über charts-import</div>
+    </div>
 
-    <form id="upform">
-      <input id="upfile" name="file" type="file" accept="audio/mpeg,.mp3">
+    <!-- Upload pane (hidden until its tab is selected): manual MP3 upload. -->
+    <div class="tabpane" data-pane="upload" hidden>
+      <form id="upform">
+        <input id="upfile" name="file" type="file" accept="audio/mpeg,.mp3">
 
-      <label for="up_artist" data-i18n="label_artist">Künstler</label>
-      <input id="up_artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off">
+        <label for="up_artist" data-i18n="label_artist">Künstler</label>
+        <input id="up_artist" name="artist" type="text" data-i18n-ph="ph_artist" placeholder="z. B. Dermot Kennedy" autocomplete="off">
 
-      <label for="up_title" data-i18n="label_title">Titel</label>
-      <input id="up_title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
+        <label for="up_title" data-i18n="label_title">Titel</label>
+        <input id="up_title" name="title" type="text" data-i18n-ph="ph_title" placeholder="z. B. Kiss Me" autocomplete="off">
 
-      <button id="upbtn" type="submit" data-i18n="upload_btn">Hochladen &amp; prüfen</button>
-    </form>
+        <button id="upbtn" type="submit" data-i18n="upload_btn">Hochladen &amp; prüfen</button>
+      </form>
 
-    <div id="upstatus" class="status"></div>
+      <div id="upstatus" class="status"></div>
 
-    <div class="hint" data-i18n="upload_hint">Nur MP3 · benannt "Künstler - Titel.mp3"</div>
+      <div class="hint" data-i18n="upload_hint">Nur MP3 · benannt "Künstler - Titel.mp3"</div>
+    </div>
   </div>
 
 <script>
@@ -283,6 +292,20 @@ upform.addEventListener('submit', async (e) => {
   } finally {
     upbtn.disabled = false;
   }
+});
+
+// --- Tab switcher ----------------------------------------------------------
+// Toggle which pane is visible inside the single card. Pure layout: no form
+// field, element ID, or request logic is touched.
+const tabButtons = document.querySelectorAll('.tab');
+tabButtons.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.tab;
+    tabButtons.forEach(b => b.classList.toggle('active', b === tab));
+    document.querySelectorAll('[data-pane]').forEach(p => {
+      p.hidden = p.dataset.pane !== target;
+    });
+  });
 });
 
 applyStaticI18n();

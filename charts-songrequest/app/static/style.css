@@ -28,6 +28,20 @@ body {
 .logo { font-size: 46px; text-align: center; margin-bottom: 6px; }
 h1 { text-align: center; font-size: 24px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 4px; }
 .subtitle { text-align: center; color: rgba(255,255,255,0.55); font-size: 14px; margin-bottom: 28px; }
+/* Segmented tab bar above the single card's form area. Reuses the dark input
+   look for the inactive state and the card gradient for the active one. */
+.tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+.tab {
+  flex: 1; width: auto; margin-top: 0; padding: 11px 12px; font-size: 14px; font-weight: 600;
+  color: rgba(255,255,255,0.6); background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 13px;
+  box-shadow: none; cursor: pointer; transition: color .15s, background .15s, box-shadow .2s;
+}
+.tab.active {
+  color: #fff; background: linear-gradient(135deg, #7b4397, #d76d77);
+  border-color: transparent; box-shadow: 0 8px 24px rgba(215,109,119,0.35);
+}
+.tabpane[hidden] { display: none; }
 label { display: block; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); margin: 16px 0 7px 2px; }
 input {
   width: 100%; padding: 14px 16px; font-size: 16px; color: #fff;

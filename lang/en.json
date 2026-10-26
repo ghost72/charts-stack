@@ -729,6 +729,8 @@
   "songrequest.ui.apple_title": "Songs",
   "songrequest.ui.logout": "Log out",
   "songrequest.ui.heading": "Song Request",
+  "songrequest.ui.tab_request": "Song Request",
+  "songrequest.ui.tab_upload": "Song Upload",
   "songrequest.ui.subtitle": "Search for a song, download it and add it to the library",
   "songrequest.ui.label_artist": "Artist",
   "songrequest.ui.ph_artist": "e.g. Dermot Kennedy",
