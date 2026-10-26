@@ -171,8 +171,9 @@ def test_upload_empty_artist_basename(monkeypatch, tmp_path):
     # Stored basename uses the "Unknown Artist" fallback, never " - title.mp3".
     assert (charts_dir / "Unknown Artist - justatitle.mp3").exists()
     entry = _manifest(charts_dir)["entries"]["unknown artist - justatitle.mp3"]
-    # The manifest artist is the submitted (empty) value, recorded verbatim.
-    assert entry["artist"] == ""
+    # The manifest artist is floored to "Unknown Artist" (matching the on-disk
+    # basename), never an empty string - charts-import skips an empty artist.
+    assert entry["artist"] == "Unknown Artist"
     assert entry["title"] == "justatitle"
     assert entry["source"] == "upload"
 

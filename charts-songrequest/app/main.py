@@ -22,10 +22,12 @@ import tempfile
 import time
 
 from fastapi import FastAPI, Form, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import blocklist, config, i18n, library, manifest, quality, slsk, status
+from . import (blocklist, config, i18n, library, manifest, quality, slsk,
+               status, youtube)
 from .i18n import t
 
 logging.basicConfig(
@@ -469,13 +471,20 @@ def _stage_upload(upload: "UploadFile") -> tuple[str, str]:
 
 def _promote_upload(staged_path: str, artist: str, title: str,
                     is_upgrade: bool, notify_device: str,
-                    accept_anyway: bool = False) -> str:
+                    accept_anyway: bool = False,
+                    source: str = "upload") -> str:
     """
     Move a validated staged file into the /charts drop folder under a
     collision-free "<artist> - <title>.mp3" basename and write the manifest
-    entry (source="upload"). Returns the final basename. accept_anyway=True is
-    passed through to the manifest only for a confirmed upsampled upload (tells
-    charts-import to skip ONLY its upsampling rejection for this file).
+    entry. Returns the final basename. source labels the origin in the manifest
+    (default "upload"; "youtube" for the YouTube tab). accept_anyway=True is
+    passed through to the manifest only for a confirmed upsampled upload / a
+    YouTube download (tells charts-import to skip ONLY its upsampling rejection
+    for this file).
+
+    This is the single promotion chokepoint for both the upload and the YouTube
+    path, so it is also where the "manifest artist is never empty" invariant
+    lives.
     """
     charts_dir = os.path.dirname(config.MANIFEST_FILE)
     os.makedirs(charts_dir, exist_ok=True)
@@ -489,9 +498,11 @@ def _promote_upload(staged_path: str, artist: str, title: str,
         n += 1
     shutil.move(staged_path, final)
     fname = os.path.basename(final)
-    # Record EXACTLY what the user submitted (artist may be empty: charts-import
-    # turns an empty manifest artist into "Unknown Artist" via its own floor).
-    manifest.record(fname, artist, title, source="upload",
+    # Record the artist floored to "Unknown Artist" when empty (same value used
+    # for the on-disk basename). charts-import SKIPS an entry whose manifest
+    # artist is empty (it does NOT floor it), so writing the floor here is what
+    # keeps the file from being filed as "no manifest entry".
+    manifest.record(fname, clean_artist, title, source=source,
                     replace=is_upgrade, notify_device=notify_device,
                     accept_anyway=accept_anyway)
     return fname
@@ -729,6 +740,121 @@ async def api_upload_confirm(request: Request, token: str = Form(""),
         "ok": True, "accepted": True, "artist": artist, "title": title,
         "bitrate": measured,
         "message": t("songrequest.ui.upload_accepted", bitrate=measured)})
+
+
+# --- API: YouTube URL import -----------------------------------------------
+#
+# A logged-in user pastes a single-video YouTube URL. /api/youtube/fetch reads
+# the video metadata and returns a cleaned artist/title suggestion to pre-fill
+# the editable fields. /api/youtube downloads bestaudio, extracts to MP3 with
+# the thumbnail embedded as the cover, checks the library first, and (if the
+# song is absent or below MIN_BITRATE) files it through the SAME manifest ->
+# charts-import pipeline every other source uses: source="youtube" and
+# accept_anyway=True so charts-import skips ONLY its upsampling rejection (the
+# YouTube copy is accepted deliberately; keyword/unknown-artist/too-short
+# rejections still apply). No confirm round-trip. All yt-dlp usage lives in
+# app/youtube.py; the blocking download runs in a threadpool so it never blocks
+# the single-worker event loop.
+
+
+@app.post("/api/youtube/fetch")
+async def api_youtube_fetch(request: Request, url: str = Form("")):
+    user = _current_user(request)
+    if user is None:
+        return JSONResponse(status_code=401,
+                            content={"ok": False, "error": t("songrequest.ui.not_authed")})
+
+    url = (url or "").strip()
+    if not url or not youtube.is_valid_url(url):
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": t("songrequest.ui.yt_bad_url")})
+
+    try:
+        info = await run_in_threadpool(youtube.fetch_metadata, url)
+    except Exception as e:
+        # Network, extractor change, unavailable video: recoverable - the user
+        # can still type artist/title and submit (the download re-resolves).
+        logger.warning(t("songrequest.request.yt_fetch_failed", error=e))
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": t("songrequest.ui.yt_fetch_failed")})
+
+    artist, title = youtube.suggest_artist_title(info)
+    logger.info(t("songrequest.request.yt_fetched", artist=artist, title=title))
+    return JSONResponse(content={"ok": True, "artist": artist, "title": title})
+
+
+@app.post("/api/youtube")
+async def api_youtube(request: Request, url: str = Form(""),
+                      artist: str = Form(""), title: str = Form("")):
+    user = _current_user(request)
+    if user is None:
+        return JSONResponse(status_code=401,
+                            content={"ok": False, "error": t("songrequest.ui.not_authed")})
+
+    url = (url or "").strip()
+    artist = (artist or "").strip()
+    title = (title or "").strip()
+
+    if not url or not youtube.is_valid_url(url):
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": t("songrequest.ui.yt_bad_url")})
+    # Title drives the manifest key / tagging and is required. Artist may be
+    # empty here (floored to "Unknown Artist" at record time).
+    if not title:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": t("songrequest.ui.missing_fields")})
+
+    logger.info(t("songrequest.request.yt_received",
+                  user=user, artist=artist, title=title))
+
+    # Library-first (mirror the upload flow's branch-4a intent): if the song is
+    # already present at good quality (>= MIN_BITRATE) there is no point
+    # downloading. A YouTube download's real bitrate is unknown before the fact,
+    # so the rule is: existing >= MIN_BITRATE -> skip; below MIN_BITRATE ->
+    # download with is_upgrade=True and let charts-import's quality_key make the
+    # final replace decision.
+    existing = library.find_existing(config.MUSIC_DIR, artist, title)
+    existing_bitrate = library.read_bitrate(existing) if existing else 0
+    if existing and existing_bitrate >= config.MIN_BITRATE:
+        logger.info(t("songrequest.request.existing_equal_or_better",
+                      existing=existing_bitrate, new=0, effective=existing_bitrate))
+        return JSONResponse(content={
+            "ok": True, "already": True, "artist": artist, "title": title,
+            "bitrate": existing_bitrate,
+            "message": t("songrequest.ui.good_quality", bitrate=existing_bitrate)})
+
+    notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
+
+    # Sweep stale staged files before adding a new one (event-driven, no
+    # scheduler), same as the upload endpoint.
+    _sweep_staging(time.time())
+
+    # Download bestaudio -> MP3 (+ embedded thumbnail) in a threadpool so the
+    # blocking yt-dlp call does not stall the event loop.
+    try:
+        staged = await run_in_threadpool(youtube.download_audio, url, _STAGING_DIR)
+    except OSError as e:
+        logger.error(t("songrequest.request.yt_download_failed", error=e))
+        return JSONResponse(status_code=500,
+                            content={"ok": False, "error": t("songrequest.ui.search_failed")})
+    except Exception as e:
+        # yt_dlp.utils.DownloadError (unavailable/too long/live/no audio) and
+        # anything else from the downloader: recoverable, localized error.
+        logger.warning(t("songrequest.request.yt_download_failed", error=e))
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": t("songrequest.ui.yt_download_failed")})
+
+    # File it: source="youtube", accept_anyway=True (deliberate quality accept).
+    fname = _promote_upload(staged, artist, title,
+                            is_upgrade=bool(existing), notify_device=notify_device,
+                            source="youtube", accept_anyway=True)
+    logger.info(t("songrequest.request.yt_accepted",
+                  artist=artist, title=title,
+                  notify_marker=f" [notify: {notify_device}]" if notify_device else ""))
+    _record_request(f"{artist} - {title}")
+    return JSONResponse(content={
+        "ok": True, "accepted": True, "artist": artist, "title": title,
+        "message": t("songrequest.ui.yt_accepted")})
 
 
 @app.get("/favicon.ico")

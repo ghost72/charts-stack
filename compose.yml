@@ -634,6 +634,10 @@ services:
       - REJECT_COMPILATIONS=${REJECT_COMPILATIONS:-1}
       - SEARCH_TIMEOUT_MS=${SEARCH_TIMEOUT_MS:-15000}
       - SEARCH_WAIT_SECONDS=${SEARCH_WAIT_SECONDS:-25}
+      # Obergrenze (Sekunden) fuer einen YouTube-Download im YouTube-Tab:
+      # laengere Videos / Livestreams werden abgewiesen, bevor etwas geladen
+      # wird. Default 900 (15 min) - ein normaler Song liegt klar darunter.
+      - YOUTUBE_MAX_DURATION_SECONDS=${YOUTUBE_MAX_DURATION_SECONDS:-900}
       - MUSIC_DIR=/music/Music
       # Fest auf den /charts-Mount dieses Dienstes (siehe charts-download).
       - MANIFEST_FILE=/charts/.charts-manifest.json

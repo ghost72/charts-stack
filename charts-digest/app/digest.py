@@ -31,6 +31,7 @@ _SOURCE_LABELS = {
     "flashback": ("📻", "digest.source.flashback"),
     "manuell": ("🙋", "digest.source.manuell"),
     "upload": ("📤", "digest.source.upload"),
+    "youtube": ("📺", "digest.source.youtube"),
     "upgrade": ("⬆️", "digest.source.upgrade"),
     "hitparade": ("🏆", "digest.source.hitparade"),
     "recommend": ("🎧", "digest.source.recommend"),
