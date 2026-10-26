@@ -729,6 +729,8 @@
   "songrequest.ui.apple_title": "Songs",
   "songrequest.ui.logout": "Abmelden",
   "songrequest.ui.heading": "Song Request",
+  "songrequest.ui.tab_request": "Song Request",
+  "songrequest.ui.tab_upload": "Song Upload",
   "songrequest.ui.subtitle": "Song suchen, laden und in die Library holen",
   "songrequest.ui.label_artist": "Künstler",
   "songrequest.ui.ph_artist": "z. B. Dermot Kennedy",
