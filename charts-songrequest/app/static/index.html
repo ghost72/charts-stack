@@ -403,6 +403,18 @@ function renderUpload(data) {
     // Waiting-for-decision state: draw the eye to the confirm button the user
     // must now decide on (visual pulse + best-effort Android vibrate).
     attention(document.getElementById('upconfirm'));
+  } else if (data.ok && data.already) {
+    // Already in the library at equal-or-better quality -> nothing uploaded.
+    // Honest message from the backend (data.message), same as the request tab.
+    // Must come BEFORE the generic `data.ok` branch, otherwise an already-present
+    // response falls through to the misleading "found & download started" text.
+    upPendingToken = null;
+    showUpStatus('ok', 'ℹ',
+      esc(data.artist) + ' – ' + esc(data.title) +
+      (data.bitrate ? ' (' + data.bitrate + ' kbps)' : '') + '<br>' +
+      '<span style="color:rgba(255,255,255,0.55)">' +
+      esc(data.message || t('js_no_download')) + '</span>');
+    upform.reset();
   } else if (data.ok && data.accepted) {
     upPendingToken = null;
     showUpStatus('ok', '✅',
