@@ -658,6 +658,10 @@ services:
     ports:
       - "${SONGREQUEST_PORT:-5056}:5056"
     volumes:
+      # /charts ist bewusst SCHREIBBAR (nicht :ro): songrequest legt hier nicht
+      # nur Manifest/Blocklist/Status ab, sondern droppt auch manuell
+      # hochgeladene MP3s in denselben Ordner, den charts-import als
+      # DOWNLOADS_DIR (/music/Charts) scannt.
       - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
       - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music:ro
       # Zentrale Sprachdateien (en/de/fr), geteilt ueber ALLE Dienste wie die

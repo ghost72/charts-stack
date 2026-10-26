@@ -15,12 +15,15 @@ so the externally reachable page (reverse proxy) is not open.
 
 import json
 import logging
+import os
 import secrets
+import shutil
+import tempfile
+import time
 
-from fastapi import FastAPI, Form, Request, Response
+from fastapi import FastAPI, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-import os
 
 from . import blocklist, config, i18n, library, manifest, slsk, status
 from .i18n import t
@@ -40,6 +43,21 @@ logger.info(t("songrequest.login.active",
 _SESSION_SECRET = config.SESSION_SECRET or secrets.token_hex(32)
 # Valid sessions in memory: token -> user name (log in again after a restart).
 _sessions: dict[str, str] = {}
+
+# --- Manual MP3 upload staging --------------------------------------------
+# Pending sub-threshold uploads awaiting a "add it anyway" confirm:
+#   token -> {"path": staged file, "bitrate": int, "user": name, "created": ts}
+# In-memory like _sessions: a restart drops pending confirmations (the user
+# simply re-uploads), and the dict is the authority (a stale token fails safe).
+_pending_uploads: dict[str, dict] = {}
+# Staging lives in the container's OWN /tmp, deliberately NOT under the shared
+# /charts mount: an in-progress upload must never be visible to charts-import's
+# recursive os.walk until it is promoted together with its manifest entry.
+_STAGING_DIR = os.path.join(tempfile.gettempdir(), "songrequest-uploads")
+# Hard cap for a single upload (MB). A 320 kbps ~10 min track stays well below.
+_MAX_UPLOAD_MB = 40
+# Staged files older than this (seconds) are swept on the next upload.
+_UPLOAD_TTL_SECONDS = 3600
 
 # Status/dashboard: this service is event-driven (no scheduler). We count
 # served requests and write a status after each one (heartbeat + cumulative
@@ -99,6 +117,55 @@ def _check_login(username: str, password: str) -> bool:
         secrets.compare_digest(password, password)
         return False
     return secrets.compare_digest(password, expected)
+
+
+def _download_best(client, candidates, existing, existing_bitrate):
+    """
+    Try the ranked candidates one by one and return the first that really
+    delivers, as (username, file_dict, bitrate), or None if none did.
+
+    Soulseek is P2P - the best hit may come from a peer that is offline,
+    rejects the upload, or (worse) ACCEPTS the request but never sends a byte
+    ("Queued, Remotely" forever). So go through the candidates one by one, and
+    for each one that accepts the enqueue, VERIFY that the transfer actually
+    starts delivering. A provider that does not deliver is cancelled and
+    remembered on the blocklist (skipped on future requests), then the next
+    candidate is tried - so the song reaches a peer that really sends it.
+
+    On an upgrade (existing song present) only candidates that are strictly
+    better than the existing version are considered.
+    """
+    blocked = blocklist.blocked_users()
+    for cand_user, cand_file, _score in candidates:
+        # Skip providers known to be non-delivering (within their block TTL).
+        if cand_user in blocked:
+            logger.info(t("songrequest.request.provider_skipped_blocked",
+                          user=cand_user))
+            continue
+        cand_bitrate = cand_file.get("bitRate", 0) or 0
+        # On an upgrade only take candidates that are really better than the
+        # existing version (otherwise it would be no upgrade). effective as in
+        # the caller: a missing bitrate counts as "at least MIN_BITRATE".
+        cand_effective = cand_bitrate if cand_bitrate > 0 else config.MIN_BITRATE
+        if existing and cand_effective <= existing_bitrate:
+            continue
+        if not slsk.enqueue(client, cand_user, cand_file):
+            logger.info(t("download.song.provider_no_deliver", user=cand_user))
+            continue
+        # Enqueue accepted - but did the peer actually start sending? Verify.
+        cand_fname = cand_file.get("filename", "")
+        outcome = slsk.verify_transfer(
+            client, cand_user, cand_fname,
+            config.VERIFY_SECONDS, config.VERIFY_POLL_SECONDS)
+        if outcome == "delivering":
+            return (cand_user, cand_file, cand_bitrate)
+        # Not delivering (stalled/failed): cancel it, remember the provider as
+        # problematic, and move on to the next candidate.
+        logger.info(t("songrequest.request.provider_not_delivering",
+                      user=cand_user, outcome=outcome))
+        slsk.cancel_transfer(client, cand_user, cand_fname)
+        blocklist.block(cand_user)
+    return None
 
 
 # --- Login ---
@@ -254,46 +321,9 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
             "message": msg,
         })
 
-    # 3. Trigger download (new addition OR real upgrade). Retry across multiple
-    #    providers: Soulseek is P2P - the best hit may come from a peer that is
-    #    offline, rejects the upload, or (worse) ACCEPTS the request but never
-    #    sends a byte ("Queued, Remotely" forever). So go through the candidates
-    #    one by one, and for each one that accepts the enqueue, VERIFY that the
-    #    transfer actually starts delivering. A provider that does not deliver
-    #    is cancelled and remembered on the blocklist (skipped on future
-    #    requests), then the next candidate is tried - so the song reaches a
-    #    peer that really sends it.
-    blocked = blocklist.blocked_users()
-    chosen = None  # (username, file_dict, bitrate)
-    for cand_user, cand_file, _score in candidates:
-        # Skip providers known to be non-delivering (within their block TTL).
-        if cand_user in blocked:
-            logger.info(t("songrequest.request.provider_skipped_blocked",
-                          user=cand_user))
-            continue
-        cand_bitrate = cand_file.get("bitRate", 0) or 0
-        # On an upgrade only take candidates that are really better than the
-        # existing version (otherwise it would be no upgrade). effective as above.
-        cand_effective = cand_bitrate if cand_bitrate > 0 else config.MIN_BITRATE
-        if existing and cand_effective <= existing_bitrate:
-            continue
-        if not slsk.enqueue(client, cand_user, cand_file):
-            logger.info(t("download.song.provider_no_deliver", user=cand_user))
-            continue
-        # Enqueue accepted - but did the peer actually start sending? Verify.
-        cand_fname = cand_file.get("filename", "")
-        outcome = slsk.verify_transfer(
-            client, cand_user, cand_fname,
-            config.VERIFY_SECONDS, config.VERIFY_POLL_SECONDS)
-        if outcome == "delivering":
-            chosen = (cand_user, cand_file, cand_bitrate)
-            break
-        # Not delivering (stalled/failed): cancel it, remember the provider as
-        # problematic, and move on to the next candidate.
-        logger.info(t("songrequest.request.provider_not_delivering",
-                      user=cand_user, outcome=outcome))
-        slsk.cancel_transfer(client, cand_user, cand_fname)
-        blocklist.block(cand_user)
+    # 3. Trigger download (new addition OR real upgrade). See _download_best for
+    #    the retry-across-providers logic.
+    chosen = _download_best(client, candidates, existing, existing_bitrate)
 
     if not chosen:
         logger.warning(t("songrequest.request.no_provider_delivered",
@@ -353,6 +383,273 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
         "old_bitrate": existing_bitrate,
         "message": msg,
     })
+
+
+# --- API: manual MP3 upload ------------------------------------------------
+#
+# A logged-in user uploads an MP3 named "<artist> - <title>.mp3". The server
+# reads its bitrate and routes it through the SAME manifest -> charts-import
+# pipeline every other song uses (so tags/cover/ReplayGain/year/Lidarr are not
+# re-implemented here):
+#   - bitrate >= MIN_BITRATE -> accept straight away (drop into /charts +
+#     manifest source="upload", no slskd search).
+#   - bitrate <  MIN_BITRATE -> search slskd for something better. If a better
+#     copy delivers, download THAT instead (normal upgrade/new). If nothing
+#     better is found, offer "add it anyway" (confirm round-trip).
+
+
+def _sweep_staging(now: float) -> None:
+    """Remove pending uploads (dict + staged file) older than the TTL."""
+    for token in [t_ for t_, e in _pending_uploads.items()
+                  if now - e.get("created", 0) > _UPLOAD_TTL_SECONDS]:
+        entry = _pending_uploads.pop(token, None)
+        if entry:
+            try:
+                os.remove(entry["path"])
+            except OSError:
+                pass
+
+
+def _stage_upload(upload: "UploadFile") -> tuple[str, str]:
+    """
+    Stream the uploaded file to the container-local staging dir in chunks,
+    enforcing the size cap. Returns (token, staged_path). Raises ValueError
+    with "too_large" if the cap is exceeded (partial file removed).
+    """
+    os.makedirs(_STAGING_DIR, exist_ok=True)
+    token = secrets.token_urlsafe(16)
+    staged = os.path.join(_STAGING_DIR, f"{token}.mp3")
+    cap = _MAX_UPLOAD_MB * 1024 * 1024
+    written = 0
+    try:
+        with open(staged, "wb") as fh:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > cap:
+                    fh.close()
+                    os.remove(staged)
+                    raise ValueError("too_large")
+                fh.write(chunk)
+    except ValueError:
+        raise
+    except OSError:
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        raise
+    return token, staged
+
+
+def _promote_upload(staged_path: str, artist: str, title: str,
+                    is_upgrade: bool, notify_device: str) -> str:
+    """
+    Move a validated staged file into the /charts drop folder under a
+    collision-free "<artist> - <title>.mp3" basename and write the manifest
+    entry (source="upload"). Returns the final basename.
+    """
+    charts_dir = os.path.dirname(config.MANIFEST_FILE)
+    os.makedirs(charts_dir, exist_ok=True)
+    clean_artist = library._clean_component(artist, "Unknown Artist")
+    clean_title = library._clean_component(title, "untitled")
+    base = f"{clean_artist} - {clean_title}"
+    final = os.path.join(charts_dir, f"{base}.mp3")
+    n = 2
+    while os.path.exists(final):
+        final = os.path.join(charts_dir, f"{base} ({n}).mp3")
+        n += 1
+    shutil.move(staged_path, final)
+    fname = os.path.basename(final)
+    # Record EXACTLY what the user submitted (artist may be empty: charts-import
+    # turns an empty manifest artist into "Unknown Artist" via its own floor).
+    manifest.record(fname, artist, title, source="upload",
+                    replace=is_upgrade, notify_device=notify_device)
+    return fname
+
+
+@app.post("/api/upload")
+async def api_upload(request: Request, file: UploadFile = None,
+                     artist: str = Form(""), title: str = Form("")):
+    user = _current_user(request)
+    if user is None:
+        return JSONResponse(status_code=401,
+                            content={"ok": False, "error": t("songrequest.ui.not_authed")})
+
+    artist = (artist or "").strip()
+    title = (title or "").strip()
+    name = (file.filename if file is not None else "") or ""
+
+    # Title is required (it drives the manifest key / tagging). Artist may be
+    # empty (the no-separator parse case); the user is nudged to fill it.
+    if file is None or not title:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": t("songrequest.ui.missing_fields")})
+
+    # 1. Extension gate (cheapest): must look like an MP3.
+    if not name.lower().endswith(".mp3"):
+        logger.info(t("songrequest.request.upload_not_mp3", name=name))
+        return JSONResponse(status_code=415,
+                            content={"ok": False, "error": t("songrequest.ui.upload_not_mp3")})
+
+    # Sweep any stale staged files before adding a new one (event-driven, no
+    # scheduler).
+    _sweep_staging(time.time())
+
+    # 2. Stream to staging with the size cap.
+    try:
+        token, staged = _stage_upload(file)
+    except ValueError:
+        logger.info(t("songrequest.request.upload_too_large",
+                      name=name, max=_MAX_UPLOAD_MB))
+        return JSONResponse(status_code=413, content={
+            "ok": False, "error": t("songrequest.ui.upload_too_large", max=_MAX_UPLOAD_MB)})
+    except OSError as e:
+        logger.error(t("songrequest.request.upload_stage_failed", error=e))
+        return JSONResponse(status_code=500,
+                            content={"ok": False, "error": t("songrequest.ui.search_failed")})
+
+    # 3. Content gate: must really be an MP3 (mutagen), else reject.
+    measured = library.read_mp3_bitrate(staged)
+    if measured is None:
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        logger.info(t("songrequest.request.upload_not_mp3", name=name))
+        return JSONResponse(status_code=415,
+                            content={"ok": False, "error": t("songrequest.ui.upload_not_mp3")})
+
+    logger.info(t("songrequest.request.upload_received",
+                  user=user, artist=artist, title=title, bitrate=measured))
+
+    existing = library.find_existing(config.MUSIC_DIR, artist, title)
+    existing_bitrate = library.read_bitrate(existing) if existing else 0
+    notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
+
+    # 4a. Good enough -> accept immediately, no slskd search.
+    if measured >= config.MIN_BITRATE:
+        fname = _promote_upload(staged, artist, title,
+                                is_upgrade=bool(existing), notify_device=notify_device)
+        logger.info(t("songrequest.request.upload_accepted",
+                      artist=artist, title=title, bitrate=measured))
+        _record_request(f"{artist} - {title}")
+        return JSONResponse(content={
+            "ok": True, "accepted": True, "artist": artist, "title": title,
+            "bitrate": measured,
+            "message": t("songrequest.ui.upload_accepted", bitrate=measured)})
+
+    # 4b. Below threshold -> search slskd for something better.
+    logger.info(t("songrequest.request.upload_sub_threshold",
+                  bitrate=measured, min=config.MIN_BITRATE))
+    try:
+        client = slsk.connect()
+    except slsk.SlskdError as e:
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        logger.error(t("songrequest.request.slskd_unreachable", error=e))
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": t("songrequest.ui.slskd_unreachable")})
+    try:
+        candidates = slsk.find_candidates(client, artist, title)
+    except slsk.SlskdError as e:
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        logger.warning(t("songrequest.request.search_failed", error=e))
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": t("songrequest.ui.search_failed")})
+
+    chosen = _download_best(client, candidates, existing, existing_bitrate)
+    if chosen:
+        # A better copy delivers -> download THAT, discard the uploaded file.
+        # Behaves exactly like a normal request upgrade/new.
+        try:
+            os.remove(staged)
+        except OSError:
+            pass
+        username, file_dict, new_bitrate = chosen
+        fname = file_dict.get("filename", "?")
+        is_upgrade = bool(existing)
+        canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
+        if is_upgrade:
+            canon_title = library.canonical_title_from_file(existing) or library.title_case(title)
+        else:
+            canon_title = library.title_case(title)
+        manifest.record(fname, canon_artist, canon_title, config.MANUAL_SOURCE_LABEL,
+                        replace=is_upgrade, notify_device=notify_device)
+        logger.info(t("songrequest.request.enqueued",
+                      upgrade_marker=" [UPGRADE/replace]" if is_upgrade else "",
+                      artist=canon_artist, title=canon_title, bitrate=new_bitrate,
+                      user=username,
+                      notify_marker=f" [notify: {notify_device}]" if notify_device else ""))
+        _record_request(f"{canon_artist} - {canon_title}")
+        new_br_label = f"{new_bitrate} kbps" if new_bitrate > 0 else f"≥ {config.MIN_BITRATE} kbps"
+        if is_upgrade:
+            msg = t("songrequest.ui.upgrade_started",
+                    new_label=new_br_label, existing=existing_bitrate)
+        else:
+            msg = t("songrequest.ui.download_started")
+        return JSONResponse(content={
+            "ok": True, "upgrade": is_upgrade,
+            "artist": canon_artist, "title": canon_title,
+            "bitrate": new_bitrate, "old_bitrate": existing_bitrate,
+            "message": msg})
+
+    # 4c. Nothing better online -> keep the staged file and ask the user to
+    #     confirm "add it anyway".
+    _pending_uploads[token] = {
+        "path": staged, "bitrate": measured, "user": user, "created": time.time()}
+    logger.info(t("songrequest.request.upload_confirm_pending", bitrate=measured))
+    return JSONResponse(content={
+        "ok": True, "needs_confirm": True, "token": token,
+        "artist": artist, "title": title, "bitrate": measured,
+        "message": t("songrequest.ui.upload_confirm_prompt",
+                     bitrate=measured, min=config.MIN_BITRATE)})
+
+
+@app.post("/api/upload/confirm")
+async def api_upload_confirm(request: Request, token: str = Form(""),
+                             artist: str = Form(""), title: str = Form("")):
+    user = _current_user(request)
+    if user is None:
+        return JSONResponse(status_code=401,
+                            content={"ok": False, "error": t("songrequest.ui.not_authed")})
+
+    artist = (artist or "").strip()
+    title = (title or "").strip()
+
+    entry = _pending_uploads.get(token)
+    # Token must exist AND belong to the current user (fails safe after a
+    # restart, when the dict is empty). Confirm does NOT re-run the slskd
+    # search even if artist/title were edited here - it only files the bytes.
+    if entry is None or entry.get("user") != user:
+        logger.info(t("songrequest.request.upload_confirm_expired", token=token))
+        return JSONResponse(status_code=410,
+                            content={"ok": False, "error": t("songrequest.ui.upload_confirm_expired")})
+
+    if not title:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": t("songrequest.ui.missing_fields")})
+
+    _pending_uploads.pop(token, None)
+    measured = entry.get("bitrate", 0)
+    existing = library.find_existing(config.MUSIC_DIR, artist, title)
+    notify_device = config.USER_PUSHOVER_DEVICES.get(user, "")
+    _promote_upload(entry["path"], artist, title,
+                    is_upgrade=bool(existing), notify_device=notify_device)
+    logger.info(t("songrequest.request.upload_accepted",
+                  artist=artist, title=title, bitrate=measured))
+    _record_request(f"{artist} - {title}")
+    return JSONResponse(content={
+        "ok": True, "accepted": True, "artist": artist, "title": title,
+        "bitrate": measured,
+        "message": t("songrequest.ui.upload_accepted", bitrate=measured)})
 
 
 @app.get("/favicon.ico")
