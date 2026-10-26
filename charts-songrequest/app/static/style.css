@@ -33,20 +33,20 @@ h1 { text-align: center; font-size: 24px; font-weight: 700; letter-spacing: -0.3
 .tabs { display: flex; gap: 8px; margin-bottom: 28px; }
 .tab {
   -webkit-appearance: none; appearance: none;
-  flex: 1; width: auto; margin-top: 0; padding: 11px 12px; font-size: 14px; font-weight: 600;
+  /* flex: 1 1 0 + min-width: 0 lets the three tabs share the row evenly and
+     shrink below their label's min-content width, so the bar stays a single
+     row even on a narrow phone (390px). The generic primary-button rule is
+     scoped to `.tabpane button`, so `.tab` no longer inherits its gradient. */
+  flex: 1 1 0; min-width: 0; margin: 0; padding: 11px 12px; font-size: 14px; font-weight: 600;
   color: rgba(255,255,255,0.6);
-  /* Inactive tabs must NOT keep the generic gradient `button` background.
-     Force the flat dark look with !important so mobile Safari (which otherwise
-     renders the element-level `button` gradient on every tab) shows only the
-     active tab in colour. */
-  background: rgba(0,0,0,0.28) !important;
+  background: rgba(0,0,0,0.28);
   border: 1px solid rgba(255,255,255,0.14); border-radius: 13px;
-  box-shadow: none !important; cursor: pointer; transition: color .15s, background .15s, box-shadow .2s;
+  box-shadow: none; cursor: pointer; transition: color .15s, background .15s, box-shadow .2s;
 }
 .tab.active {
   color: #fff;
-  background: linear-gradient(135deg, #7b4397, #d76d77) !important;
-  border-color: transparent; box-shadow: 0 8px 24px rgba(215,109,119,0.35) !important;
+  background: linear-gradient(135deg, #7b4397, #d76d77);
+  border-color: transparent; box-shadow: 0 8px 24px rgba(215,109,119,0.35);
 }
 .tabpane[hidden] { display: none; }
 label { display: block; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); margin: 16px 0 7px 2px; }
@@ -57,15 +57,19 @@ input {
 }
 input::placeholder { color: rgba(255,255,255,0.35); }
 input:focus { border-color: #d76d77; background: rgba(0,0,0,0.4); }
-button {
+/* Primary action buttons live inside a `.tabpane` (the per-pane submit buttons
+   and the JS-injected #upconfirm in the upload pane). Scoped to `.tabpane
+   button` so the `.tab` elements in `.tabs` (a sibling of the panes) do NOT
+   inherit this gradient/full-width look. */
+.tabpane button {
   width: 100%; margin-top: 26px; padding: 15px; font-size: 16px; font-weight: 700;
   color: #fff; background: linear-gradient(135deg, #7b4397, #d76d77);
   border: none; border-radius: 13px; cursor: pointer;
   transition: transform .1s, box-shadow .2s, opacity .2s;
   box-shadow: 0 8px 24px rgba(215,109,119,0.35);
 }
-button:active { transform: scale(0.98); }
-button:disabled { opacity: 0.6; cursor: default; }
+.tabpane button:active { transform: scale(0.98); }
+.tabpane button:disabled { opacity: 0.6; cursor: default; }
 .status {
   margin-top: 22px; padding: 14px 16px; border-radius: 12px; font-size: 14px;
   line-height: 1.5; display: none; gap: 10px; align-items: flex-start;
