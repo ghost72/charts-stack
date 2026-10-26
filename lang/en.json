@@ -768,6 +768,8 @@
   "songrequest.ui.js_found_tail": "It will land in the library automatically shortly.",
   "songrequest.ui.js_unknown_error": "Unknown error.",
   "songrequest.ui.js_network_error": "Network error – please try again.",
+  "songrequest.ui.js_connection_lost": "Connection interrupted – please try again.",
+  "songrequest.ui.haptic_switch_label": "Haptic feedback (internal)",
   "songrequest.ui.js_need_fields": "Please enter artist and title.",
   "songrequest.ui.login_doc_title": "Login · Song Request",
   "songrequest.ui.login_subtitle": "Please sign in",

@@ -768,6 +768,8 @@
   "songrequest.ui.js_found_tail": "Il arrivera automatiquement dans la bibliothèque sous peu.",
   "songrequest.ui.js_unknown_error": "Erreur inconnue.",
   "songrequest.ui.js_network_error": "Erreur réseau – veuillez réessayer.",
+  "songrequest.ui.js_connection_lost": "Connexion interrompue – veuillez réessayer.",
+  "songrequest.ui.haptic_switch_label": "Retour haptique (interne)",
   "songrequest.ui.js_need_fields": "Veuillez indiquer l'artiste et le titre.",
   "songrequest.ui.login_doc_title": "Connexion · Song Request",
   "songrequest.ui.login_subtitle": "Veuillez vous connecter",

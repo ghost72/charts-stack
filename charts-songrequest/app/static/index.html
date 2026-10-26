@@ -84,6 +84,14 @@
 
       <div class="hint" data-i18n="yt_hint">YouTube-Link einfügen · Künstler/Titel werden vorgeschlagen, bei Bedarf anpassen</div>
     </div>
+
+    <!-- Hidden iOS Taptic switch. Toggling an <input type="checkbox" switch>
+         inside a real user gesture fires the Taptic engine on iOS Safari
+         17.4+; Android ignores it (it uses navigator.vibrate instead). Kept
+         off-screen via the .haptic-switch clip rule (NOT display:none, which
+         would suppress the haptic). No aria-hidden, so the localized
+         aria-label stays announceable; tabindex="-1" keeps it out of tab order. -->
+    <input type="checkbox" switch id="haptic-switch" data-i18n-aria="haptic_switch_label" aria-label="Haptic feedback (internal)" tabindex="-1" class="haptic-switch">
   </div>
 
 <script>
@@ -112,6 +120,11 @@ function applyStaticI18n() {
   document.querySelectorAll("[data-i18n-html]").forEach(el => {
     el.innerHTML = t(el.dataset.i18nHtml);
   });
+  // aria-label sweep: localize [data-i18n-aria] elements (the hidden haptic
+  // switch). The hardcoded English aria-label in the markup is the fallback.
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAria));
+  });
 }
 
 const form = document.getElementById('form');
@@ -127,15 +140,142 @@ function esc(s) {
   return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
+// --- Guarded fetch: survive a mobile app-switch mid-request ----------------
+// On iOS Safari, backgrounding the page (switching apps) suspends the JS
+// runtime and can silently drop an in-flight fetch. The awaited Promise then
+// never settles, the finally never runs, and the submit button stays stuck on
+// a dead spinner. We bound every in-flight request with an AbortController +
+// timeout and, on return to visibility, abort anything still pending so the UI
+// recovers with an honest "connection interrupted" status.
+//
+// Correctness note: the abort ONLY unsticks the client UI. The server-side
+// work (slskd search/download, manifest write, charts-import pickup) keeps
+// running regardless - AbortController cannot cancel work the server already
+// started. If the user retries after a lost connection the request may be sent
+// twice, which is acceptable: the server path is effectively idempotent for
+// our purpose (charts-import dedupes on the manifest/library level and a
+// duplicate slskd enqueue for the same song resolves to the same file). We
+// therefore prefer the simple "un-stick + let the user retry" over trying to
+// resume the original request. The debounced /api/youtube/fetch suggestion
+// stays unguarded on purpose (it already fails soft and has no spinner lock).
+
+// 75 s sits in the requested 60-90 s band: comfortably above a normal
+// successful request (the slskd search + verify-transfer path can legitimately
+// take tens of seconds) yet bounded so a genuinely hung fetch is surfaced.
+const REQUEST_TIMEOUT_MS = 75000;
+
+// Plain-object sentinel (NOT a Symbol): a thrown Symbol has no .aborted
+// property, which would break the caller's `err && err.aborted` check and
+// render the generic network error on top of the already-shown lost status.
+const ABORTED = { aborted: true };
+
+// Registry of in-flight guarded requests so the visibility sweep can find and
+// abort anything still pending.
+const inflight = new Set();
+
+// fetch wrapper that aborts on timeout or on the visibility sweep. Returns the
+// resolved Response (callers keep their own `await resp.json()`). On a guarded
+// abort it calls onLost() exactly once, then throws the ABORTED sentinel so the
+// caller's existing catch can skip its generic error render.
+async function fetchGuarded(url, options, onLost) {
+  let lost = false;
+  const fire = () => { if (!lost) { lost = true; if (onLost) onLost(); } };
+  // Degrade gracefully if AbortController is unavailable (ancient browser):
+  // keep the timer so onLost still fires; the fetch just is not truly aborted
+  // (harmless - the server keeps running).
+  const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const entry = { ac: ac, fire: fire };
+  inflight.add(entry);
+  const timer = setTimeout(() => {
+    if (ac) ac.abort(new DOMException('timeout', 'AbortError'));
+    else fire();
+  }, REQUEST_TIMEOUT_MS);
+  try {
+    const init = ac ? Object.assign({}, options, { signal: ac.signal }) : options;
+    const resp = await fetch(url, init);
+    return resp;
+  } catch (err) {
+    // An AbortError means we abandoned this request (timeout or sweep): render
+    // the lost status once and signal the caller via the sentinel.
+    if (err && err.name === 'AbortError') {
+      fire();
+      throw ABORTED;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    inflight.delete(entry);
+  }
+}
+
+// Abort every still-pending guarded request. Each abort rejects its fetch,
+// which runs the helper's onLost path (lost status + finally re-enables the
+// button). Requests that already settled are not in `inflight`, so untouched.
+function abandonInflight() {
+  for (const entry of inflight) {
+    if (entry.ac) entry.ac.abort(new DOMException('backgrounded', 'AbortError'));
+    else entry.fire();
+  }
+}
+
+// Only sweep on RETURN to visible (or bfcache restore), not on going hidden, so
+// a quick glance away that iOS does not actually suspend is not punished.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') abandonInflight();
+});
+// pageshow with persisted=true covers the bfcache restore case where
+// visibilitychange may not fire.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) abandonInflight();
+});
+
+// --- Haptics ---------------------------------------------------------------
+// Dependency-free tactile feedback. No UA sniffing: we feature-detect
+// navigator.vibrate (Android has it, iOS does not) AND independently toggle the
+// hidden iOS switch (iOS reacts to a toggle inside a user gesture, Android
+// ignores a hidden checkbox). Both run; each platform ignores the one that does
+// not apply. Silent no-op if neither is available - never throws.
+function haptic(kind) {
+  try {
+    if (navigator.vibrate) {
+      if (kind === 'tap') navigator.vibrate(10);
+      else if (kind === 'success') navigator.vibrate([15, 40, 15]);
+      else if (kind === 'attention') navigator.vibrate([0, 30, 60, 30]);
+    }
+    // iOS Taptic path only for the user-gesture kinds. 'attention' is NOT
+    // user-initiated, so toggling is unreliable there - the visual pulse
+    // carries that case instead.
+    if (kind === 'tap' || kind === 'success') {
+      const s = document.getElementById('haptic-switch');
+      if (s) s.checked = !s.checked;
+    }
+  } catch (e) { /* never let haptics break a handler */ }
+}
+
+// One-shot attention pulse on an element. The reflow (void el.offsetWidth)
+// restarts the animation so it can re-fire; the class is removed on animationend
+// so it never sticks. box-shadow only -> no layout shift.
+function pulse(el) {
+  if (!el) return;
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+  el.addEventListener('animationend', () => el.classList.remove('pulse'), { once: true });
+}
+
+// "Interaction expected but not user-initiated" signal: cross-platform visual
+// pulse + best-effort Android vibrate (iOS cannot reliably vibrate here).
+function attention(el) { pulse(el); haptic('attention'); }
+
 async function sendRequest(artist, title) {
   btn.disabled = true;
   btn.textContent = t('btn_searching');
   showStatus('searching', '<span class="spinner"></span>', t('js_searching'));
 
   try {
-    const resp = await fetch('/api/request', {
+    const resp = await fetchGuarded('/api/request', {
       method: 'POST', body: new URLSearchParams({ artist, title })
-    });
+    }, () => showStatus('err', '⚠️', t('js_connection_lost')));
     const data = await resp.json();
 
     if (data.ok && data.upgrade) {
@@ -172,6 +312,7 @@ async function sendRequest(artist, title) {
       showStatus('err', '⚠️', esc(data.error) || t('js_unknown_error'));
     }
   } catch (err) {
+    if (err && err.aborted) return;  // guarded abort already rendered the lost status
     showStatus('err', '⚠️', t('js_network_error'));
   } finally {
     btn.disabled = false;
@@ -181,6 +322,7 @@ async function sendRequest(artist, title) {
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
+  haptic('tap');
   const artist = document.getElementById('artist').value.trim();
   const title = document.getElementById('title').value.trim();
   if (!artist || !title) {
@@ -233,16 +375,17 @@ async function sendConfirm() {
   upbtn.disabled = true;
   showUpStatus('searching', '<span class="spinner"></span>', t('js_uploading'));
   try {
-    const resp = await fetch('/api/upload/confirm', {
+    const resp = await fetchGuarded('/api/upload/confirm', {
       method: 'POST', body: new URLSearchParams({
         token: upPendingToken,
         artist: upartist.value.trim(),
         title: uptitle.value.trim(),
       })
-    });
+    }, () => showUpStatus('err', '⚠️', t('js_connection_lost')));
     const data = await resp.json();
     renderUpload(data);
   } catch (err) {
+    if (err && err.aborted) return;  // guarded abort already rendered the lost status
     showUpStatus('err', '⚠️', t('js_network_error'));
   } finally {
     upbtn.disabled = false;
@@ -256,7 +399,10 @@ function renderUpload(data) {
     showUpStatus('ok', 'ℹ️',
       esc(data.message) + '<br>' +
       '<button type="button" id="upconfirm">' + esc(t('js_upload_confirm_btn')) + '</button>');
-    document.getElementById('upconfirm').addEventListener('click', sendConfirm);
+    document.getElementById('upconfirm').addEventListener('click', () => { haptic('tap'); sendConfirm(); });
+    // Waiting-for-decision state: draw the eye to the confirm button the user
+    // must now decide on (visual pulse + best-effort Android vibrate).
+    attention(document.getElementById('upconfirm'));
   } else if (data.ok && data.accepted) {
     upPendingToken = null;
     showUpStatus('ok', '✅',
@@ -289,6 +435,7 @@ function renderUpload(data) {
 
 upform.addEventListener('submit', async (e) => {
   e.preventDefault();
+  haptic('tap');
   const f = upfile.files && upfile.files[0];
   if (!f) {
     showUpStatus('err', '⚠️', t('js_upload_not_mp3'));
@@ -306,10 +453,12 @@ upform.addEventListener('submit', async (e) => {
   upPendingToken = null;
   showUpStatus('searching', '<span class="spinner"></span>', t('js_uploading'));
   try {
-    const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+    const resp = await fetchGuarded('/api/upload', { method: 'POST', body: fd },
+      () => showUpStatus('err', '⚠️', t('js_connection_lost')));
     const data = await resp.json();
     renderUpload(data);
   } catch (err) {
+    if (err && err.aborted) return;  // guarded abort already rendered the lost status
     showUpStatus('err', '⚠️', t('js_network_error'));
   } finally {
     upbtn.disabled = false;
@@ -395,6 +544,7 @@ function renderYoutube(data) {
 
 ytform.addEventListener('submit', async (e) => {
   e.preventDefault();
+  haptic('tap');
   const u = yturl.value.trim();
   if (!u) {
     showYtStatus('err', '⚠️', t('js_yt_need_url'));
@@ -404,16 +554,17 @@ ytform.addEventListener('submit', async (e) => {
   ytbtn.disabled = true;
   showYtStatus('searching', '<span class="spinner"></span>', t('js_yt_downloading'));
   try {
-    const resp = await fetch('/api/youtube', {
+    const resp = await fetchGuarded('/api/youtube', {
       method: 'POST', body: new URLSearchParams({
         url: u,
         artist: ytartist.value.trim(),
         title: yttitle.value.trim(),
       })
-    });
+    }, () => showYtStatus('err', '⚠️', t('js_connection_lost')));
     const data = await resp.json();
     renderYoutube(data);
   } catch (err) {
+    if (err && err.aborted) return;  // guarded abort already rendered the lost status
     showYtStatus('err', '⚠️', t('js_network_error'));
   } finally {
     ytbtn.disabled = false;
@@ -426,6 +577,7 @@ ytform.addEventListener('submit', async (e) => {
 const tabButtons = document.querySelectorAll('.tab');
 tabButtons.forEach(tab => {
   tab.addEventListener('click', () => {
+    haptic('tap');
     const target = tab.dataset.tab;
     tabButtons.forEach(b => b.classList.toggle('active', b === tab));
     document.querySelectorAll('[data-pane]').forEach(p => {
