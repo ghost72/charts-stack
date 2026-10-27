@@ -61,15 +61,19 @@ input:focus { border-color: #d76d77; background: rgba(0,0,0,0.4); }
    and the JS-injected #upconfirm in the upload pane). Scoped to `.tabpane
    button` so the `.tab` elements in `.tabs` (a sibling of the panes) do NOT
    inherit this gradient/full-width look. */
-.tabpane button {
+/* Also matches `.card > form button` so the LOGIN page's submit button (a
+   separate page in main.py, whose form sits directly in .card, not in a
+   .tabpane) keeps the gradient primary-button look. The `.tab` buttons live in
+   `.tabs` (not a form, not a .tabpane), so neither selector catches them. */
+.tabpane button, .card > form button {
   width: 100%; margin-top: 26px; padding: 15px; font-size: 16px; font-weight: 700;
   color: #fff; background: linear-gradient(135deg, #7b4397, #d76d77);
   border: none; border-radius: 13px; cursor: pointer;
   transition: transform .1s, box-shadow .2s, opacity .2s;
   box-shadow: 0 8px 24px rgba(215,109,119,0.35);
 }
-.tabpane button:active { transform: scale(0.98); }
-.tabpane button:disabled { opacity: 0.6; cursor: default; }
+.tabpane button:active, .card > form button:active { transform: scale(0.98); }
+.tabpane button:disabled, .card > form button:disabled { opacity: 0.6; cursor: default; }
 .status {
   margin-top: 22px; padding: 14px 16px; border-radius: 12px; font-size: 14px;
   line-height: 1.5; display: none; gap: 10px; align-items: flex-start;
