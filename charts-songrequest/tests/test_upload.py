@@ -467,15 +467,19 @@ def test_upload_better_than_existing_proceeds(monkeypatch, tmp_path):
 # and never reaches the slskd-search/confirm path.
 
 def test_upload_upsampled_already_present_rejected(monkeypatch, tmp_path):
-    # Tag 320 but upsampled, and the library already has an equal-or-better copy
-    # -> reject BEFORE slskd; nothing staged/filed, confirm path never reached.
+    # The live SK.music bug: the upload's TAG bitrate (320) EXCEEDS the honest
+    # existing copy (257), but the upload is UPSAMPLED. The old predicate
+    # (measured <= existing) let the fake-320 beat the honest 257 and proceed;
+    # the new rule rejects it BEFORE slskd because an upsampled file is never a
+    # genuine upgrade over a decent existing copy. Nothing staged/filed, confirm
+    # path never reached.
     client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
     monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
     monkeypatch.setattr(main_mod, "_upload_upsampled",
                         lambda *a, **k: (True, 16.0, 19.0))
     monkeypatch.setattr(main_mod.library, "find_existing",
                         lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
-    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 257)
     called = []
     monkeypatch.setattr(main_mod.slsk, "find_candidates",
                         lambda *a, **k: called.append(1) or [])
@@ -485,7 +489,9 @@ def test_upload_upsampled_already_present_rejected(monkeypatch, tmp_path):
     assert body.get("already") is True
     assert body.get("accepted") is not True
     assert body.get("needs_confirm") is not True
-    assert body["bitrate"] == 320  # the EXISTING copy's bitrate
+    assert body["bitrate"] == 257  # the EXISTING copy's honest bitrate
+    # Honest "good quality" message (257 >= MIN_BITRATE).
+    assert body["message"] == i18n.t("songrequest.ui.good_quality", bitrate=257)
     # slskd not searched, nothing staged, no manifest, nothing in /charts,
     # nothing left pending for a confirm round-trip.
     assert not called
@@ -495,10 +501,70 @@ def test_upload_upsampled_already_present_rejected(monkeypatch, tmp_path):
     assert main_mod._pending_uploads == {}
 
 
+def test_upload_non_upsampled_better_than_decent_proceeds(monkeypatch, tmp_path):
+    # Existing decent copy (257), upload tag 320 and NOT upsampled -> a genuine
+    # upgrade: it is accepted straight away (not rejected), with the replace flag.
+    client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (False, 20.0, 18.0))
+    monkeypatch.setattr(main_mod.library, "find_existing",
+                        lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 257)
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert entry.get("replace") is True
+
+
+def test_upload_poor_existing_non_upsampled_upgrades(monkeypatch, tmp_path):
+    # Existing copy is POOR (200 < MIN_BITRATE), upload tag 320 and NOT upsampled
+    # -> the always-reject must NOT fire (poor copies may be improved); the
+    # upload is accepted as a genuine upgrade with the replace flag.
+    client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (False, 20.0, 18.0))
+    monkeypatch.setattr(main_mod.library, "find_existing",
+                        lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 200)
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    assert r.json()["accepted"] is True
+    entry = _manifest(charts_dir)["entries"]["artist - title.mp3"]
+    assert entry["source"] == "upload"
+    assert entry.get("replace") is True
+
+
+def test_upload_no_existing_upsampled_goes_to_confirm(monkeypatch, tmp_path):
+    # No existing copy at all + an upsampled upload -> unchanged behaviour: it
+    # still runs the slskd search and (nothing better) reaches the confirm path.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (True, 16.0, 19.0))
+    # _build already stubs find_existing -> None (no existing copy).
+    monkeypatch.setattr(main_mod.slsk, "connect", lambda: object())
+    monkeypatch.setattr(main_mod.slsk, "find_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(main_mod, "_download_best", lambda *a, **k: None)
+    r = _upload(client, artist="Artist", title="Title")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["needs_confirm"] is True
+    assert body["bitrate"] == 320
+    token = body["token"]
+    assert (staging_dir / f"{token}.mp3").exists()
+    assert main_mod._pending_uploads[token]["reason"] == "upsampled"
+
+
 def test_upload_upsampled_better_still_proceeds_to_confirm(monkeypatch, tmp_path):
-    # Tag 320 but upsampled, existing copy is WORSE (192) -> genuinely better,
-    # so it still reaches the slskd search and (nothing better online) the
-    # confirm path, carrying the "upsampled" reason.
+    # Tag 320 but upsampled, existing copy is POOR (192 < MIN_BITRATE) -> the
+    # always-reject does NOT fire; it reaches the slskd search and (nothing
+    # better online) the confirm path, carrying the "upsampled" reason. Upsampled
+    # never counts as the genuine upgrade, so it is NOT straight-accepted even
+    # over a poor copy.
     client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
     monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
     monkeypatch.setattr(main_mod, "_upload_upsampled",
@@ -536,6 +602,41 @@ def test_upload_confirm_rejects_now_duplicate(monkeypatch, tmp_path):
     assert body.get("accepted") is not True
     assert body["bitrate"] == 320
     # Nothing filed, no manifest entry, staged bytes gone, token popped.
+    assert not (charts_dir / "Artist - Title.mp3").exists()
+    assert _manifest(charts_dir)["entries"] == {}
+    assert not (staging_dir / f"{token}.mp3").exists()
+    assert token not in main_mod._pending_uploads
+
+
+def test_upload_confirm_rejects_upsampled_over_decent(monkeypatch, tmp_path):
+    # An UPSAMPLED upload (tag 320) reaches the confirm stage with no existing
+    # copy; by confirm time a DECENT copy (257) is present. The confirm must
+    # reject it as already-present instead of filing it with accept_anyway -
+    # closing the "add it anyway" route for a song now present in decent quality.
+    client, main_mod, charts_dir, staging_dir = _build(monkeypatch, tmp_path)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod, "_upload_upsampled",
+                        lambda *a, **k: (True, 16.0, 19.0))
+    monkeypatch.setattr(main_mod.slsk, "connect", lambda: object())
+    monkeypatch.setattr(main_mod.slsk, "find_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(main_mod, "_download_best", lambda *a, **k: None)
+    # Upload with NO existing copy -> upsampled nothing-better -> confirm pending.
+    body = _upload(client, artist="Artist", title="Title").json()
+    assert body["needs_confirm"] is True
+    token = body["token"]
+    assert main_mod._pending_uploads[token]["reason"] == "upsampled"
+    # Now a decent copy appears before the confirm POST.
+    monkeypatch.setattr(main_mod.library, "find_existing",
+                        lambda *a, **k: "/music/Music/Artist/Album/old.mp3")
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 257)
+    r = client.post("/api/upload/confirm", data={
+        "token": token, "artist": "Artist", "title": "Title"})
+    assert r.status_code == 200
+    rbody = r.json()
+    assert rbody.get("already") is True
+    assert rbody.get("accepted") is not True
+    assert rbody["bitrate"] == 257
+    # Nothing filed, no accept_anyway, staged bytes gone, token popped.
     assert not (charts_dir / "Artist - Title.mp3").exists()
     assert _manifest(charts_dir)["entries"] == {}
     assert not (staging_dir / f"{token}.mp3").exists()
