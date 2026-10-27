@@ -19,6 +19,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from app import config, i18n, library
 
+# Capture the REAL find_existing at import time. _build() monkeypatches
+# library.find_existing to a None stub; the duplicate-reject test restores this
+# genuine implementation (monkeypatch only stored _build's lambda as "original").
+_REAL_FIND_EXISTING = library.find_existing
+
 
 # --- Pure filename parsing (no I/O) ----------------------------------------
 
@@ -271,6 +276,38 @@ def test_upload_confirm_unknown_token(monkeypatch, tmp_path):
         "token": "nope", "artist": "A", "title": "B"})
     assert r.status_code == 410
     assert _manifest(charts_dir)["entries"] == {}
+
+
+def test_upload_decorated_title_duplicate_rejects(monkeypatch, tmp_path):
+    """A decorated upload title whose clean form already exists at equal-or-
+    better quality rejects at /api/upload with already:true (FIX 1), instead of
+    missing the library match and reaching the slskd-search / confirm path."""
+    client, main_mod, charts_dir, _sd = _build(monkeypatch, tmp_path)
+    # Build a real on-disk library tree with the CLEAN title at 320 kbps.
+    music = tmp_path / "Music"
+    album = music / "HPRoos" / "Das Isch mini Schwiiz"
+    album.mkdir(parents=True)
+    (album / "Das Isch mini Schwiiz.mp3").write_bytes(b"")
+    monkeypatch.setattr(main_mod.config, "MUSIC_DIR", str(music))
+    # Restore the REAL find_existing (default _build stubs it to None).
+    monkeypatch.setattr(main_mod.library, "find_existing", _REAL_FIND_EXISTING)
+    # Existing file reads as 320; the upload tag reads as 320 (equal -> reject).
+    monkeypatch.setattr(main_mod.library, "read_bitrate", lambda p: 320)
+    monkeypatch.setattr(main_mod.library, "read_mp3_bitrate", lambda p: 320)
+    # slskd must never be searched if the library-first reject fires.
+    called = []
+    monkeypatch.setattr(main_mod.slsk, "find_candidates",
+                        lambda *a, **k: called.append(1) or [])
+    r = _upload(client, filename="HPRoos - Das Isch mini Schwiiz (320 Kbps).mp3",
+                artist="HPRoos",
+                title="Das Isch mini Schwiiz (Melodic Techno Version) - (320 Kbps)")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["already"] is True
+    assert "token" not in body and "needs_confirm" not in body
+    assert not called  # slskd never searched
+    assert _manifest(charts_dir)["entries"] == {}  # nothing written
 
 
 # --- Upsampling / real-quality upload path ---------------------------------
