@@ -347,12 +347,35 @@ function showUpStatus(cls, iconHtml, html) {
   upstatus.innerHTML = '<span class="ic">' + iconHtml + '</span><span>' + html + '</span>';
 }
 
+// Strip a trailing run of bitrate/format/version decoration from a derived
+// title so the user sees a clean pre-filled value. Conservative, trailing-only;
+// mirrors library._strip_title_decoration (server-side stays authoritative for
+// matching). A non-decoration group like "(Part 2)" is kept.
+function stripTitleDecoration(title) {
+  const deco = /(?:^\s*\d{2,4}\s*$|\d{2,4}\s*k(?:bps|bit|b)?|flac|wav|m4a|aac|ogg|opus|extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|official|audio|video|visual[sz]er|lyrics?|feat|ft|with)/i;
+  let t = title || '';
+  let changed = true;
+  while (changed) {
+    changed = false;
+    // Trailing "- <bitrate>" tail.
+    const dash = t.replace(/\s*[-\u2013]\s*\d{2,4}\s*k(?:bps|bit|b)?\s*$/i, '');
+    if (dash !== t) { t = dash.trimEnd(); changed = true; continue; }
+    // Trailing bare bitrate token "320kbps"/"320k" (needs the "k" suffix).
+    const bare = t.replace(/\s+\d{2,4}\s*k(?:bps|bit|b)?\s*$/i, '');
+    if (bare !== t) { t = bare.trimEnd(); changed = true; continue; }
+    // Trailing (...)/[...] group - strip only if it reads as decoration.
+    const m = t.match(/\s*[([]([^()[\]]*)[)\]]\s*$/);
+    if (m && deco.test(m[1])) { t = t.slice(0, m.index).trimEnd(); changed = true; }
+  }
+  return t.trim();
+}
+
 // Mirror parse_upload_name: split the basename on the FIRST " - ".
 function parseUploadName(name) {
   const base = name.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '');
   const i = base.indexOf(' - ');
-  if (i >= 0) return [base.slice(0, i).trim(), base.slice(i + 3).trim()];
-  return ['', base.trim()];
+  if (i >= 0) return [base.slice(0, i).trim(), stripTitleDecoration(base.slice(i + 3).trim())];
+  return ['', stripTitleDecoration(base.trim())];
 }
 
 upfile.addEventListener('change', () => {

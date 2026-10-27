@@ -104,13 +104,19 @@ input:focus { border-color: #d76d77; background: rgba(0,0,0,0.4); }
   pointer-events: none;
 }
 
-/* One-shot attention pulse: a single non-looping box-shadow flash on the
-   element waiting for a user decision. box-shadow only, so no layout shift.
-   The 0.28 alpha is a deliberately softer value than the 0.35 resting glow
-   (.tab.active / .tabpane button) so the pulse reads as a gentle nudge. */
+/* Attention pulse: the primary CROSS-PLATFORM signal that a user decision is
+   waiting on the confirm button (haptics stay best-effort on top). It must
+   clearly stand out, so it combines three things that all read on any screen:
+     - a bright ring that far exceeds the button's resting 0.35-alpha glow
+       (peak 0.85 alpha, 12px spread),
+     - a brightness flash (filter) for a visible colour/light shift, and
+     - a small scale pulse (peak 1.04, transform-origin:center -> no layout
+       shift).
+   It runs 3 iterations over ~1.05s total, then stops (not an endless loop).
+   pulse() removes the class on animationend so it never sticks. */
 @keyframes attention-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(215,109,119,0.0); }
-  30%  { box-shadow: 0 0 0 6px rgba(215,109,119,0.28); }
-  100% { box-shadow: 0 0 0 0 rgba(215,109,119,0.0); }
+  0%   { box-shadow: 0 0 0 0 rgba(215,109,119,0.0);  transform: scale(1);    filter: brightness(1); }
+  40%  { box-shadow: 0 0 0 12px rgba(215,109,119,0.85); transform: scale(1.04); filter: brightness(1.35); }
+  100% { box-shadow: 0 0 0 0 rgba(215,109,119,0.0);  transform: scale(1);    filter: brightness(1); }
 }
-.pulse { animation: attention-pulse .6s ease-out 1; }
+.pulse { transform-origin: center; animation: attention-pulse .35s ease-out 3; }
