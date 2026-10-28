@@ -48,3 +48,31 @@ def test_remaster_fold_unchanged():
 def test_feat_fold_unchanged():
     assert (importer._title_key("Into You")
             == importer._title_key("Into You (feat. Someone)"))
+
+
+# --- FIX 3: trailing UNBALANCED/open opener-tail folds to base -------------
+
+def test_open_tail_folds_to_base():
+    # Mirrors songrequest: a re-request with an unbalanced open tail keys the
+    # same as the clean title, composing with the NFKD fold.
+    base = importer._title_key("ewigi liäbi")
+    assert importer._title_key("ewigi liäbi (original") == base
+    assert importer._title_key("ewigi liabi") == base
+
+
+def test_open_tail_siblings_fold_to_base():
+    base = importer._title_key("Song")
+    for tail in ("(live", "(feat. X", "(radio edit", "(extended mix",
+                 "(official video", "(remix", "[original"):
+        assert importer._title_key("Song " + tail) == base, tail
+
+
+def test_open_tail_does_not_over_strip_part():
+    # Numeric/part tails stay distinct from 'Song' (balanced and unbalanced).
+    base = importer._title_key("Song")
+    assert importer._title_key("Song (Part 2") != base
+    assert importer._title_key("Song (Part 2)") != base
+
+
+def test_open_tail_keeps_trailing_number():
+    assert importer._title_key("Area 51") == "area51"

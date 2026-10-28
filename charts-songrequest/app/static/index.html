@@ -365,7 +365,15 @@ function stripTitleDecoration(title) {
     if (bare !== t) { t = bare.trimEnd(); changed = true; continue; }
     // Trailing (...)/[...] group - strip only if it reads as decoration.
     const m = t.match(/\s*[([]([^()[\]]*)[)\]]\s*$/);
-    if (m && deco.test(m[1])) { t = t.slice(0, m.index).trimEnd(); changed = true; }
+    if (m && deco.test(m[1])) { t = t.slice(0, m.index).trimEnd(); changed = true; continue; }
+    // Trailing UNBALANCED opener-tail (open "(" / "[" with no closing bracket)
+    // whose first word is a decoration keyword, e.g. "... (original",
+    // "... (radio edit". Mirrors library._OPEN_TAIL_DECORATION. Conservative:
+    // "part"/"pt"/digits are absent, so "Song (Part 2" is kept.
+    if (/[([][^()[\]]*$/.test(t)) {
+      const open = t.replace(/\s*[([]\s*(?:extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|official|audio|video|visuali[sz]er|lyrics?|feat\.?|ft\.?|with|live|acoustic|instrumental|demo|bonus|single)[^()[\]]*$/i, '');
+      if (open && open !== t) { t = open.trimEnd(); changed = true; }
+    }
   }
   return t.trim();
 }
@@ -534,7 +542,7 @@ async function fetchYtSuggestion() {
     const data = await resp.json();
     if (data.ok) {
       if (!ytArtistTouched && data.artist) ytartist.value = data.artist;
-      if (!ytTitleTouched && data.title) yttitle.value = data.title;
+      if (!ytTitleTouched && data.title) yttitle.value = stripTitleDecoration(data.title);
       ytstatus.className = 'status';
     } else {
       showYtStatus('err', '⚠️', esc(data.error) || t('yt_fetch_failed'));
