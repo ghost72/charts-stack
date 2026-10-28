@@ -113,6 +113,28 @@ MANIFEST_FILE = os.environ.get("MANIFEST_FILE", "/charts/.charts-manifest.json")
 # Playlist label for the manifest (shows up in the charts-import message).
 MANUAL_SOURCE_LABEL = os.environ.get("MANUAL_SOURCE_LABEL", "manuell")
 
+# --- Deezer casing canonicalization for manual input ---
+# Before a manually requested/uploaded song is written into the manifest, the
+# canonical (mixed-case) catalog spelling is resolved via the open Deezer
+# search API ('mash' -> 'Mash', 'ewigi liäbi' -> 'Ewigi Liäbi'). Only a
+# reliable hit is taken; otherwise the raw user value is kept (so deliberate
+# spellings like 'SK.music' survive). Names/defaults mirror charts-import so
+# both services agree on what "canonical" means.
+DEEZER_CANONICAL_ENABLED = _get_bool("DEEZER_CANONICAL_ENABLED", True)
+# Cache (artist|title -> [artist, title], also misses). Sits next to the
+# manifest in the shared /charts folder, shareable with charts-import/flashback.
+DEEZER_CACHE_FILE = os.environ.get(
+    "DEEZER_CACHE_FILE",
+    os.path.join(os.path.dirname(MANIFEST_FILE), ".charts-flashback-deezer-cache.json"),
+)
+# Minimum similarity (0-100) of a Deezer hit; asymmetric loosening via
+# STRONG/RELAX (see deezer._passes). Conservative -> no mismatches.
+DEEZER_MATCH_MIN = _get_int("DEEZER_MATCH_MIN", 80)
+DEEZER_MATCH_STRONG = _get_int("DEEZER_MATCH_STRONG", 97)
+DEEZER_MATCH_RELAX = _get_int("DEEZER_MATCH_RELAX", 75)
+# HTTP timeout for the Deezer lookup (seconds).
+HTTP_TIMEOUT = _get_int("HTTP_TIMEOUT", 15)
+
 # --- Web UI / Auth ---
 # Pure multi-user login via SONGREQUEST_USERS = "user1:pass1,user2:pass2".
 # At least one user MUST be defined, otherwise the app does not start (no

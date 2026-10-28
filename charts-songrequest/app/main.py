@@ -26,8 +26,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import (blocklist, config, i18n, library, manifest, quality, slsk,
-               status, youtube)
+from . import (blocklist, config, deezer, i18n, library, manifest, quality,
+               slsk, status, youtube)
 from .i18n import t
 
 logging.basicConfig(
@@ -168,6 +168,30 @@ def _download_best(client, candidates, existing, existing_bitrate):
         slsk.cancel_transfer(client, cand_user, cand_fname)
         blocklist.block(cand_user)
     return None
+
+
+def _canonicalize_manual(artist: str, title: str) -> tuple[str, str]:
+    """
+    Resolve the canonical (catalog) spelling of a MANUAL entry via Deezer, with
+    the raw user values as the total fallback. This is the single chokepoint all
+    three tabs route the STORED name through, so a lowercase 'mash'/'ewigi liäbi'
+    is filed as 'Mash'/'Ewigi Liäbi' instead of the raw lowercase input - and a
+    deliberate spelling ('SK.music', 'k.d. lang') survives a Deezer miss intact
+    (NO naive .title()).
+
+    Best-effort: deezer.resolve_canonical already returns the raw values on a
+    miss/offline/network error, and the extra try/except guarantees a Deezer
+    hiccup (or an import/runtime error) never breaks the write. Mirrors
+    charts-import's tags._canonicalize guard. MATCH key is never derived from
+    the canonical name - callers run the library-first check on the RAW input
+    BEFORE calling this.
+    """
+    try:
+        return deezer.resolve_canonical(artist, title)
+    except Exception as e:  # runtime error never fatal -> raw fallback
+        logger.debug(t("import.deezer.lookup_failed", artist=artist,
+                       title=title, error=e))
+        return artist, title
 
 
 # --- Login ---
@@ -347,11 +371,20 @@ async def api_request(request: Request, artist: str = Form(""), title: str = For
     #    matching normalizes anyway, changed search terms could worsen the hit
     #    rate).
     is_upgrade = bool(existing)
-    canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
     if is_upgrade:
+        # Upgrade: anchor to the EXISTING file spelling (correct), falling back
+        # to title-case of the input. Deezer is not consulted here.
+        canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
         canon_title = library.canonical_title_from_file(existing) or library.title_case(title)
     else:
-        canon_title = library.title_case(title)
+        # New song: prefer the Deezer catalog spelling (raw fallback), then
+        # refine the artist to the EXISTING folder spelling if present. Only
+        # when Deezer returned the raw title unchanged do we fall back to the
+        # conservative title_case (title only - never forced on the artist).
+        canon_artist, canon_title = _canonicalize_manual(artist, title)
+        canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or canon_artist
+        if canon_title == title:
+            canon_title = library.title_case(title)
 
     # 5. Manifest entry. On an upgrade (song already there, new bitrate higher)
     #    set the replace flag -> charts-import replaces the existing file.
@@ -488,8 +521,14 @@ def _promote_upload(staged_path: str, artist: str, title: str,
     """
     charts_dir = os.path.dirname(config.MANIFEST_FILE)
     os.makedirs(charts_dir, exist_ok=True)
-    clean_artist = library._clean_component(artist, "Unknown Artist")
-    clean_title = library._clean_component(title, "untitled")
+    # Canonicalize the STORED name via Deezer (raw fallback). The library-first
+    # find_existing check already ran on the RAW input in the callers, so this
+    # only affects the on-disk basename + the manifest spelling, never the match
+    # key. A lowercase 'mash'/'ewigi liäbi' is filed as the catalog spelling; a
+    # deliberate 'SK.music' survives a Deezer miss unchanged.
+    canon_artist, canon_title = _canonicalize_manual(artist, title)
+    clean_artist = library._clean_component(canon_artist, "Unknown Artist")
+    clean_title = library._clean_component(canon_title, "untitled")
     base = f"{clean_artist} - {clean_title}"
     final = os.path.join(charts_dir, f"{base}.mp3")
     n = 2
@@ -501,8 +540,9 @@ def _promote_upload(staged_path: str, artist: str, title: str,
     # Record the artist floored to "Unknown Artist" when empty (same value used
     # for the on-disk basename). charts-import SKIPS an entry whose manifest
     # artist is empty (it does NOT floor it), so writing the floor here is what
-    # keeps the file from being filed as "no manifest entry".
-    manifest.record(fname, clean_artist, title, source=source,
+    # keeps the file from being filed as "no manifest entry". The title is the
+    # canonical (Deezer-resolved) spelling to match the on-disk basename.
+    manifest.record(fname, clean_artist, canon_title, source=source,
                     replace=is_upgrade, notify_device=notify_device,
                     accept_anyway=accept_anyway)
     return fname
@@ -662,11 +702,18 @@ async def api_upload(request: Request, file: UploadFile = None,
         username, file_dict, new_bitrate = chosen
         fname = file_dict.get("filename", "?")
         is_upgrade = bool(existing)
-        canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
         if is_upgrade:
+            # Upgrade: anchor to the EXISTING file spelling (correct).
+            canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or artist
             canon_title = library.canonical_title_from_file(existing) or library.title_case(title)
         else:
-            canon_title = library.title_case(title)
+            # New song: prefer the Deezer catalog spelling (raw fallback), then
+            # refine the artist to an existing folder spelling; title_case only
+            # as a last resort when Deezer returned the raw title unchanged.
+            canon_artist, canon_title = _canonicalize_manual(artist, title)
+            canon_artist = library.canonical_artist(config.MUSIC_DIR, artist) or canon_artist
+            if canon_title == title:
+                canon_title = library.title_case(title)
         manifest.record(fname, canon_artist, canon_title, config.MANUAL_SOURCE_LABEL,
                         replace=is_upgrade, notify_device=notify_device)
         logger.info(t("songrequest.request.enqueued",

@@ -44,6 +44,10 @@ def _build(monkeypatch, tmp_path):
     # Default: nothing in the library (individual tests override as needed).
     monkeypatch.setattr(main_mod.library, "find_existing", lambda *a, **k: None)
     monkeypatch.setattr(main_mod, "_record_request", lambda *a, **k: None)
+    # Deezer canonicalization defaults to a no-op (return raw) so these tests
+    # stay deterministic and never hit the network.
+    monkeypatch.setattr(main_mod.deezer, "resolve_canonical",
+                        lambda artist, title: (artist, title))
 
     token = "test-token"
     main_mod._sessions[token] = "roger"

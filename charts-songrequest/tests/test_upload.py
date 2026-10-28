@@ -87,6 +87,11 @@ def _build(monkeypatch, tmp_path):
     monkeypatch.setattr(main_mod.library, "find_existing", lambda *a, **k: None)
     # Status writes must not touch the real filesystem.
     monkeypatch.setattr(main_mod, "_record_request", lambda *a, **k: None)
+    # Deezer canonicalization defaults to a no-op (return raw) so these tests
+    # stay deterministic and never hit the network. The dedicated
+    # test_canonicalize_manual.py overrides it to prove the resolve path.
+    monkeypatch.setattr(main_mod.deezer, "resolve_canonical",
+                        lambda artist, title: (artist, title))
 
     token = "test-token"
     main_mod._sessions[token] = "roger"

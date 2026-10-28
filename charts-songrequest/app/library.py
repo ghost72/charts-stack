@@ -13,6 +13,7 @@ song as "present".
 
 import os
 import re
+import unicodedata
 
 # Extensions recognized as audio (like charts-import).
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".wma"}
@@ -106,6 +107,12 @@ def _title_key(title: str) -> str:
     # ("Inside My Soul") fold to the SAME match key. MATCH key only - the real
     # submitted title is still used for disk/tag writes.
     t = _strip_title_decoration(t)
+    # Transliterate accents (ä -> a, é -> e) BEFORE the [a-z0-9] fold so an
+    # umlaut is folded, not dropped. Mirrors the charts-sync side
+    # (library.normalize / deezer._normalize) and the charts-import copy so all
+    # subsystems agree on the same key for 'liäbi' == 'liabi'. MATCH key only.
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", "", t)
 
 
