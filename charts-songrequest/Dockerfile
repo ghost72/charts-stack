@@ -2,11 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# ffmpeg: fuer die FFT-Qualitaetsmessung (quality.py) von Uploads - misst den
-# echten Frequenz-Cutoff, um hochskalierte/gefakte MP3s zu erkennen. Nur Lesen/
-# Dekodieren, schreibt nichts. ffmpeg ist in jedem Debian-Repo verfuegbar.
-# ffmpeg wird zusaetzlich von yt-dlp (YouTube-Tab) fuer die MP3-Extraktion und
-# das Einbetten des Thumbnails als Cover genutzt.
+# ffmpeg: for the FFT quality measurement (quality.py) of uploads - it measures
+# the real frequency cutoff to detect upsampled/faked MP3s. Read/decode only,
+# writes nothing. ffmpeg is available in every Debian repo.
+# ffmpeg is additionally used by yt-dlp (YouTube tab) for the MP3 extraction and
+# for embedding the thumbnail as cover art.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -14,14 +14,15 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App-Dateien direkt mit der Ziel-Ownership (youruser = 1027:100) kopieren, da der
-# Container via compose als dieser User laeuft. Ohne das gehoeren die Dateien
-# root mit 700 und uvicorn kann das Package nicht lesen (Permission denied).
+# Copy the app files straight with the target ownership (youruser = 1027:100),
+# since the container runs as this user via compose. Without it the files would
+# be owned by root with 700 and uvicorn could not read the package (Permission
+# denied).
 COPY --chown=1027:100 app/ ./app/
 
-# Zusaetzlich Lese-/Ausfuehrrechte fuer alle setzen (robust, falls der Container
-# doch unter einer anderen UID laeuft).
+# Additionally grant read/execute to everyone (robust, in case the container
+# ends up running under a different UID).
 RUN chmod -R a+rX /app
 
-# Web-UI + API (uvicorn). Port via compose (Default 5056).
+# Web UI + API (uvicorn). Port via compose (default 5056).
 CMD ["python", "-u", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5056"]
