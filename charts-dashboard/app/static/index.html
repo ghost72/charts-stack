@@ -883,120 +883,157 @@ function renderInProgress(d) {
     `<span class="badge ${cls}">${t("inflight.badge." + key)}</span>`;
   const panelTitle = (emoji_key, badge_cls, badge_key) =>
     `${t(emoji_key)} ${badge(badge_cls, badge_key)}`;
+
+  // Each panel is header + scrollable list + footer. The header and footer sit
+  // OUTSIDE the scroll container (.ip-list) so only the list scrolls; the panel
+  // keeps a fixed height regardless of how many entries there are. `head`/
+  // `foot` are arrays of HTML fragments (each wrapped in a .line); `rows` is the
+  // FULL list of entry rows. `emptyRow` is shown inside the list when there are
+  // no rows so the box keeps its height and the graceful empty state stays.
+  const line = (h) => `<div class="line">${h}</div>`;
+  const ipPanel = (cls, title, head, rows, foot, emptyRow) =>
+    `<div class="tile ip-panel ${cls}">` +
+      `<div class="ip-head"><div class="t-title">${title}</div>${head.map(line).join("")}</div>` +
+      `<div class="ip-list">${rows.length ? rows.join("") : line(emptyRow)}</div>` +
+      (foot.length ? `<div class="ip-foot">${foot.map(line).join("")}</div>` : "") +
+    `</div>`;
+
   const tiles = [];
 
   // Panel 1: Active downloads (LIVE).
   const act = ip.active || {};
   {
-    const lines = [`<span class="muted-txt">${t("inflight.active.subtitle")}</span>`];
-    let cls;
+    const head = [`<span class="muted-txt">${t("inflight.active.subtitle")}</span>`];
+    const rows = [];
+    const foot = [];
+    let cls, emptyRow;
     if (act.ok === false) {
       cls = "err";
-      lines.push(t("inflight.active.slskd_down"));
+      emptyRow = t("inflight.active.slskd_down");
     } else if (!act.items || act.items.length === 0) {
       cls = "muted";
-      lines.push(t("inflight.active.none"));
+      emptyRow = t("inflight.active.none");
     } else {
       cls = "ok";
-      lines.push(t("inflight.active.count", {n: act.count}));
+      head.push(t("inflight.active.count", {n: act.count}));
       act.items.forEach(it => {
         const note = it.matched ? ""
           : ` <span class="muted-txt">${t("inflight.unmatched")}</span>`;
-        let row = `<div class="ip-row">${esc(it.label)}${note}</div>`;
+        let row = `<div class="ip-row">${esc(it.label)}${note}`;
         if (it.pct != null) {
           row += `<div class="scan-bar"><div class="scan-fill" ` +
                  `style="width:${it.pct}%"></div></div>`;
         }
-        lines.push(row);
+        rows.push(row + `</div>`);
       });
       if (act.truncated) {
         const more = (act.count || 0) - act.items.length;
-        lines.push(`<span class="muted-txt">${t("inflight.active.more", {n: more})}</span>`);
+        foot.push(`<span class="muted-txt">${t("inflight.active.more", {n: more})}</span>`);
       }
     }
-    tiles.push(tile(cls, panelTitle("inflight.active.title", "badge-live", "live"), lines));
+    tiles.push(ipPanel(cls, panelTitle("inflight.active.title", "badge-live", "live"), head, rows, foot, emptyRow));
   }
 
   // Panel 2: Queue / missing (SNAPSHOT of the last charts-sync run).
   const miss = ip.missing || {};
   {
-    const lines = [`<span class="muted-txt">${t("inflight.missing.subtitle")}</span>`];
-    let cls;
+    const head = [`<span class="muted-txt">${t("inflight.missing.subtitle")}</span>`];
+    const rows = [];
+    const foot = [];
+    let cls, emptyRow;
     if (!miss.available || !miss.total) {
       cls = "muted";
-      lines.push(t("inflight.missing.none"));
+      emptyRow = t("inflight.missing.none");
     } else {
       cls = "info";
-      lines.push(t("inflight.missing.total", {n: miss.total}));
+      // Count line + "waiting to be downloaded" hint + snapshot age (status,
+      // belongs in the non-scrolling header).
+      head.push(`${t("inflight.missing.total", {n: miss.total})} ` +
+        `<span class="muted-txt">(${t("inflight.missing.backlog_hint")})</span>`);
       if (miss.snapshot_at) {
-        lines.push(`<span class="muted-txt">` +
+        head.push(`<span class="muted-txt">` +
           t("inflight.missing.snapshot_at", {ago: ago(miss.snapshot_at)}) + `</span>`);
       }
       (miss.preview || []).forEach(e => {
-        lines.push(`<div class="ip-row">${esc(e.artist)} \u2013 ${esc(e.title)}</div>`);
+        rows.push(`<div class="ip-row">${esc(e.artist)} \u2013 ${esc(e.title)}</div>`);
       });
+      // Per-source breakdown as ONE clean wrapped footer line, labelled.
       if (miss.per_source && miss.per_source.length) {
         const parts = miss.per_source.map(ps =>
           t("inflight.missing.per_source", {source: esc(ps.source), n: ps.count}));
-        lines.push(`<span class="muted-txt">${parts.join(" \u00b7 ")}</span>`);
+        foot.push(`<span class="muted-txt">` +
+          t("inflight.missing.per_source_label", {parts: parts.join(" \u00b7 ")}) + `</span>`);
       }
     }
-    tiles.push(tile(cls, panelTitle("inflight.missing.title", "badge-snap", "snapshot"), lines));
+    tiles.push(ipPanel(cls, panelTitle("inflight.missing.title", "badge-snap", "snapshot"), head, rows, foot, emptyRow));
   }
 
   // Panel 3: Quarantine / rejected (result record; reason is run-level only).
   const rej = ip.rejected || {};
   const s = d.storage || {};
   {
-    const lines = [`<span class="muted-txt">${t("inflight.rejected.subtitle")}</span>`];
-    let cls;
+    const head = [`<span class="muted-txt">${t("inflight.rejected.subtitle")}</span>`];
+    const rows = [];
+    const foot = [];
+    let cls, emptyRow;
     if (!rej.count) {
       cls = "muted";
-      lines.push(t("inflight.rejected.none"));
+      emptyRow = t("inflight.rejected.none");
     } else {
       cls = (s.rejected_bytes ?? 0) > 2e9 ? "warn" : "info";
-      lines.push(t("inflight.rejected.count", {n: rej.count}));
+      head.push(t("inflight.rejected.count", {n: rej.count}));
       (rej.preview || []).forEach(e => {
-        lines.push(`<div class="ip-row">${esc(e.name)} ` +
+        rows.push(`<div class="ip-row">${esc(e.name)} ` +
           `<span class="muted-txt">${ago(e.when)}</span></div>`);
       });
-      if (rej.message) {
-        lines.push(`<span class="muted-txt">` +
-          t("inflight.rejected.message", {message: esc(rej.message)}) + `</span>`);
-      }
     }
-    tiles.push(tile(cls, panelTitle("inflight.rejected.title", "badge-snap", "snapshot"), lines));
+    // The run-level import note is the footer status line (shown even when the
+    // list is empty, so the honest "why" stays visible).
+    if (rej.message) {
+      foot.push(`<span class="muted-txt">` +
+        t("inflight.rejected.message", {message: esc(rej.message)}) + `</span>`);
+    }
+    tiles.push(ipPanel(cls, panelTitle("inflight.rejected.title", "badge-snap", "snapshot"), head, rows, foot, emptyRow));
   }
 
   // Panel 4: Upgrade status (last run - not per-song live).
   const up = ip.upgrade || {};
   {
-    const lines = [`<span class="muted-txt">${t("inflight.upgrade.subtitle")}</span>`];
-    let cls;
+    const head = [`<span class="muted-txt">${t("inflight.upgrade.subtitle")}</span>`];
+    const rows = [];
+    const foot = [];
+    let cls, emptyRow;
     if (!up.available) {
       cls = "muted";
-      lines.push(t("inflight.upgrade.none"));
+      emptyRow = t("inflight.upgrade.none");
     } else {
       cls = "info";
+      // The scan progress bar + "upgraded" count are the panel's content rows.
       if (typeof up.scan_total === "number" && up.scan_total > 0) {
         const seen = up.scan_seen || 0;
         const pct = Math.min(100, Math.round((seen / up.scan_total) * 100));
         const nf = (n) => n.toLocaleString("de-CH");
-        lines.push(
+        rows.push(`<div class="ip-row">` +
           `<div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>` +
           `<span class="scan-txt">` +
           t("inflight.upgrade.progress", {seen: nf(seen), total: nf(up.scan_total), pct}) +
-          `</span>`);
+          `</span></div>`);
       }
       if (typeof up.upgraded === "number") {
-        lines.push(t("inflight.upgrade.upgraded", {n: up.upgraded}));
+        rows.push(`<div class="ip-row">${t("inflight.upgrade.upgraded", {n: up.upgraded})}</div>`);
       }
+      // If neither a scan bar nor an upgraded count is present, keep a graceful
+      // list row so the box isn't empty.
+      if (!rows.length) {
+        emptyRow = t("inflight.upgrade.none");
+      }
+      // "next run" is status → footer.
       if (up.next_run) {
-        lines.push(`<span class="muted-txt">` +
+        foot.push(`<span class="muted-txt">` +
           t("inflight.upgrade.next", {label: nextRunLabel(up.next_run)}) + `</span>`);
       }
     }
-    tiles.push(tile(cls, panelTitle("inflight.upgrade.title", "badge-run", "lastrun"), lines));
+    tiles.push(ipPanel(cls, panelTitle("inflight.upgrade.title", "badge-run", "lastrun"), head, rows, foot, emptyRow));
   }
 
   document.getElementById("inprogress").innerHTML = tiles.join("");

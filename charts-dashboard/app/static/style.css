@@ -301,6 +301,54 @@ b { font-weight: 600; }
   overflow-wrap: anywhere;
 }
 
+/* Three-part in-progress panel: a fixed (non-scrolling) header, a fixed-height
+   internally-scrolling list in the middle, and a fixed (non-scrolling) footer.
+   The panel no longer grows with the list; all four panels in the row end up
+   the same height because only the list area is capped, not the whole card.
+   Built on top of .tile (same background/radius/status border-left). */
+.ip-panel {
+  display: flex;
+  flex-direction: column;
+  /* Keep the card itself compact: the list area is the only growable part and
+     it is capped below, so the whole panel is roughly a third shorter than the
+     old flat list. */
+}
+/* Header: emoji+title+badge (.t-title), the explanatory subtitle and the count
+   line. Never scrolls. Kept compact (small, tight lines) so the honest - and
+   therefore long - subtitle doesn't balloon the panel height. */
+.ip-head { flex: 0 0 auto; }
+.ip-head .t-title { margin-bottom: 4px; }
+.ip-head .line { font-size: .78rem; margin: 2px 0; line-height: 1.25; }
+/* The scrollable middle. Fixed max-height so ~4-5 rows show before a thin
+   scrollbar appears; a small min-height keeps a near-empty panel from being
+   much shorter than a full one, so the four panels stay visually balanced. */
+.ip-list {
+  flex: 1 1 auto;
+  min-height: 56px;
+  max-height: 132px;
+  overflow-y: auto;
+  margin: 6px 0;
+  padding-right: 4px; /* breathing room so rows don't sit under the scrollbar */
+  /* Fine scrollbar (Firefox). */
+  scrollbar-width: thin;
+  scrollbar-color: #4a4160 transparent;
+}
+/* Fine scrollbar (WebKit/Blink: Chrome, Safari, Edge). */
+.ip-list::-webkit-scrollbar { width: 6px; }
+.ip-list::-webkit-scrollbar-thumb { background: #4a4160; border-radius: 3px; }
+.ip-list::-webkit-scrollbar-track { background: transparent; }
+/* Footer: the summary/status line (import note, per-source breakdown, next
+   run, active "+N more"). Never scrolls; divider tone matches .desc. */
+.ip-foot {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #37304733;
+}
+.ip-foot .line { font-size: .78rem; margin: 2px 0; line-height: 1.25; }
+/* The first row inside the scroll list shouldn't add extra top margin. */
+.ip-list .ip-row:first-child { margin-top: 0; }
+
 /* Login */
 body.login {
   display: flex; align-items: center; justify-content: center;
