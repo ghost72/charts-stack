@@ -105,6 +105,20 @@ PUSHOVER_USER = os.environ.get("PUSHOVER_USER", "").strip()
 # --- Page auto-refresh (seconds) ---
 REFRESH_SECONDS = _get_int("DASHBOARD_REFRESH_SECONDS", 15)
 
+# --- "In progress" pipeline overview (new section) ---
+# How many preview rows per in-progress panel + the live-list cap. All have
+# working defaults, so no .env change is required to run. Reuses CHARTS_DIR,
+# STATUS_DIR, SLSKD_HOST, SLSKD_API_KEY - no new mount/credential.
+INFLIGHT_MISSING_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_MISSING_N", 8)
+INFLIGHT_REJECTED_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_REJECTED_N", 8)
+INFLIGHT_ACTIVE_MAX = _get_int("DASHBOARD_INFLIGHT_ACTIVE_MAX", 25)
+# TTL (seconds) for the CHEAP snapshot reads only (missing*.txt + _rejected
+# listing). The live slskd "active downloads" panel is NEVER cached - it is
+# rebuilt on every poll so "downloading now" stays honest. The snapshot sources
+# change slowly (charts-sync ~12h, charts-import ~30min), so a short TTL
+# decouples them from every 15s poll without going stale.
+INFLIGHT_TTL = _get_int("DASHBOARD_INFLIGHT_TTL", 30)
+
 # --- Discreet donate footer (PayPal/Revolut) ---
 # ON by default. Can be turned off with DASHBOARD_DONATE=0/false/no; then the
 # footer is not rendered into the page server-side at all.

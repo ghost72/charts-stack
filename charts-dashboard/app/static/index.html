@@ -34,6 +34,11 @@
   </section>
 
   <section>
+    <h2 data-i18n="section.inprogress">🔄 In Bearbeitung</h2>
+    <div id="inprogress" class="grid"></div>
+  </section>
+
+  <section>
     <h2 data-i18n="section.storage">💾 Speicher &amp; Bestand</h2>
     <div id="storage" class="grid"></div>
   </section>
@@ -855,6 +860,146 @@ function render(d) {
       fmtBytes(s.rejected_bytes),
     ]),
   ].join("");
+
+  // --- In Bearbeitung (vier ehrlich beschriftete Panels) ---
+  renderInProgress(d);
+}
+
+// HTML-escape helper for untrusted labels (song titles, filenames) injected via
+// innerHTML into the tile rows.
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Renders the "In progress" section: four panels, each with an honesty badge.
+// Only panel 1 (active downloads) is live; panels 2-4 are snapshot / result-
+// record / last-run. The badge is driven by WHICH sub-object is rendered, so a
+// snapshot can never be shown as live. Defensive: an older payload without
+// `inflight` renders empty panels instead of throwing.
+function renderInProgress(d) {
+  const ip = d.inflight || {};
+  const badge = (cls, key) =>
+    `<span class="badge ${cls}">${t("inflight.badge." + key)}</span>`;
+  const panelTitle = (emoji_key, badge_cls, badge_key) =>
+    `${t(emoji_key)} ${badge(badge_cls, badge_key)}`;
+  const tiles = [];
+
+  // Panel 1: Active downloads (LIVE).
+  const act = ip.active || {};
+  {
+    const lines = [`<span class="muted-txt">${t("inflight.active.subtitle")}</span>`];
+    let cls;
+    if (act.ok === false) {
+      cls = "err";
+      lines.push(t("inflight.active.slskd_down"));
+    } else if (!act.items || act.items.length === 0) {
+      cls = "muted";
+      lines.push(t("inflight.active.none"));
+    } else {
+      cls = "ok";
+      lines.push(t("inflight.active.count", {n: act.count}));
+      act.items.forEach(it => {
+        const note = it.matched ? ""
+          : ` <span class="muted-txt">${t("inflight.unmatched")}</span>`;
+        let row = `<div class="ip-row">${esc(it.label)}${note}</div>`;
+        if (it.pct != null) {
+          row += `<div class="scan-bar"><div class="scan-fill" ` +
+                 `style="width:${it.pct}%"></div></div>`;
+        }
+        lines.push(row);
+      });
+      if (act.truncated) {
+        const more = (act.count || 0) - act.items.length;
+        lines.push(`<span class="muted-txt">${t("inflight.active.more", {n: more})}</span>`);
+      }
+    }
+    tiles.push(tile(cls, panelTitle("inflight.active.title", "badge-live", "live"), lines));
+  }
+
+  // Panel 2: Queue / missing (SNAPSHOT of the last charts-sync run).
+  const miss = ip.missing || {};
+  {
+    const lines = [`<span class="muted-txt">${t("inflight.missing.subtitle")}</span>`];
+    let cls;
+    if (!miss.available || !miss.total) {
+      cls = "muted";
+      lines.push(t("inflight.missing.none"));
+    } else {
+      cls = "info";
+      lines.push(t("inflight.missing.total", {n: miss.total}));
+      if (miss.snapshot_at) {
+        lines.push(`<span class="muted-txt">` +
+          t("inflight.missing.snapshot_at", {ago: ago(miss.snapshot_at)}) + `</span>`);
+      }
+      (miss.preview || []).forEach(e => {
+        lines.push(`<div class="ip-row">${esc(e.artist)} \u2013 ${esc(e.title)}</div>`);
+      });
+      if (miss.per_source && miss.per_source.length) {
+        const parts = miss.per_source.map(ps =>
+          t("inflight.missing.per_source", {source: esc(ps.source), n: ps.count}));
+        lines.push(`<span class="muted-txt">${parts.join(" \u00b7 ")}</span>`);
+      }
+    }
+    tiles.push(tile(cls, panelTitle("inflight.missing.title", "badge-snap", "snapshot"), lines));
+  }
+
+  // Panel 3: Quarantine / rejected (result record; reason is run-level only).
+  const rej = ip.rejected || {};
+  const s = d.storage || {};
+  {
+    const lines = [`<span class="muted-txt">${t("inflight.rejected.subtitle")}</span>`];
+    let cls;
+    if (!rej.count) {
+      cls = "muted";
+      lines.push(t("inflight.rejected.none"));
+    } else {
+      cls = (s.rejected_bytes ?? 0) > 2e9 ? "warn" : "info";
+      lines.push(t("inflight.rejected.count", {n: rej.count}));
+      (rej.preview || []).forEach(e => {
+        lines.push(`<div class="ip-row">${esc(e.name)} ` +
+          `<span class="muted-txt">${ago(e.when)}</span></div>`);
+      });
+      if (rej.message) {
+        lines.push(`<span class="muted-txt">` +
+          t("inflight.rejected.message", {message: esc(rej.message)}) + `</span>`);
+      }
+    }
+    tiles.push(tile(cls, panelTitle("inflight.rejected.title", "badge-snap", "snapshot"), lines));
+  }
+
+  // Panel 4: Upgrade status (last run - not per-song live).
+  const up = ip.upgrade || {};
+  {
+    const lines = [`<span class="muted-txt">${t("inflight.upgrade.subtitle")}</span>`];
+    let cls;
+    if (!up.available) {
+      cls = "muted";
+      lines.push(t("inflight.upgrade.none"));
+    } else {
+      cls = "info";
+      if (typeof up.scan_total === "number" && up.scan_total > 0) {
+        const seen = up.scan_seen || 0;
+        const pct = Math.min(100, Math.round((seen / up.scan_total) * 100));
+        const nf = (n) => n.toLocaleString("de-CH");
+        lines.push(
+          `<div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>` +
+          `<span class="scan-txt">` +
+          t("inflight.upgrade.progress", {seen: nf(seen), total: nf(up.scan_total), pct}) +
+          `</span>`);
+      }
+      if (typeof up.upgraded === "number") {
+        lines.push(t("inflight.upgrade.upgraded", {n: up.upgraded}));
+      }
+      if (up.next_run) {
+        lines.push(`<span class="muted-txt">` +
+          t("inflight.upgrade.next", {label: nextRunLabel(up.next_run)}) + `</span>`);
+      }
+    }
+    tiles.push(tile(cls, panelTitle("inflight.upgrade.title", "badge-run", "lastrun"), lines));
+  }
+
+  document.getElementById("inprogress").innerHTML = tiles.join("");
 }
 
 function ago2future(iso) {

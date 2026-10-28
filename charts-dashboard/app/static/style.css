@@ -279,6 +279,28 @@ b { font-weight: 600; }
 }
 .scan-txt { font-size: .78rem; color: var(--muted); }
 
+/* "In Bearbeitung" / in-progress panels. The four panels live in the existing
+   responsive .grid, so they reflow 1->4 and stay mobile-safe (same grid the
+   Storage section uses). Only small additions: an honesty badge pill in the
+   title row + a thin per-row line for the active/preview/rejected lists.
+   Reuses the existing status-colour vars + .scan-bar/.scan-fill - no new
+   colour tokens. */
+.badge {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-size: .58rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; padding: 2px 8px; border-radius: 10px;
+  border: 1px solid currentColor;
+}
+.badge.badge-live { color: var(--ok); }
+.badge.badge-snap { color: var(--info); }
+.badge.badge-run  { color: var(--muted); }
+/* Per-row line inside an in-progress panel (song label / filename / entry).
+   Wraps long labels so a filename never breaks the card width on mobile. */
+.ip-row {
+  font-size: .85rem; color: var(--fg); margin: 4px 0 2px; line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 /* Login */
 body.login {
   display: flex; align-items: center; justify-content: center;
