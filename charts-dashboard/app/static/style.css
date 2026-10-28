@@ -23,11 +23,11 @@ header {
   background: linear-gradient(100deg, #1b4e8e 0%, #15406e 60%, #0f3357 100%);
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
-  /* Header liegt IMMER ueber den Flow-Kacheln (auch ueber einer aufgeklappten
-     Box mit z-index:10) und bleibt beim Scrollen oben kleben. */
+  /* Header is ALWAYS above the flow tiles (even above an expanded box with
+     z-index:10) and stays stuck to the top while scrolling. */
   position: sticky; top: 0; z-index: 100;
 }
-/* Marke links: Icon-Badge + Titel + Untertitel. */
+/* Brand on the left: icon badge + title + subtitle. */
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-badge {
   display: flex; align-items: center; justify-content: center;
@@ -41,8 +41,8 @@ header {
 .brand-sub { font-size: .72rem; color: #bcd2ef; opacity: .85; margin-top: 1px; }
 
 .meta { display: flex; align-items: center; gap: 16px; font-size: .82rem; }
-/* Live-Indikator: gruener Punkt (pulsierend) + Zeitstempel. Signalisiert, dass
-   die Daten frisch gezogen werden - wie bei einem echten Monitoring-Tool. */
+/* Live indicator: green dot (pulsing) + timestamp. Signals that the data is
+   pulled fresh - like a real monitoring tool. */
 .live { display: flex; align-items: center; gap: 7px; color: #cfe0ff; opacity: .95; }
 .live #updated { font-variant-numeric: tabular-nums; }
 .live-dot {
@@ -55,8 +55,8 @@ header {
   100% { box-shadow: 0 0 0 0 rgba(63, 182, 122, 0); }
 }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
-/* Fehlerzustand (tick() konnte /api/status nicht laden): Punkt rot + statisch,
-   Text rot - der grue­ne Puls wuerde faelschlich "alles frisch" suggerieren. */
+/* Error state (tick() could not load /api/status): dot red + static, text red -
+   the green pulse would falsely suggest "everything fresh". */
 .live.error { color: #f3a6a6; }
 .live.error .live-dot { background: var(--err); animation: none; box-shadow: none; }
 .meta .logout {
@@ -99,9 +99,8 @@ section h2 {
   padding: 14px 16px;
   border-left: 4px solid var(--muted);
 }
-/* --tile-accent haelt die Statusfarbe pro Kachel, damit der aufgeklappte
-   Zustand (siehe .flow-cell .tile.open unten) einen passenden farbigen Ring
-   bekommen kann. */
+/* --tile-accent holds the status colour per tile so the expanded state
+   (see .flow-cell .tile.open below) can get a matching coloured ring. */
 .tile.ok { border-left-color: var(--ok); --tile-accent: var(--ok); }
 .tile.warn { border-left-color: var(--warn); --tile-accent: var(--warn); }
 .tile.err { border-left-color: var(--err); --tile-accent: var(--err); }
@@ -116,48 +115,47 @@ section h2 {
 .s-run { color: var(--warn); }
 b { font-weight: 600; }
 
-/* Flow-Layout: Dienste entlang des Datenflusses, mit Pfeilen zwischen Stufen. */
-/* ===== Flow-Hub-Layout: slskd zentral, Linien als SVG-Overlay =====
-   Absolute Default-Positionen (wie im Mock) auf einer festen Flow-Flaeche;
-   Zellen sind frei verschiebbar (Drag). Unter 760px faellt alles auf einen
-   gestapelten Fluss zurueck (Handy). */
+/* Flow layout: services along the data flow, with arrows between stages. */
+/* ===== Flow-hub layout: slskd central, lines as an SVG overlay =====
+   Absolute default positions (as in the mock) on a fixed flow surface; cells
+   are freely draggable (drag). Below 760px everything falls back to a stacked
+   flow (phone). */
 .flow-hub {
   position: relative;
-  height: 820px;            /* genug Platz, Navidrome unten + Abstand zum naechsten Block */
-  margin-bottom: 120px;     /* mehr Abstand unter Navidrome vor dem 'Verbindungen'-Block */
+  height: 820px;            /* enough room, Navidrome at the bottom + gap to the next block */
+  margin-bottom: 120px;     /* more gap below Navidrome before the 'connections' block */
 }
 .flow-cell {
   position: absolute;
   width: 23%; min-width: 210px; max-width: 260px;
   z-index: 1;
 }
-/* Aufgeklappte Box (enthaelt .tile.open) ODER gerade gezogene liegt oben. */
+/* An expanded box (contains .tile.open) OR one being dragged sits on top. */
 .flow-cell:has(.tile.open), .flow-cell.dragging { z-index: 10; }
-/* Aufgeklappte Flow-Box bekommt einen feinen Ring in ihrer Statusfarbe plus
-   einen weichen Schatten, damit sie sich bei Ueberlagerung mit einer darunter
-   liegenden Box sauber abgrenzt (border-radius bleibt erhalten, kein Layout-
-   Versatz, da box-shadow statt border). Fallback-Farbe fuer Kacheln ohne
-   Statusklasse ist --muted. */
+/* An expanded flow box gets a fine ring in its status colour plus a soft
+   shadow so it cleanly separates when overlapping a box underneath
+   (border-radius is preserved, no layout shift since box-shadow instead of
+   border). The fallback colour for tiles without a status class is --muted. */
 .flow-cell .tile.open {
   box-shadow: 0 0 0 1px var(--tile-accent, var(--muted)),
               0 8px 24px rgba(0, 0, 0, .45);
 }
-/* Navidrome-Pille nimmt ihre natuerliche Breite (keine Kachel-Breite). */
+/* The Navidrome pill takes its natural width (not the tile width). */
 .flow-cell[data-cell="navidrome"] { width: auto; min-width: 0; max-width: none; }
-/* Ueberwachungs-Boxen (watchdog/dashboard) kompakter + dezenter. */
+/* Monitoring boxes (watchdog/dashboard) more compact + subtle. */
 .flow-cell.small { width: 19%; min-width: 180px; }
 .flow-cell.small .tile { padding: 10px 12px; opacity: .9; }
 .flow-cell.small .flow-what { font-size: .76rem; }
-/* Report-Zone: watchdog + dashboard + digest als EIN Flex-Stapel mit fester
-   Luecke -> garantiert gleicher Abstand, unabhaengig von der Kachelhoehe. */
+/* Report zone: watchdog + dashboard + digest as ONE flex stack with a fixed
+   gap -> guaranteed equal spacing, independent of the tile height. */
 .flow-cell.report-wrap { width: 19%; min-width: 180px; }
-/* gap 10px == der 'gap' des gestapelten .flow-hub auf dem Handy, damit die
-   Report-Kacheln NICHT weiter auseinander stehen als die anderen Gruppen. */
+/* gap 10px == the 'gap' of the stacked .flow-hub on the phone, so the report
+   tiles are NOT spaced further apart than the other groups. */
 .report-stack { display: flex; flex-direction: column; gap: 10px; }
-/* height:auto hebt die generische '.flow-cell .tile { height:100% }'-Regel auf
-   (die sonst jede der drei Kacheln auf volle Hoehe streckt -> gap unsichtbar,
-   Kacheln kleben aneinander). Mit auto nehmen sie ihre natuerliche Hoehe und
-   der gap wird sichtbar. */
+/* height:auto overrides the generic '.flow-cell .tile { height:100% }' rule
+   (which would otherwise stretch each of the three tiles to full height -> gap
+   invisible, tiles stick together). With auto they take their natural height
+   and the gap becomes visible. */
 .report-stack .tile { padding: 10px 12px; opacity: .9; height: auto; }
 .report-stack .flow-what { font-size: .76rem; }
 .flow-stage {
@@ -165,38 +163,38 @@ b { font-weight: 600; }
   color: var(--muted); text-align: center; margin-bottom: 2px;
 }
 .flow-stage.abs { position: absolute; text-align: left; margin: 0; }
-/* Zonen-Label IN einer Zelle (wandert beim Drag mit der Box mit). */
+/* Zone label INSIDE a cell (moves with the box when dragged). */
 .flow-stage.cell-stage { text-align: left; margin: 0 0 4px 2px; }
 .flow-cell .tile { height: 100%; }
-/* SVG-Overlay fuer die Verbindungslinien - liegt HINTER den Kacheln.
-   overflow: visible, damit Linien beim Verschieben einer Box ueber den
-   Container-Rand hinaus NICHT abgeschnitten werden. */
+/* SVG overlay for the connection lines - sits BEHIND the tiles.
+   overflow: visible so lines are NOT clipped when a box is dragged past the
+   container edge. */
 .flow-svg {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none; z-index: 0; overflow: visible;
 }
-/* Nur die Verbindungslinien (direkte Kinder des SVG), NICHT der Marker-Pfad
-   im <defs> - sonst wuerde fill:none die gefuellte Pfeilspitze ueberschreiben. */
+/* Only the connection lines (direct children of the SVG), NOT the marker path
+   in <defs> - otherwise fill:none would override the filled arrowhead. */
 .flow-svg > path {
   stroke: var(--info); stroke-width: 2.2; fill: none; opacity: .8;
   stroke-linecap: round;
 }
 .flow-svg marker path { fill: var(--info); stroke: none; opacity: 1; }
-/* slskd-Hub hervorheben. */
+/* Highlight the slskd hub. */
 .flow-cell.hub .tile {
   border: 2px solid var(--info); border-left-width: 4px;
   background: #223a5e; box-shadow: 0 0 0 4px rgba(90,143,224,.12);
 }
-/* "manuell"-Pill oben in der Kachel (ueber dem Titel, mit Abstand). */
+/* "manual" pill at the top of the tile (above the title, with spacing). */
 .svc-manual-tag {
   display: inline-block; margin-bottom: 14px;
   font-size: .6rem; letter-spacing: .04em; color: var(--warn);
   border: 1px solid var(--warn); border-radius: 10px;
   padding: 2px 9px; font-weight: 700;
 }
-/* Manuelle Kachel: normaler Rand/Status-Farbe wie die anderen - das
-   "MANUELL"-Pill oben kennzeichnet den manuellen Einstieg. */
-/* Navidrome = externes Ziel -> schlanke gruene Pille (keine Stack-Kachel). */
+/* Manual tile: normal border/status colour like the others - the "MANUAL" pill
+   at the top marks the manual entry point. */
+/* Navidrome = external target -> slim green pill (not a stack tile). */
 .flow-target-pill {
   display: inline-block;
   background: rgba(63,182,122,.12);
@@ -219,13 +217,13 @@ b { font-weight: 600; }
   color: var(--muted); margin: 24px 0 10px;
 }
 .flow-side { margin-top: 0; }
-/* Dezenter Bedienhinweis unter dem Flow (wie im Mock). */
+/* Subtle usage hint below the flow (as in the mock). */
 .flow-hint {
   margin-top: 8px; color: var(--muted);
   font-size: .78rem; font-style: italic;
 }
 
-/* Dienste-Kachel: kompakt + aufklappbarer Detailbereich. */
+/* Service tile: compact + expandable detail area. */
 .tile.svc { cursor: pointer; }
 .t-title { position: relative; }
 .svc-amp {
@@ -235,7 +233,7 @@ b { font-weight: 600; }
 .tile.svc.ok   .svc-amp { background: var(--ok); }
 .tile.svc.warn .svc-amp { background: var(--warn); }
 .tile.svc.err  .svc-amp { background: var(--err); }
-/* idle/deaktiviert: grauer Punkt (gleicher Ton wie der .tile.muted-Akzent). */
+/* idle/disabled: grey dot (same tone as the .tile.muted accent). */
 .tile.svc.muted .svc-amp { background: #5a5168; }
 .flow-what { color: var(--muted); font-size: .82rem; }
 .svc-when { color: #c9bfe0; font-size: .82rem; }
@@ -246,9 +244,9 @@ b { font-weight: 600; }
 .tile.svc.open .svc-detail { display: block; }
 .scan-bar.compact { margin: 8px 0 0; }
 
-/* Handy / schmal (<760px): absolute Positionierung aufheben, alles vertikal
-   stapeln. Inline-styles (left/top/transform) werden ueberschrieben. Die
-   SVG-Linien folgen automatisch (drawFlowLines misst die echten Positionen). */
+/* Phone / narrow (<760px): drop absolute positioning, stack everything
+   vertically. Inline styles (left/top/transform) are overridden. The SVG lines
+   follow automatically (drawFlowLines measures the real positions). */
 @media (max-width: 760px) {
   .flow-hub { height: auto; display: flex; flex-direction: column; gap: 10px; }
   .flow-cell {
@@ -256,11 +254,11 @@ b { font-weight: 600; }
     transform: none !important;
     width: 100%; max-width: none; min-width: 0;
   }
-  .flow-stage.abs { display: none; } /* Labels im Stapel weglassen (Reihenfolge spricht fuer sich) */
-  /* Kein Drag auf dem Handy; natives Scrollen voll freigeben (sonst haengt das
-     UI auf iPhone-Safari, weil der Touch auf einer Kachel landet). */
+  .flow-stage.abs { display: none; } /* drop labels in the stack (the order speaks for itself) */
+  /* No drag on the phone; fully allow native scrolling (otherwise the UI hangs
+     on iPhone Safari because the touch lands on a tile). */
   .flow-cell { cursor: default; touch-action: auto; }
-  /* Header auf schmalen Viewports kompakter: Untertitel weg, Padding kleiner. */
+  /* Header more compact on narrow viewports: drop subtitle, smaller padding. */
   header { padding: 12px 16px; }
   .brand-sub { display: none; }
   .brand-badge { width: 34px; height: 34px; }
