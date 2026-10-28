@@ -47,9 +47,9 @@ any Subsonic client works, on any platform.
 | **charts-digest** | Sends a daily Pushover summary of songs newly added to the library (grouped by source) | daily 09:00 |
 | **charts-recommend** | Grows the shared library from the public listening taste of several ListenBrainz users (downloads, no playlist) | 24 h |
 | **charts-upgrade** | Replaces low-bitrate songs with better versions | on-demand |
-| **charts-songrequest** | Web UI (FastAPI) to request individual songs manually (multi-user login) | on-demand |
+| **charts-songrequest** | Web UI (FastAPI), multi-user login, three tabs: request a song (slskd search), upload an MP3, or import from a YouTube URL | on-demand |
 | **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
-| **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections and run stats | service |
+| **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections, run stats, and an "in progress" overview (active downloads, queue, quarantine, upgrade) | service |
 | **charts-config** | Password-protected web UI (port 5058) hosting the source finder + the Energy-channel browser; read-only (no config is changed) | service |
 | **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
 
