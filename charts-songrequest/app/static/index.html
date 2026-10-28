@@ -279,7 +279,7 @@ async function sendRequest(artist, title) {
     const data = await resp.json();
 
     if (data.ok && data.upgrade) {
-      // Bessere Version gefunden -> wird automatisch geladen.
+      // Better version found -> downloaded automatically.
       var newBr = data.bitrate > 0 ? (data.bitrate + ' kbps') : ('≥ ' + 256 + ' kbps');
       showStatus('ok', '⬆️',
         t('js_upgrade_head') + '<br>' +
@@ -289,10 +289,10 @@ async function sendRequest(artist, title) {
       form.reset();
       document.getElementById('artist').focus();
     } else if (data.ok && data.already) {
-      // Vorhanden, nichts (Besseres) geladen. Die genaue Aussage kommt vom
-      // Backend (data.message): entweder "schon in guter Qualität" ODER
-      // ehrlich "vorhanden mit X kbps, nichts Besseres gefunden". NICHT
-      // hart "beste Qualität" anzeigen - das war falsch bei Low-Bitrate-Songs.
+      // Already present, nothing (better) downloaded. The exact wording comes
+      // from the backend (data.message): either "already in good quality" OR
+      // honestly "present at X kbps, nothing better found". Do NOT hard-code
+      // "best quality" - that was wrong for low-bitrate songs.
       showStatus('ok', 'ℹ️',
         esc(data.artist) + ' – ' + esc(data.title) +
         (data.bitrate ? ' (' + data.bitrate + ' kbps)' : '') + '<br>' +
@@ -301,7 +301,7 @@ async function sendRequest(artist, title) {
       form.reset();
       document.getElementById('artist').focus();
     } else if (data.ok) {
-      // Neuzugang.
+      // New addition.
       showStatus('ok', '✅',
         t('js_found_head') + '<br>' +
         esc(data.artist) + ' – ' + esc(data.title) + ' (' + data.bitrate + ' kbps)<br>' +

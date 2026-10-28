@@ -13,33 +13,33 @@
     <span class="brand-badge">📊</span>
     <span class="brand-text">
       <span class="brand-title">charts-dashboard</span>
-      <span class="brand-sub" data-i18n="brand.subtitle">Charts-Automatik · Status &amp; Verbindungen</span>
+      <span class="brand-sub" data-i18n="brand.subtitle">Charts automation · status &amp; connections</span>
     </span>
   </div>
   <div class="meta">
-    <span class="live"><span class="live-dot"></span><span id="updated" data-i18n="updated.loading">lädt…</span></span>
-    <a class="logout" href="/logout" data-i18n="logout">⎋ Abmelden</a>
+    <span class="live"><span class="live-dot"></span><span id="updated" data-i18n="updated.loading">loading…</span></span>
+    <a class="logout" href="/logout" data-i18n="logout">⎋ Log out</a>
   </div>
 </header>
 
 <main>
   <section>
-    <h2 data-i18n="section.services">⚙️ Dienste</h2>
+    <h2 data-i18n="section.services">⚙️ Services</h2>
     <div id="services"></div>
   </section>
 
   <section>
-    <h2 data-i18n="section.connections">🔌 Verbindungen</h2>
+    <h2 data-i18n="section.connections">🔌 Connections</h2>
     <div id="connections"></div>
   </section>
 
   <section>
-    <h2 data-i18n="section.inprogress">🔄 In Bearbeitung</h2>
+    <h2 data-i18n="section.inprogress">🔄 In progress</h2>
     <div id="inprogress" class="grid"></div>
   </section>
 
   <section>
-    <h2 data-i18n="section.storage">💾 Speicher &amp; Bestand</h2>
+    <h2 data-i18n="section.storage">💾 Storage &amp; inventory</h2>
     <div id="storage" class="grid"></div>
   </section>
 
@@ -99,11 +99,11 @@ function tile(cls, title, lines) {
   return `<div class="tile ${cls}"><div class="t-title">${title}</div>${body}</div>`;
 }
 
-// Zeichnet die Flow-Verbindungen als SVG-Pfade zwischen den ECHTEN Kachel-
-// Positionen (getBoundingClientRect). Dadurch stimmen die Linien in jedem
-// Layout - Desktop, iPad, Handy - und werden bei resize/orientation neu
-// gezeichnet. Kanten: jede Quelle + manuell -> jeder Beschaffer; jeder
-// Beschaffer -> slskd; slskd -> import; import -> navidrome.
+// Draws the flow connections as SVG paths between the REAL tile positions
+// (getBoundingClientRect). This keeps the lines correct in every layout -
+// desktop, iPad, phone - and redraws them on resize/orientation. Edges: each
+// source + manual -> each getter; each getter -> slskd; slskd -> import;
+// import -> navidrome.
 function drawFlowLines() {
   const hub = document.querySelector(".flow-hub");
   const svg = hub && hub.querySelector(".flow-svg");
@@ -120,31 +120,31 @@ function drawFlowLines() {
     const r = el.getBoundingClientRect();
     return { x: r.x - box.x, y: r.y - box.y, w: r.width, h: r.height };
   };
-  // Verbindet zwei Kacheln mit der jeweils NAECHSTEN Kantenpaarung (nicht
-  // immer rechts->links): so laufen die Linien kurz und sauber, egal wohin
-  // eine Kachel gezogen wurde. Pfeilspitze am Ziel (marker).
-  // fanIndex/fanTotal: muenden mehrere Pfeile in dieselbe Box, werden ihre
-  // Eintrittspunkte entlang der Zielkante verteilt (nebeneinander, nicht
-  // uebereinander). offset = Position in [-1..1] um die Kantenmitte.
+  // Connects two tiles using the CLOSEST pair of edges (not always
+  // right->left): this keeps the lines short and clean, no matter where a tile
+  // was dragged. Arrowhead at the target (marker).
+  // fanIndex/fanTotal: when several arrows enter the same box, their entry
+  // points are spread along the target edge (side by side, not on top of each
+  // other). offset = position in [-1..1] around the edge midpoint.
   const edge = (fromName, toName, fanIndex, fanTotal) => {
     const a = cellRect(fromName), b = cellRect(toName);
     if (!a || !b) return "";
     const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
     const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
     const dx = bc.x - ac.x, dy = bc.y - ac.y;
-    // Faecherung: -1..1 (ein Pfeil -> 0).
+    // Fan spread: -1..1 (single arrow -> 0).
     const spread = (fanTotal && fanTotal > 1)
       ? ((fanIndex - (fanTotal - 1) / 2) / ((fanTotal - 1) / 2)) : 0;
     let x1, y1, x2, y2, horiz;
-    if (Math.abs(dx) >= Math.abs(dy)) {   // ueberwiegend horizontal
+    if (Math.abs(dx) >= Math.abs(dy)) {   // mostly horizontal
       horiz = true;
       x1 = dx >= 0 ? a.x + a.w : a.x; y1 = ac.y;
       x2 = dx >= 0 ? b.x : b.x + b.w;
-      y2 = bc.y + spread * (b.h * 0.33);   // Eintritt entlang der vertikalen Kante verteilen
-    } else {                               // ueberwiegend vertikal
+      y2 = bc.y + spread * (b.h * 0.33);   // spread entry along the vertical edge
+    } else {                               // mostly vertical
       horiz = false;
       x1 = ac.x; y1 = dy >= 0 ? a.y + a.h : a.y;
-      x2 = bc.x + spread * (b.w * 0.33);   // Eintritt entlang der horizontalen Kante verteilen
+      x2 = bc.x + spread * (b.w * 0.33);   // spread entry along the horizontal edge
       y2 = dy >= 0 ? b.y : b.y + b.h;
     }
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
@@ -154,18 +154,18 @@ function drawFlowLines() {
 
   const sources = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-energy", "charts-recommend", "charts-songrequest"];
   const getters = ["charts-download", "charts-upgrade"];
-  // Pfeilspitze: klein, gefuellt, in der Linienfarbe (dezent).
+  // Arrowhead: small, filled, in the line colour (subtle).
   let paths = `<defs><marker id="flow-ah" viewBox="0 0 10 10" refX="8" refY="5" ` +
     `markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">` +
     `<path d="M0,0 L10,5 L0,10 z" fill="#5a8fe0"/></marker></defs>`;
-  // Quellen -> Beschaffer (download). Eintrittspunkte auffaechern, damit die
-  // Pfeile nebeneinander in download muenden statt uebereinander.
+  // Sources -> getter (download). Fan out the entry points so the arrows enter
+  // download side by side instead of on top of each other.
   const activeSources = sources.filter(cellRect);
   activeSources.forEach((s, i) => { paths += edge(s, "charts-download", i, activeSources.length); });
-  // Beschaffer -> slskd (zwei Pfeile -> auffaechern).
+  // Getters -> slskd (two arrows -> fan out).
   const activeGetters = getters.filter(cellRect);
   activeGetters.forEach((g, i) => { paths += edge(g, "slskd", i, activeGetters.length); });
-  // slskd -> import -> navidrome (je einzeln).
+  // slskd -> import -> navidrome (each individually).
   paths += edge("slskd", "charts-import");
   paths += edge("charts-import", "navidrome");
 
@@ -174,26 +174,25 @@ function drawFlowLines() {
 window.addEventListener("resize", () => requestAnimationFrame(drawFlowLines));
 window.addEventListener("orientationchange", () => requestAnimationFrame(drawFlowLines));
 
-// Merkt sich die manuell verschobenen Positionen pro Kachel (nur fuer diese
-// Session - ein Reload setzt zurueck). Key = data-cell-Name.
+// Remembers the manually dragged positions per tile (only for this session -
+// a reload resets them). Key = data-cell name.
 const _dragPos = {};
 
-// Aufgeklappt-Zustand pro Kachel, damit die 15s-Aktualisierung (render baut die
-// Kacheln neu) eine offene Box NICHT wieder zuklappt. Key = data-cell-Name.
+// Expanded state per tile, so the 15s refresh (render rebuilds the tiles) does
+// NOT collapse an open box again. Key = data-cell name.
 const _openState = {};
-// Wie lange eine aufgeklappte Box offen bleibt, bevor sie automatisch schliesst
-// (nur wenn die Maus NICHT drueber ist). Auf dem Handy (kein Hover) immer nach
-// dieser Zeit.
+// How long an expanded box stays open before it auto-closes (only when the
+// mouse is NOT over it). On a phone (no hover) always after this time.
 const AUTO_CLOSE_MS = 8000;
 
-// Macht die Flow-Kacheln mit der Maus/Touch verschiebbar. Verschiebung ueber
-// CSS-transform (das Grundlayout bleibt erhalten), nach jedem Move werden die
-// Verbindungslinien neu gezeichnet, damit sie an den Kacheln kleben. Eine
-// kleine Bewegung gilt als Klick (Aufklappen), eine groessere als Drag.
+// Makes the flow tiles draggable with mouse/touch. The move uses a CSS
+// transform (the base layout stays intact); after each move the connection
+// lines are redrawn so they stick to the tiles. A small movement counts as a
+// click (expand), a larger one as a drag.
 function enableDrag() {
   const hub = document.querySelector(".flow-hub");
   if (!hub) return;
-  // Gemerkte Positionen nach einem Re-Render wieder anwenden.
+  // Re-apply the remembered positions after a re-render.
   hub.querySelectorAll(".flow-cell").forEach(cell => {
     const name = cell.getAttribute("data-cell");
     const p = name && _dragPos[name];
@@ -203,28 +202,27 @@ function enableDrag() {
   const isNarrow = () => window.matchMedia("(max-width: 760px)").matches;
 
   hub.querySelectorAll(".flow-cell").forEach(cell => {
-    if (cell._dragBound) return;      // nur einmal binden
+    if (cell._dragBound) return;      // bind only once
     cell._dragBound = true;
     const name = cell.getAttribute("data-cell");
 
-    // --- Aufklappen + Auto-Close ------------------------------------------
-    // Beim Aufklappen offen lassen und erst nach AUTO_CLOSE_MS automatisch
-    // schliessen - aber NUR, wenn die Maus nicht ueber der Kachel ist. Solange
-    // der Cursor drueber liegt, bleibt sie offen; verlaesst er sie, startet der
-    // Timer (neu). Auf dem Handy (kein Hover) schliesst sie nach der Zeit.
-    // Eine Zelle kann MEHRERE Kacheln enthalten (Report-Zone: watchdog/
-    // dashboard/digest in EINER flow-cell). Deshalb arbeiten Auf-/Zuklappen,
-    // Hover und Auto-Close pro KACHEL (data-svc), nicht pro Zelle - sonst
-    // klappt ein Klick auf eine der gestapelten Kacheln immer die erste auf.
+    // --- Expand + auto-close ----------------------------------------------
+    // On expand keep it open and only auto-close after AUTO_CLOSE_MS - but ONLY
+    // when the mouse is not over the tile. As long as the cursor is over it, it
+    // stays open; when it leaves, the timer (re)starts. On a phone (no hover)
+    // it closes after the time. A cell can contain MULTIPLE tiles (report zone:
+    // watchdog/dashboard/digest in ONE flow-cell). So expand/collapse, hover
+    // and auto-close work per TILE (data-svc), not per cell - otherwise a click
+    // on one of the stacked tiles would always expand the first one.
     const tiles = Array.from(cell.querySelectorAll(".tile.svc"));
     if (tiles.length) {
       const svcName = (t) => t.getAttribute("data-svc") || name;
       const scheduleClose = (t) => {
         clearTimeout(t._closeTimer);
-        // slskd ist der zentrale Hub: bleibt offen, bis der User SELBST klickt -
-        // KEIN Auto-Close (auch nicht nach Hover/mouseleave).
+        // slskd is the central hub: stays open until the user clicks it
+        // THEMSELVES - NO auto-close (not even after hover/mouseleave).
         if (svcName(t) === "slskd") return;
-        // Nicht schliessen, solange die Maus drueber ist (Desktop).
+        // Do not close while the mouse is over it (desktop).
         if (t._hover) return;
         t._closeTimer = setTimeout(() => {
           if (!t._hover) closeTile(t);
@@ -232,7 +230,7 @@ function enableDrag() {
       };
       const openTile = (t) => {
         t.classList.add("open");
-        _openState[svcName(t)] = true;    // ueber Re-Render hinweg merken
+        _openState[svcName(t)] = true;    // remember across re-render
         scheduleClose(t);
         requestAnimationFrame(drawFlowLines);
       };
@@ -242,7 +240,7 @@ function enableDrag() {
         clearTimeout(t._closeTimer);
         requestAnimationFrame(drawFlowLines);
       };
-      // Fuer die Drag-/Klick-Logik: die konkret angeklickte Kachel ermitteln.
+      // For the drag/click logic: determine the specific clicked tile.
       cell._toggleTile = (target) => {
         const t = target && target.closest(".tile.svc");
         if (!t || !cell.contains(t)) return;
@@ -251,7 +249,7 @@ function enableDrag() {
       };
 
       tiles.forEach((tile) => {
-        // Hover haelt offen (Desktop); Verlassen startet den Close-Timer neu.
+        // Hover keeps it open (desktop); leaving restarts the close timer.
         tile.addEventListener("mouseenter", () => {
           tile._hover = true;
           clearTimeout(tile._closeTimer);
@@ -261,14 +259,14 @@ function enableDrag() {
           if (tile.classList.contains("open")) scheduleClose(tile);
         });
 
-        // War die Box schon offen (aus _openState via Re-Render), den Auto-
-        // Close-Timer scharf machen. Fuer slskd ist scheduleClose ein No-op
-        // (Hub bleibt offen, bis der User selbst klickt) - siehe oben.
+        // If the box was already open (from _openState via re-render), arm the
+        // auto-close timer. For slskd scheduleClose is a no-op (hub stays open
+        // until the user clicks it themselves) - see above.
         if (tile.classList.contains("open")) scheduleClose(tile);
       });
     }
 
-    // --- Handy: nur Tap zum Auf-/Zuklappen, KEIN Drag (natives Scrollen frei).
+    // --- Phone: tap to expand/collapse only, NO drag (native scrolling free).
     if (isNarrow()) {
       if (tiles.length) {
         cell.addEventListener("click", (e) => {
@@ -305,7 +303,7 @@ function enableDrag() {
       });
     }
 
-    // --- Wide screen: Drag (mouse AND touch/pen) + Klick-Aufklappen -------
+    // --- Wide screen: drag (mouse AND touch/pen) + click-to-expand --------
     // Mouse commits to a drag immediately on pointerdown (there is no native
     // scroll gesture to protect) and uses a 5px click threshold. Touch/pen must
     // NOT commit on pointerdown: a plain touch may be a scroll or a tap, and
@@ -317,9 +315,9 @@ function enableDrag() {
     // here), never both. Once committed we capture the pointer and call
     // preventDefault() on every move to suppress the browser's own scroll.
     cell.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;        // nur primaere Taste
+      if (e.button !== 0) return;        // primary button only
       const isMouse = e.pointerType === "mouse";
-      const downTarget = e.target;       // welche Kachel wurde angeklickt
+      const downTarget = e.target;       // which tile was clicked
       const start = { x: e.clientX, y: e.clientY };
       const base = _dragPos[name] ? { ..._dragPos[name] } : { x: 0, y: 0 };
       let moved = false;       // mouse: passed the 5px click threshold
@@ -335,7 +333,7 @@ function enableDrag() {
         const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
         const dist = Math.abs(dx) + Math.abs(dy);
         if (isMouse) {
-          if (!moved && dist < 5) return; // Klick-Schwelle
+          if (!moved && dist < 5) return; // click threshold
           moved = true;
         } else {
           // Touch/pen: below the drag threshold leave the browser free to
@@ -363,11 +361,11 @@ function enableDrag() {
           cell.releasePointerCapture(e.pointerId);
           cell.classList.remove("dragging");
         }
-        // Mouse only: KEINE Bewegung = Klick -> die ANGEKLICKTE Kachel
-        // auf/zuklappen (Pointer-Capture wuerde ein normales click-Event
-        // verschlucken, darum hier selbst togglen). downTarget zeigt auf die
-        // konkrete Kachel - so trifft es im Report-Stapel die richtige, nicht
-        // immer die erste. For touch/pen the separate wide-screen tap handler
+        // Mouse only: NO movement = click -> expand/collapse the CLICKED tile
+        // (pointer capture would swallow a normal click event, so we toggle it
+        // ourselves here). downTarget points at the specific tile - so in the
+        // report stack it hits the right one, not always the first. For
+        // touch/pen the separate wide-screen tap handler
         // above owns the toggle, so we must NOT also toggle here.
         if (isMouse && !moved && cell._toggleTile) cell._toggleTile(downTarget);
         requestAnimationFrame(drawFlowLines);
@@ -383,14 +381,14 @@ function render(d) {
   document.getElementById("updated").textContent =
     t("updated.refreshed", {time: new Date().toLocaleTimeString()});
 
-  // --- Verbindungen (EINHEITLICHE Uebersicht aller externen/abhaengigen
-  //     Dienste mit konsistenter Farbsemantik) ---
-  // Farbsemantik ueber die vorhandenen tile(cls)-Klassen:
-  //   ok    (gruen)  = erreichbar / gueltig
-  //   err   (rot)    = konfiguriert, aber nicht erreichbar / ungueltig
-  //   muted (grau)   = nicht konfiguriert
-  //   warn  (gelb)   = erreichbar, aber eingeschraenkt (z.B. iTunes gedrosselt)
-  // So sieht man auf einen Blick ALLE moeglichen Verbindungen UND ihren Zustand.
+  // --- Connections (UNIFIED overview of all external/dependent services with
+  //     consistent colour semantics) ---
+  // Colour semantics via the existing tile(cls) classes:
+  //   ok    (green)  = reachable / valid
+  //   err   (red)    = configured, but not reachable / invalid
+  //   muted (grey)   = not configured
+  //   warn  (yellow) = reachable, but limited (e.g. iTunes throttled)
+  // This shows at a glance ALL possible connections AND their state.
   const ext = d.external || {};
   // Each role group is a full-width label plus its OWN tile grid (.conn-grid).
   // See the .conn-group / .conn-grid CSS for why we don't span a label across
@@ -399,7 +397,7 @@ function render(d) {
   // --- Group 1: local services (own containers on the LAN) ----------------
   const local = [];
 
-  // slskd (LAN, eigener Live-Check d.slskd).
+  // slskd (LAN, own live check d.slskd).
   const sl = d.slskd || {};
   local.push(tile(sl.ok ? "ok" : "err", t("tile.title.slskd"), [
     sl.ok ? t("tile.slskd.connected") : t("tile.slskd.disconnected"),
@@ -408,7 +406,7 @@ function render(d) {
     sl.detail || "",
   ].filter(Boolean)));
 
-  // Lidarr (LAN, eigener Live-Check d.lidarr; optional -> muted ohne Config).
+  // Lidarr (LAN, own live check d.lidarr; optional -> muted without config).
   const li = d.lidarr || {};
   local.push(tile(!li.configured ? "muted" : (li.ok ? "ok" : "err"), t("tile.title.lidarr"), [
     !li.configured ? t("tile.not_configured") : (li.ok ? t("tile.reachable") : t("tile.not_reachable")),
@@ -418,22 +416,22 @@ function render(d) {
   // --- Group 2: chart sources (external APIs/streams the music comes from) -
   const sources = [];
 
-  // Deezer (WAN, Live-Ping). Heilt charts-sync-Rot -> Gelb.
+  // Deezer (WAN, live ping). Heals charts-sync red -> yellow.
   const dz = ext.deezer || {};
   sources.push(tile(dz.ok ? "ok" : "err", t("tile.title.deezer"), [
     dz.ok ? t("tile.reachable") : t("tile.not_reachable"),
     dz.detail || "",
   ].filter(Boolean)));
 
-  // Last.fm (WAN, Live-Ping; braucht API-Key). Ohne Key -> muted, nie rot.
+  // Last.fm (WAN, live ping; needs an API key). Without a key -> muted, never red.
   const lf = ext.lastfm || {};
   sources.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [
     !lf.configured ? t("tile.lastfm.no_api_key") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
     lf.detail || "",
   ].filter(Boolean)));
 
-  // FLASHBACK FM (WAN, GraphQL-Live-Check). Heilt charts-flashback-Rot -> Gelb;
-  // ein toter persisted-query-Hash -> rot (dann FLASHBACK_HASH neu holen).
+  // FLASHBACK FM (WAN, GraphQL live check). Heals charts-flashback red -> yellow;
+  // a dead persisted-query hash -> red (then fetch a fresh FLASHBACK_HASH).
   const fb = ext.flashback || {};
   sources.push(tile(!fb.configured ? "muted" : (fb.ok ? "ok" : "err"), t("tile.title.flashback"), [
     !fb.configured ? t("tile.flashback.no_hash") : (fb.ok ? t("tile.reachable") : t("tile.not_reachable")),
@@ -450,8 +448,8 @@ function render(d) {
     en.detail || "",
   ].filter(Boolean)));
 
-  // Swiss Hitparade (hitparade.ch, WAN scrape-Quelle). Nicht genutzt
-  // (HITPARADE_ENABLED=false) -> muted; sonst erreichbar/nicht erreichbar.
+  // Swiss Hitparade (hitparade.ch, WAN scrape source). Not in use
+  // (HITPARADE_ENABLED=false) -> muted; otherwise reachable/not reachable.
   const hp = ext.hitparade || {};
   sources.push(tile(!hp.configured ? "muted" : (hp.ok ? "ok" : "err"), t("tile.title.hitparade"), [
     !hp.configured ? t("tile.not_in_use") : (hp.ok ? t("tile.reachable") : t("tile.not_reachable")),
@@ -461,8 +459,8 @@ function render(d) {
   // --- Group 3: helper services (external, not a chart source) ------------
   const helpers = [];
 
-  // iTunes (WAN, Live-Ping; nur Info fuer Cover). NIE err: erreichbar -> ok,
-  // gedrosselt (429/403) aber erreichbar -> warn, nicht erreichbar -> muted.
+  // iTunes (WAN, live ping; only info for cover art). NEVER err: reachable -> ok,
+  // throttled (429/403) but reachable -> warn, not reachable -> muted.
   const it = ext.itunes || {};
   let itCls = "muted";
   if (it.ok) itCls = it.throttled ? "warn" : "ok";
@@ -471,9 +469,9 @@ function render(d) {
     it.detail || "",
   ].filter(Boolean)));
 
-  // MusicBrainz (WAN, Live-Ping). Metadaten-Helfer (Jahr-Auflösung fuer
-  // charts-energy/-flashback), KEINE Chart-Quelle -> Hilfsdienst. Nicht genutzt
-  // (MB_ENABLED=false) -> muted, wie FLASHBACK/Last.fm/Pushover.
+  // MusicBrainz (WAN, live ping). Metadata helper (year resolution for
+  // charts-energy/-flashback), NOT a chart source -> helper service. Not in use
+  // (MB_ENABLED=false) -> muted, like FLASHBACK/Last.fm/Pushover.
   // MusicBrainz is a free, rate-limited community service with frequent brief
   // outages (503/timeout). It is only a non-critical helper (year resolution
   // with a decade-midpoint fallback), so an unreachable ping softens to warn
@@ -486,16 +484,16 @@ function render(d) {
     mb.detail || "",
   ].filter(Boolean)));
 
-  // ListenBrainz (WAN, Live-Ping). Liefert Empfehlungen fuer charts-recommend,
-  // keine Charts -> Hilfsdienst. Heilt charts-recommend-Rot -> Gelb.
+  // ListenBrainz (WAN, live ping). Provides recommendations for charts-recommend,
+  // no charts -> helper service. Heals charts-recommend red -> yellow.
   const lb = ext.listenbrainz || {};
   helpers.push(tile(lb.ok ? "ok" : "err", t("tile.title.listenbrainz"), [
     lb.ok ? t("tile.reachable") : t("tile.not_reachable"),
     lb.detail || "",
   ].filter(Boolean)));
 
-  // Pushover (WAN, echter validate-Call d.external.pushover statt nur Config-
-  // Flag). ok=gruen (gueltig), err=rot (ungueltig), muted=grau (nicht konf.).
+  // Pushover (WAN, real validate call d.external.pushover instead of just a
+  // config flag). ok=green (valid), err=red (invalid), muted=grey (not conf.).
   const pu = ext.pushover || {};
   // pu.detail is intentionally DROPPED here: the client already renders the
   // verdict (valid/invalid), so showing the server detail too would double the
@@ -514,31 +512,29 @@ function render(d) {
     groupBlock("conn.group.sources", sources) +
     groupBlock("conn.group.helpers", helpers);
 
-  // Dienst -> externe Quelle(n): welche Live-Checks einen gespeicherten
-  // "error" eines Dienstes heilen duerfen. charts-recommend zieht aus
-  // ListenBrainz (+ Last.fm, falls genutzt), charts-sync aus Deezer + Last.fm.
-  // Dienste ohne Zuordnung behalten die alte harte Rot-Regel. iTunes + Pushover
-  // stehen bewusst NICHT hier -> heilen KEIN Dienste-Rot (iTunes = best-effort
-  // Cover, Pushover = Benachrichtigungs-Senke).
+  // Service -> external source(s): which live checks may heal a stored "error"
+  // of a service. charts-recommend draws from ListenBrainz (+ Last.fm, if used),
+  // charts-sync from Deezer + Last.fm. Services without a mapping keep the old
+  // hard red rule. iTunes + Pushover are deliberately NOT here -> they heal NO
+  // service red (iTunes = best-effort cover art, Pushover = notification sink).
   const EXT_SOURCES = {
     "charts-recommend": ["listenbrainz", "lastfm"],
     "charts-sync": ["deezer", "lastfm"],
     "charts-flashback": ["flashback"],
   };
 
-  // --- Dienste (Container-Status + Lauf-Statistik) ---
+  // --- Services (container status + run statistics) ---
   const svcEl = document.getElementById("services");
-  // Feste Reihenfolge entlang der Verarbeitungskette (nicht alphabetisch),
-  // damit die Dienste so gelistet sind, wie die Daten durchlaufen.
+  // Fixed order along the processing chain (not alphabetical), so the services
+  // are listed the way the data flows through them.
   const ORDER = ["slskd", "charts-sync", "charts-hitparade", "charts-flashback",
                  "charts-energy",
                  "charts-download",
                  "charts-import", "charts-upgrade", "charts-recommend",
                  "charts-songrequest", "charts-digest", "charts-watchdog",
                  "charts-dashboard", "charts-config"];
-  // Kurzbeschreibung je Dienst (ein Satz, was er tut).
-  // Kurzbeschreibung je Dienst, uebersetzt (desc.* keys). Der Service-Name
-  // (mit Bindestrichen) wird fuer den Key auf Unterstriche gemappt.
+  // Short description per service, translated (desc.* keys). The service name
+  // (with hyphens) is mapped to underscores for the key.
   const DESC = {
     "slskd": t("desc.slskd"),
     "charts-sync": t("desc.charts_sync"),
@@ -555,8 +551,8 @@ function render(d) {
     "charts-dashboard": t("desc.charts_dashboard"),
     "charts-config": t("desc.charts_config"),
   };
-  // Emoji je Dienst - dieselben wie in den Pushover-Titeln, damit Dashboard
-  // und Push konsistent sind. Dienste ohne Eintrag bekommen ein neutrales 🎵.
+  // Emoji per service - the same as in the Pushover titles, so the dashboard
+  // and push stay consistent. Services without an entry get a neutral 🎵.
   const ICON = {
     "slskd": "🔽",
     "charts-sync": "🎵",
@@ -573,18 +569,18 @@ function render(d) {
     "charts-dashboard": "📊",
     "charts-config": "\ud83e\udde9",
   };
-  // Deutsche Labels fuer die kumulativen "gesamt"-Zaehler.
+  // Translated labels for the cumulative "total" counters.
   const TOTAL_LABEL = {
     imported: t("total.imported"), enqueued: t("total.enqueued"),
     upgraded: t("total.upgraded"), rejected: t("total.rejected"),
     cleaned: t("total.cleaned"), retried: t("total.retried"),
     requests: t("total.requests"), digests: t("total.digests"),
   };
-  // Baut die HTML-Kachel fuer EINEN Dienst (Status + Statistik). Ausgelagert,
-  // damit die Dienste als Flow (mit Pfeilen/Stufen) angeordnet werden koennen,
-  // statt als flaches Grid. Gibt "" zurueck, wenn der Dienst gar nicht bekannt
-  // ist (kein Container + kein Status).
-  // Kurzes "was -> wohin"-Label je Dienst (immer sichtbar in der Kachel).
+  // Builds the HTML tile for ONE service (status + statistics). Factored out so
+  // the services can be arranged as a flow (with arrows/stages) instead of a
+  // flat grid. Returns "" when the service is not known at all (no container +
+  // no status).
+  // Short "what -> where" label per service (always visible in the tile).
   const FLOW_LABEL = {
     "charts-sync": t("flow.charts_sync"),
     "charts-hitparade": t("flow.charts_hitparade"),
@@ -601,18 +597,18 @@ function render(d) {
     "charts-dashboard": t("flow.charts_dashboard"),
   };
 
-  // Baut die Dienste-Kachel: KOMPAKT (Ampel + was→wohin + zuletzt/naechster,
-  // immer sichtbar) + ein aufklappbarer DETAIL-Block (Container-Zustand, letzter
-  // Lauf, message, Gesamtzahlen, Scan-Fortschritt), der per Klick/Tap erscheint.
-  // Gibt "" zurueck, wenn der Dienst gar nicht bekannt ist.
+  // Builds the service tile: COMPACT (traffic light + what->where + last/next,
+  // always visible) + an expandable DETAIL block (container state, last run,
+  // message, totals, scan progress) that appears on click/tap.
+  // Returns "" when the service is not known at all.
   function svcTile(name) {
     const ct = (d.containers || {})[name] || {};
     const st = (d.services || {})[name] || null;
     if (!(name in (d.containers || {})) && !st) return "";
-    const isManual = name === "charts-songrequest"; // manueller Einstieg
+    const isManual = name === "charts-songrequest"; // manual entry point
 
-    // Ampel-/Kachelfarbe. Lauf-Fehler NICHT hart rot, wenn eine zugeordnete,
-    // konfigurierte externe Quelle gerade erreichbar ist (-> gelb "laeuft wieder").
+    // Traffic-light / tile colour. A run error is NOT hard red when a mapped,
+    // configured external source is currently reachable (-> yellow "running again").
     let cls = ct.ok ? "ok" : (ct.state === "restarting" ? "warn" : "err");
     let healLine = "";
     if (st && st.status === "error") {
@@ -634,15 +630,15 @@ function render(d) {
         cls = "err";
       }
     }
-    // Deaktiviert/leerer Hash: idle -> grau (muted), NIE rot. Steht bewusst
-    // NACH dem error/Heal-Block, damit kein nachgelagerter Zweig cls wieder
-    // ueberschreibt (ein idle-Dienst durchlaeuft den error-Block ohnehin nicht).
+    // Disabled/empty hash: idle -> grey (muted), NEVER red. Deliberately placed
+    // AFTER the error/heal block so no later branch overwrites cls again (an
+    // idle service does not run through the error block anyway).
     if (st && st.status === "idle") cls = "muted";
 
-    // --- KOMPAKT-Zeilen (immer sichtbar) ---
+    // --- COMPACT lines (always visible) ---
     const label = (ICON[name] ? ICON[name] + " " : "") + name;
     const flowLabel = FLOW_LABEL[name] || (DESC[name] || "");
-    // "zuletzt · naechster"-Zeile.
+    // "last · next" line.
     let whenLine = "";
     if (st) {
       if (st.status === "running") {
@@ -657,7 +653,7 @@ function render(d) {
       }
     }
 
-    // --- DETAIL-Zeilen (aufklappbar) ---
+    // --- DETAIL lines (expandable) ---
     const det = [];
     let state = ct.state;
     if (ct.health && ct.health !== "none") state += " / " + ct.health;
@@ -683,7 +679,7 @@ function render(d) {
           .join(", ");
         if (tot) det.push(`<span class="muted-txt">${t("svc.totals_prefix", {items: tot})}</span>`);
       }
-      // charts-upgrade: Scan-Fortschritt (geprueft / gesamt MP3).
+      // charts-upgrade: scan progress (checked / total MP3).
       const cnt = st.counters || {};
       if (typeof cnt.scan_total === "number" && cnt.scan_total > 0) {
         const seen = cnt.scan_seen || 0, tot = cnt.scan_total;
@@ -700,30 +696,30 @@ function render(d) {
     }
     if (DESC[name]) det.push(`<span class="desc">${DESC[name]}</span>`);
 
-    // charts-upgrade: Mini-Scan-Balken auch in der KOMPAKT-Ansicht.
+    // charts-upgrade: mini scan bar in the COMPACT view too.
     let compactExtra = "";
     if (st && st.counters && typeof st.counters.scan_total === "number" && st.counters.scan_total > 0) {
       const pct = Math.min(100, Math.round(((st.counters.scan_seen || 0) / st.counters.scan_total) * 100));
       compactExtra = `<div class="scan-bar compact"><div class="scan-fill" style="width:${pct}%"></div></div>`;
     }
 
-    // Report-Zone-Dienste (digest/watchdog/dashboard) im KOMPAKT-Zustand ohne
-    // die "zuletzt · naechster"-Zeile zeigen, damit alle drei Kacheln gleich
-    // hoch sind (sonst macht digests Lauf-Zeile die Box hoeher -> ungleicher
-    // Abstand in der Report-Zone). Die volle Lauf-Info bleibt beim Aufklappen.
+    // Show report-zone services (digest/watchdog/dashboard) in the COMPACT
+    // state without the "last · next" line, so all three tiles are the same
+    // height (otherwise digest's run line makes the box taller -> uneven
+    // spacing in the report zone). The full run info stays on expand.
     const REPORT_ZONE = ["charts-digest", "charts-watchdog", "charts-dashboard", "charts-config"];
     if (REPORT_ZONE.includes(name)) whenLine = "";
 
     const detailHtml = det.map(l => `<div class="line">${l}</div>`).join("");
-    // "manuell"-Pill oben in der Kachel ueber dem Titel (kompakt, mit Abstand).
+    // "manual" pill at the top of the tile above the title (compact, spaced).
     const manualTag = isManual ? `<div class="svc-manual-tag">${t("svc.manual_tag")}</div>` : "";
-    // data-svc: Anker fuer das SVG-Linien-Overlay (Positionsbestimmung).
-    // Aufklappen wird in enableDrag() gesteuert (Klick ohne Bewegung), damit
-    // Drag und Klick sich nicht in die Quere kommen.
-    // Aufgeklappt-Zustand kommt aus _openState (ueber die 15s-Aktualisierung
-    // hinweg stabil). slskd ist initial offen (zentrale Komponente), aber nur
-    // einmalig als Default - danach gewinnt die User-Interaktion. Hat der User
-    // slskd zugeklappt, bleibt es zu (kein Zwangs-Aufklappen beim Re-Render).
+    // data-svc: anchor for the SVG line overlay (position lookup).
+    // Expanding is driven in enableDrag() (click without movement), so drag and
+    // click do not get in each other's way.
+    // The expanded state comes from _openState (stable across the 15s refresh).
+    // slskd is open initially (central component), but only once as a default -
+    // after that user interaction wins. If the user collapsed slskd, it stays
+    // collapsed (no forced expand on re-render).
     if (name === "slskd" && _openState[name] === undefined) _openState[name] = true;
     const openByDefault = _openState[name] ? " open" : "";
     return `<div class="tile svc ${cls}${isManual ? ' manual' : ''}${openByDefault}" data-svc="${name}">` +
@@ -736,22 +732,22 @@ function render(d) {
       `</div>`;
   }
 
-  // --- Hub-Layout: slskd ist die ZENTRALE Komponente, durch die alle
-  //     Downloads laufen. Die Dienste werden in Zonen angeordnet (CSS-Grid):
-  //       Quellen -> Beschaffer -> [slskd Hub] -> Import -> Navidrome
-  //     charts-songrequest = manueller Einstieg (gestrichelt markiert).
-  //     watchdog + dashboard stehen als Ueberwachung quer darunter.
-  //     Die Verbindungslinien werden NACH dem Rendern als SVG-Overlay
-  //     gezeichnet (drawFlowLines), damit sie sich an die echten Kachel-
-  //     Positionen anpassen (responsive: Resize/Orientation zeichnet neu).
+  // --- Hub layout: slskd is the CENTRAL component all downloads run through.
+  //     The services are arranged in zones (CSS grid):
+  //       sources -> getters -> [slskd hub] -> import -> Navidrome
+  //     charts-songrequest = manual entry point (marked with a dashed border).
+  //     watchdog + dashboard sit across below as monitoring.
+  //     The connection lines are drawn AFTER rendering as an SVG overlay
+  //     (drawFlowLines) so they adapt to the real tile positions (responsive:
+  //     resize/orientation redraws).
   const SOURCES = ["charts-sync", "charts-hitparade", "charts-flashback", "charts-energy", "charts-recommend"];
   const MANUAL = ["charts-songrequest"];
   const GETTERS = ["charts-download", "charts-upgrade"];
   const known = (n) => (n in (d.containers || {})) || (d.services || {})[n];
 
-  // Absolute Default-Positionen (wie im Mock), in % der Flow-Flaeche. x/y =
-  // linke obere Ecke der Kachel. Werden beim Rendern per Inline-style gesetzt;
-  // unter 760px (Handy) ueberschreibt das CSS sie und stapelt alles vertikal.
+  // Absolute default positions (as in the mock), in % of the flow area. x/y =
+  // top-left corner of the tile. Set on render via inline style; below 760px
+  // (phone) the CSS overrides them and stacks everything vertically.
   const LAYOUT = {
     "charts-sync":        { x: 1,  y: 2  },
     "charts-hitparade":   { x: 1,  y: 21 },
@@ -766,8 +762,8 @@ function render(d) {
     "navidrome":          { x: 42, y: 103 },
     "report-zone":        { x: 70, y: 72 },
   };
-  // Zonen-Label je ANFUEHRER-Box -> kommt IN die Zelle, wandert beim Drag mit.
-  // Die jeweils oberste Box einer Zone traegt das Label.
+  // Zone label per LEADER box -> goes INTO the cell, moves along when dragged.
+  // The topmost box of a zone carries the label.
   const CELL_STAGE = {
     "charts-sync": t("stage.sources"),
     "charts-songrequest": t("stage.manual"),
@@ -775,16 +771,16 @@ function render(d) {
     "slskd": t("stage.downloader"),
     "charts-import": t("stage.import"),
   };
-  const STAGE_LABELS = [];  // keine freien Labels mehr
+  const STAGE_LABELS = [];  // no free-standing labels anymore
 
-  // Navidrome ist NICHT Teil des Stacks (externes Ziel) -> schlanke gruene
-  // Pille statt voller Kachel, damit es sich als Endstation abhebt.
+  // Navidrome is NOT part of the stack (external target) -> a slim green pill
+  // instead of a full tile, so it stands out as the end station.
   const navidromeTile =
     `<div class="flow-target-pill" data-svc="navidrome">${t("flow.navidrome_pill")}</div>`;
 
-  // Eine positionierte Zelle bauen (absolute Default-Pos aus LAYOUT). Traegt
-  // die Box ein eigenes Zonen-Label (CELL_STAGE), wird es oben eingehaengt und
-  // wandert beim Verschieben mit.
+  // Build a positioned cell (absolute default pos from LAYOUT). If the box
+  // carries its own zone label (CELL_STAGE), it is attached at the top and
+  // moves along when dragged.
   const posCell = (name, inner, extraCls) => {
     const p = LAYOUT[name] || { x: 0, y: 0 };
     const cls = "flow-cell" + (extraCls ? " " + extraCls : "");
@@ -799,17 +795,17 @@ function render(d) {
     `<div class="flow-stage abs" style="left:${s.x}%;top:${s.y}%">${s.t}</div>`
   ).join("");
 
-  // Ueberwachung & Report: watchdog + dashboard + digest als EIN Flex-Stapel
-  // (feste Luecke per CSS gap -> garantiert gleicher Abstand, unabhaengig von
-  // der Kachelhoehe). Das Zonen-Label sitzt IM Stapel als Ueberschrift. Der
-  // Wrapper ist EINE flow-cell (per Drag verschiebbar); die inneren Kacheln
-  // sind normale svcTile ohne eigene Positionierung.
-  // Abstand kommt allein aus dem Flex-'gap' des .report-stack (siehe style.css).
-  // Die frueher noetige Inline-margin-Kruecke (gegen '.flow-cell .tile{height:
-  // 100%}') ist weg: '.report-stack .tile{height:auto}' hebt das Strecken schon
-  // auf. Kein Wrapper-<div> mehr, damit das Flex-Child die Kachel SELBST ist und
-  // der gap sauber (einfach) greift - sonst addierten sich gap + margin zu einem
-  // zu grossen Abstand (auf dem iPhone sichtbar groesser als die anderen Gruppen).
+  // Monitoring & report: watchdog + dashboard + digest as ONE flex stack (fixed
+  // gap via CSS gap -> guaranteed equal spacing, independent of the tile
+  // height). The zone label sits IN the stack as a heading. The wrapper is ONE
+  // flow-cell (draggable); the inner tiles are normal svcTile without their own
+  // positioning. Spacing comes solely from the flex 'gap' of .report-stack (see
+  // style.css). The inline-margin crutch once needed (against '.flow-cell
+  // .tile{height:100%}') is gone: '.report-stack .tile{height:auto}' already
+  // undoes the stretching. No wrapper <div> anymore, so the flex child is the
+  // tile ITSELF and the gap applies cleanly (simply) - otherwise gap + margin
+  // would add up to too large a spacing (visibly larger than the other groups
+  // on the iPhone).
   const reportBox = (name) => (known(name) ? svcTile(name) : "");
   const reportInner =
     `<div class="flow-stage cell-stage">${t("stage.report")}</div>` +
@@ -835,10 +831,10 @@ function render(d) {
     `</div>` +
     `<div class="flow-hint">${t("svc.flow_hint")}</div>`;
 
-  // Verbindungslinien zeichnen (nach dem DOM-Update) + Drag aktivieren.
+  // Draw the connection lines (after the DOM update) + enable drag.
   requestAnimationFrame(() => { enableDrag(); drawFlowLines(); });
 
-  // --- Speicher ---
+  // --- Storage ---
   const s = d.storage || {};
   const lib = s.library || {};
   document.getElementById("storage").innerHTML = [
@@ -852,8 +848,8 @@ function render(d) {
       t("storage.files", {n: (s.charts_files ?? "–")}),
       fmtBytes(s.charts_bytes),
     ]),
-    // Quarantaene ist normal (wird eh automatisch nach 14 Tagen geleert) -
-    // nur warnen, wenn sie ungewoehnlich gross wird (> 2 GB).
+    // Quarantine is normal (it is auto-emptied after 14 days anyway) - only
+    // warn when it grows unusually large (> 2 GB).
     tile((s.rejected_bytes ?? 0) > 2e9 ? "warn" : "info", t("storage.quarantine"), [
       t("storage.quarantine_desc"),
       t("storage.files", {n: (s.rejected_files ?? "–")}),
@@ -861,7 +857,7 @@ function render(d) {
     ]),
   ].join("");
 
-  // --- In Bearbeitung (vier ehrlich beschriftete Panels) ---
+  // --- In progress (four honestly labelled panels) ---
   renderInProgress(d);
 }
 
@@ -1051,25 +1047,25 @@ function ago2future(iso) {
   return Math.floor(s/86400) + t("time.unit.d");
 }
 
-// Beschriftung fuer den naechsten geplanten Lauf. Nahe Termine relativ
-// ("in 3 h"), weit entfernte (> 24 h, z.B. Wochendienst charts-hitparade)
-// als absolutes Datum ("So, 05.10. 20:00") - das ist bei seltenen Laeufen
-// klarer als "in 6 d". Liegt der Zeitpunkt in der Vergangenheit (haengender/
-// ueberfaelliger Lauf), ehrlich "ueberfaellig" statt irrefuehrendem "bald".
+// Label for the next scheduled run. Near times relative ("in 3 h"), far ones
+// (> 24 h, e.g. the weekly charts-hitparade service) as an absolute date
+// ("Sun, 05.10. 20:00") - for rare runs that is clearer than "in 6 d". If the
+// time is in the past (stalled/overdue run), honestly show "overdue" instead
+// of a misleading "soon".
 function nextRunLabel(iso) {
   const ts = Date.parse(iso);
   if (isNaN(ts)) return iso;
   const s = Math.floor((ts - Date.now()) / 1000);
   if (s <= -60) return t("time.overdue");
-  if (s < 3600) return t("time.in_prefix") + ago2future(iso); // < 1 h: relativ (min)
+  if (s < 3600) return t("time.in_prefix") + ago2future(iso); // < 1 h: relative (min)
   if (s < 86400) {
-    // 1-24 h: Stunden UND Minuten, damit z.B. 1h50 nicht als "1 h" erscheint
-    // (sonst Widerspruch zum tatsaechlichen Intervall). Volle Stunde: nur "h".
+    // 1-24 h: hours AND minutes, so e.g. 1h50 does not appear as "1 h"
+    // (otherwise it contradicts the actual interval). Full hour: just "h".
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     return m ? t("time.in_h_m", {h, m}) : t("time.in_h", {h});
   }
-  // >= 24 h: absolutes Datum (Wochentag, Tag.Monat, Uhrzeit)
+  // >= 24 h: absolute date (weekday, day.month, time)
   const d = new Date(ts);
   const wd = t("time.weekday." + d.getDay());
   const pad = (n) => String(n).padStart(2, "0");
@@ -1083,12 +1079,12 @@ async function tick() {
     if (r.status === 401) { location.href = "/login"; return; }
     if (!r.ok) throw new Error("HTTP " + r.status);
     render(await r.json());
-    // Erfolg -> Live-Dot gruen (pulsierend). render() setzt den Zeitstempel.
+    // Success -> live dot green (pulsing). render() sets the timestamp.
     if (live) live.classList.remove("error");
   } catch (e) {
     document.getElementById("updated").textContent = t("updated.error");
-    // Fehler -> Live-Dot rot (nicht mehr pulsierend). Signalisiert, dass die
-    // Daten NICHT frisch sind.
+    // Error -> live dot red (no longer pulsing). Signals that the data is NOT
+    // fresh.
     if (live) live.classList.add("error");
   }
 }
