@@ -16,7 +16,7 @@ consistent – please skim them before opening a pull request.
 ## i18n parity (important)
 
 The three language files must stay **key-for-key equal** – they currently carry
-**932 keys each**. When you add a user-facing string:
+**1026 keys each**. When you add a user-facing string:
 
 1. Add the new key to **all three** files (`en`, `de`, `fr`) with a real
    translation (not a copy of the English text).

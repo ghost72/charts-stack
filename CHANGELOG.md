@@ -10,6 +10,98 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [2.0.0] - 2026-10-28
+
+A major feature release. charts-songrequest grows from a single search box into
+a three-tab web app (request / MP3 upload / YouTube URL import), the dashboard
+gains a live "in progress" overview, every imported song is now tagged with its
+release year, and a three-machine source-health signal (watchdog / sync /
+energy) surfaces a dead or empty source instead of failing silently. The major
+bump also reflects the new runtime dependencies of the songrequest image (see
+**Upgrade notes**). No new required environment variables are introduced.
+
+### Added
+- **charts-songrequest — three-tab web UI.** The single request box becomes a
+  tabbed single card with three tabs sharing one login:
+  - **Request** — search a song via slskd (as before).
+  - **Upload** — add a local MP3. The file is checked with a real FFT
+    frequency-cutoff measurement (`quality.py`, ffmpeg-backed) so an upsampled /
+    faked MP3 is detected; a genuine upsample can still be kept through an
+    explicit "add anyway" confirmation.
+  - **YouTube** — import from a YouTube URL. yt-dlp extracts the audio to MP3
+    and embeds the video thumbnail as cover art.
+  The search/upload/fetch flows survive an app switch mid-request (abortable
+  fetch + visibility handling) and add mobile haptics.
+- **charts-dashboard — "in progress" overview.** A new section with four panels:
+  live active downloads (joined from the slskd transfer list), the queue /
+  missing backlog, the quarantine, and the last upgrade run, with a placeholder
+  shown when a panel has no entries. Compact, scrollable panels with aligned
+  bands.
+- **charts-import — release-year tagging.** Every imported song now has its
+  release year resolved and tagged, with a backfill pass for the existing
+  library (`mbyear`/`yearmap` + MusicBrainz lookup).
+- **Source-health signal across three services.** charts-sync flips its status
+  to `error` when a whole run comes back empty or a source is dead across N
+  runs (G3); charts-energy adds structural-break detection plus a daily liveness
+  re-check (G1/G2); charts-watchdog pages when any service reports
+  status=`error` (G0). New i18n keys back the watchdog/energy/sync/liveness
+  strings.
+- **charts-energy — multi-line config file.** Channels can be configured from a
+  readable multi-line `energy-channels.json` file (`ENERGY_CHANNELS_FILE`) in
+  addition to the inline `ENERGY_CHANNELS` JSON.
+- **charts-dashboard — connection tiles.** The connections section now groups
+  tiles by role, adds an Energy (NRJ) stream tile (streaming ICY probe), a
+  MusicBrainz tile, and a Swiss Hitparade tile, with Energy/MusicBrainz tiles
+  muted when disabled. Flow tiles support touch-drag on wide-screen touch
+  devices.
+- **charts-config — snippet copy buttons.** Line/block copy buttons and
+  plain-language descriptions on the source finder and Energy-channel table.
+
+### Changed
+- **Manual-input normalization (charts-songrequest + charts-import).** The
+  title match key now transliterates umlauts (ä → a, é → e) before the
+  letters-and-digits fold and strips an unbalanced trailing decoration
+  (e.g. `… (original`), so a decorated re-request folds onto the same dedup key
+  as the clean library title. Manual input from all three tabs is canonicalized
+  to the catalog spelling via Deezer (`mash` → `Mash`) for any case, while
+  deliberate spellings (`SK.music`, `k.d. lang`) survive a Deezer miss intact.
+- **Upload duplicate handling.** The library is checked before the quality
+  branch and artist spelling variants are folded, so an upsampled re-upload of a
+  song already present in decent quality is rejected — an upsampled fake-320
+  never beats an honest copy. The upload path reports an honest "already in
+  library" status.
+- **charts-energy / charts-config polish.** Shorter one-line Pushover feed-
+  handover lines; readable Energy-channel table layout (row spacing, dividers,
+  full-width multi-line snippet with copy buttons).
+
+### Fixed
+- **DST scheduler double-run** in charts-digest and charts-hitparade is
+  prevented.
+- **charts-dashboard** counts library songs recursively, excluding
+  non-library folders.
+- **charts-songrequest UI** fixes: raw i18n keys resolved in the tabbed layout,
+  tabs laid out in a row with only the active one coloured on mobile Safari, the
+  login page primary-button style restored, and the logout link kept above a
+  tall card.
+
+### Upgrade notes
+- **Rebuild the charts-songrequest image after pulling.** It now requires
+  **ffmpeg** (installed via apt in the Dockerfile) for the upload FFT quality
+  check and yt-dlp's MP3 extraction, plus **numpy** and **yt-dlp** (pinned in
+  `charts-songrequest/requirements.txt`). On Synology use a cache-free rebuild
+  (`docker compose build --no-cache charts-songrequest`).
+- **No new required environment variables.** The upload and YouTube tabs add no
+  mandatory settings. Notable NEW *optional* knobs that appeared this cycle and
+  are documented in `.env.example`:
+  - charts-energy: `ENERGY_ENABLED`, `ENERGY_CHANNELS` / `ENERGY_CHANNELS_FILE`,
+    `ENERGY_POLL_SECONDS`, `ENERGY_MATCH_INTERVAL_MINUTES`, and the liveness
+    knobs (`ENERGY_LIVENESS_INTERVAL_HOURS`, `ENERGY_LIVENESS_ON_START`,
+    `ENERGY_LIVENESS_DEAD_PROBES_THRESHOLD`).
+  - source-health: `SYNC_DEAD_RUNS_THRESHOLD` (+ `SYNC_HEALTH_FILE`),
+    `ENERGY_DEAD_RUNS_THRESHOLD` / `ENERGY_CANARY_DEAD_RUNS_THRESHOLD`
+    (+ `ENERGY_HEALTH_FILE`).
+  - charts-songrequest: `PUSHOVER_SOUND_SONGREQUEST`.
+
 ## [1.6.1] - 2026-10-22
 
 UI polish for the new charts-config service and its dashboard tile.
