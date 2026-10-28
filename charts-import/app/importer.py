@@ -305,6 +305,24 @@ def _song_already_present(target: str) -> bool:
     return False
 
 
+# Trailing UNBALANCED/open opener-tail: a "(word..." or "[word..." at the very
+# end of the title with NO closing bracket, whose first word is a known
+# decoration keyword (e.g. "... (original", "... (live", "... (radio edit").
+# Mirrors charts-songrequest's _OPEN_TAIL_DECORATION so both services fold a
+# decorated re-request (e.g. "ewigi liäbi (original") onto the same dedup key as
+# the clean library title ("ewigi liäbi"). CONSERVATIVE: "part"/"pt"/digits are
+# deliberately absent, so a genuine open tail like "Song (Part 2" stays distinct
+# from "Song". MATCH key only - never touches what is written to disk or tags.
+_OPEN_TAIL_DECORATION = re.compile(
+    r"\s*[\(\[]\s*"
+    r"(?:extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|"
+    r"official|audio|video|visuali[sz]er|lyric[s]?|feat\.?|ft\.?|with|live|"
+    r"acoustic|instrumental|demo|bonus|single)"
+    r"[^\(\)\[\]]*$",   # rest of the open tail up to end, no closing bracket
+    re.IGNORECASE,
+)
+
+
 def _title_key(title: str) -> str:
     """
     Normalizes a SONG TITLE for the cross-album comparison: lowercase,
@@ -315,6 +333,12 @@ def _title_key(title: str) -> str:
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
     t = re.sub(r"\[(?:feat|ft|with)\.?[^\]]*\]", " ", t)
     t = re.sub(r"\((?:remaster|remastered|.*version|.*edit|official|audio|video|lyric[s]?)[^)]*\)", " ", t)
+    # Strip a trailing UNBALANCED opener-tail (open "(" / "[" with no closing
+    # bracket) whose first word is a decoration keyword. Mirrors songrequest's
+    # open-tail strip; MATCH key only. Guarded so a numeric/part tail like
+    # "Song (Part 2" stays distinct from "Song".
+    if re.search(r"[\(\[][^\(\)\[\]]*$", t):
+        t = _OPEN_TAIL_DECORATION.sub("", t).rstrip()
     # Transliterate accents (ä -> a, é -> e) BEFORE the [a-z0-9] fold so an
     # umlaut is folded, not dropped. Mirrors the charts-sync side
     # (library.normalize / deezer._normalize) so both subsystems agree on the

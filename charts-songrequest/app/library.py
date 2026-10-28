@@ -56,6 +56,24 @@ _TITLE_DECORATION = re.compile(
     re.IGNORECASE,
 )
 
+# Trailing UNBALANCED/open opener-tail: a "(word..." or "[word..." at the very
+# end of the title with NO closing bracket, whose first word is a known
+# decoration keyword (e.g. "... (original", "... (live", "... (feat. X",
+# "... (radio edit", "... (extended mix", "... (official video"). This closes
+# the gap left by _TITLE_DECORATION, which only matches a BALANCED "(...)"/"[...]"
+# group. CONSERVATIVE: "part"/"pt"/digits are deliberately absent from the
+# allowlist, so a genuine open tail like "Song (Part 2" stays distinct from
+# "Song"; only a trailing open tail whose first word is a decoration keyword is
+# removed. MATCH key only - never touches on-disk names or tags.
+_OPEN_TAIL_DECORATION = re.compile(
+    r"\s*[\(\[]\s*"
+    r"(?:extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|"
+    r"official|audio|video|visuali[sz]er|lyric[s]?|feat\.?|ft\.?|with|live|"
+    r"acoustic|instrumental|demo|bonus|single)"
+    r"[^\(\)\[\]]*$",   # rest of the open tail up to end, no closing bracket
+    re.IGNORECASE,
+)
+
 
 def _strip_title_decoration(title: str) -> str:
     """
@@ -93,6 +111,15 @@ def _strip_title_decoration(title: str) -> str:
         m = re.search(r"\s*[\(\[]([^\(\)\[\]]*)[\)\]]\s*$", t)
         if m and _TITLE_DECORATION.search(m.group(1)):
             t, changed = t[:m.start()].rstrip(), True
+            continue
+        # Trailing UNBALANCED opener-tail (open "(" / "[" with no closing
+        # bracket). Only strip when the tail's first word is a decoration
+        # keyword so a genuine open tail like "Song (Part 2" (numeric/part, not
+        # in the allowlist) is kept distinct from "Song".
+        if re.search(r"[\(\[][^\(\)\[\]]*$", t):   # there IS an unclosed opener
+            new = _OPEN_TAIL_DECORATION.sub("", t).rstrip()
+            if new and new != t:
+                t, changed = new, True
     return t.strip()
 
 

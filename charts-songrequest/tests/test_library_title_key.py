@@ -47,6 +47,50 @@ def test_does_not_over_strip_part_number():
             != library._title_key("Inside My Soul"))
 
 
+# --- FIX 3: trailing UNBALANCED/open opener-tail folds to base -------------
+
+def test_open_tail_folds_with_umlaut_and_balanced():
+    # The live bug: a YouTube re-request titled 'ewigi liäbi (original' (open
+    # tail, no closing bracket) must key the SAME as the clean/balanced/ASCII
+    # variants, composing with the NFKD fold (FIX 1).
+    base = library._title_key("ewigi liäbi")
+    assert library._title_key("ewigi liäbi (original") == base
+    assert library._title_key("ewigi liäbi (original)") == base
+    assert library._title_key("ewigi liabi") == base
+
+
+def test_open_tail_siblings_fold_to_base():
+    base = library._title_key("Song")
+    for tail in ("(live", "(feat. X", "(radio edit", "(extended mix",
+                 "(official video", "(remix", "(lyric", "(audio",
+                 "(visualizer", "(ft. Y", "[original"):
+        assert library._title_key("Song " + tail) == base, tail
+
+
+def test_open_tail_does_not_over_strip_part():
+    # Numeric/part tails are NOT in the allowlist -> kept distinct from 'Song',
+    # both unbalanced "(Part 2" and balanced "(Part 2)".
+    base = library._title_key("Song")
+    assert library._title_key("Song (Part 2") != base
+    assert library._title_key("Song (Part 2)") != base
+    assert library._title_key("Song (Pt. 1") != base
+
+
+def test_open_tail_keeps_trailing_number():
+    # A genuine trailing number that is part of the title is untouched.
+    assert library._title_key("Area 51") == "area51"
+
+
+def test_find_existing_matches_open_tail_title(tmp_path):
+    # The exact live scenario: stored clean 'mash/ewigi liäbi', re-request with
+    # an unbalanced open tail -> recognised as already present (no re-download).
+    music = tmp_path / "Music"
+    _make_song(music, "mash", "ewigi liäbi", "ewigi liäbi.mp3")
+    found = library.find_existing(str(music), "mash", "ewigi liäbi (original")
+    assert found is not None
+    assert "ewigi liäbi.mp3" in found
+
+
 # --- FIX 1: umlaut/accent folding (transliterate, not drop) ----------------
 
 def test_umlaut_title_key_equivalence():
