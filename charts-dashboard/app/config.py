@@ -109,8 +109,14 @@ REFRESH_SECONDS = _get_int("DASHBOARD_REFRESH_SECONDS", 15)
 # How many preview rows per in-progress panel + the live-list cap. All have
 # working defaults, so no .env change is required to run. Reuses CHARTS_DIR,
 # STATUS_DIR, SLSKD_HOST, SLSKD_API_KEY - no new mount/credential.
-INFLIGHT_MISSING_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_MISSING_N", 8)
-INFLIGHT_REJECTED_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_REJECTED_N", 8)
+# The missing/rejected snapshot panels now ship the FULL list (the client puts
+# it in a fixed-height, internally-scrolling box), so these caps are high
+# enough to cover the real backlogs (~286 missing / ~61 quarantine) with
+# headroom while still bounding the payload. The live `active` panel keeps its
+# small cap of 25 (genuinely few concurrent downloads; the "+N more" line is a
+# safety net).
+INFLIGHT_MISSING_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_MISSING_N", 500)
+INFLIGHT_REJECTED_PREVIEW_N = _get_int("DASHBOARD_INFLIGHT_REJECTED_N", 500)
 INFLIGHT_ACTIVE_MAX = _get_int("DASHBOARD_INFLIGHT_ACTIVE_MAX", 25)
 # TTL (seconds) for the CHEAP snapshot reads only (missing*.txt + _rejected
 # listing). The live slskd "active downloads" panel is NEVER cached - it is
