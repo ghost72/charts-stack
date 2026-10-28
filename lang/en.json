@@ -1019,6 +1019,7 @@
   "dashboard.ui.inflight.upgrade.upgraded": "{n} upgraded (total)",
   "dashboard.ui.inflight.upgrade.none": "charts-upgrade has not run yet",
   "dashboard.ui.inflight.upgrade.next": "next: {label}",
+  "dashboard.ui.inflight.upgrade.placeholder": "no individual files · run status only",
   "dashboard.ui.inflight.unmatched": "(no clean name — showing filename)",
   "dashboard.ui.inflight.missing.backlog_hint": "waiting to be downloaded",
   "dashboard.ui.inflight.missing.per_source_label": "per source: {parts}",

@@ -1019,6 +1019,7 @@
   "dashboard.ui.inflight.upgrade.upgraded": "{n} ersetzt (gesamt)",
   "dashboard.ui.inflight.upgrade.none": "charts-upgrade ist noch nicht gelaufen",
   "dashboard.ui.inflight.upgrade.next": "nächster: {label}",
+  "dashboard.ui.inflight.upgrade.placeholder": "keine Einzeldateien · nur Lauf-Status",
   "dashboard.ui.inflight.unmatched": "(kein sauberer Name — zeige Dateiname)",
   "dashboard.ui.inflight.missing.backlog_hint": "warten auf Download",
   "dashboard.ui.inflight.missing.per_source_label": "pro Quelle: {parts}",

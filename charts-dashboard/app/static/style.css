@@ -348,6 +348,20 @@ b { font-weight: 600; }
 .ip-foot .line { font-size: .78rem; margin: 2px 0; line-height: 1.25; }
 /* The first row inside the scroll list shouldn't add extra top margin. */
 .ip-list .ip-row:first-child { margin-top: 0; }
+/* Band alignment (desktop / multi-column only). The four panels carry headers
+   and footers of different lengths (1-line vs. multi-line subtitle+count; 0-,
+   1- or 3-line footers), so without this their list areas start - and their
+   footers sit - at different heights and the row looks ragged. Reserve a
+   consistent minimum height for the header and footer bands so, across the row,
+   all four lists START at the same Y and all footers align near the bottom.
+   Shorter headers/footers simply get some empty space. Scoped to >=760px (the
+   grid is multi-column there); below that the grid reflows to one column where
+   each panel stands alone, so fixed band heights would only add dead space -
+   mobile is left to flow naturally. */
+@media (min-width: 760px) {
+  .ip-head { min-height: 170px; }
+  .ip-foot { min-height: 27px; }
+}
 
 /* Login */
 body.login {

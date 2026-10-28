@@ -1008,25 +1008,26 @@ function renderInProgress(d) {
       emptyRow = t("inflight.upgrade.none");
     } else {
       cls = "info";
-      // The scan progress bar + "upgraded" count are the panel's content rows.
+      // The scan progress bar + "upgraded" count are run status, not per-file
+      // entries, so they belong in the non-scrolling header (like the count
+      // lines on the other panels). The list area holds only the placeholder.
       if (typeof up.scan_total === "number" && up.scan_total > 0) {
         const seen = up.scan_seen || 0;
         const pct = Math.min(100, Math.round((seen / up.scan_total) * 100));
         const nf = (n) => n.toLocaleString("de-CH");
-        rows.push(`<div class="ip-row">` +
-          `<div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>` +
+        head.push(`<div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>` +
           `<span class="scan-txt">` +
           t("inflight.upgrade.progress", {seen: nf(seen), total: nf(up.scan_total), pct}) +
-          `</span></div>`);
+          `</span>`);
       }
       if (typeof up.upgraded === "number") {
-        rows.push(`<div class="ip-row">${t("inflight.upgrade.upgraded", {n: up.upgraded})}</div>`);
+        head.push(t("inflight.upgrade.upgraded", {n: up.upgraded}));
       }
-      // If neither a scan bar nor an upgraded count is present, keep a graceful
-      // list row so the box isn't empty.
-      if (!rows.length) {
-        emptyRow = t("inflight.upgrade.none");
-      }
+      // This panel has no per-file list by design (charts-upgrade reports only
+      // a last-run summary). Always show an honest placeholder in the list area
+      // so .ip-list keeps its height and the footer pins to the bottom like the
+      // sibling panels, instead of floating mid-box.
+      emptyRow = t("inflight.upgrade.placeholder");
       // "next run" is status → footer.
       if (up.next_run) {
         foot.push(`<span class="muted-txt">` +
