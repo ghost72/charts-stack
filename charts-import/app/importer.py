@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 
 from mutagen import File as MutagenFile
 
@@ -314,6 +315,13 @@ def _title_key(title: str) -> str:
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
     t = re.sub(r"\[(?:feat|ft|with)\.?[^\]]*\]", " ", t)
     t = re.sub(r"\((?:remaster|remastered|.*version|.*edit|official|audio|video|lyric[s]?)[^)]*\)", " ", t)
+    # Transliterate accents (ä -> a, é -> e) BEFORE the [a-z0-9] fold so an
+    # umlaut is folded, not dropped. Mirrors the charts-sync side
+    # (library.normalize / deezer._normalize) so both subsystems agree on the
+    # same key for 'liäbi' == 'liabi'. MATCH key only - never touches what is
+    # written to disk or tags.
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", "", t)
 
 
