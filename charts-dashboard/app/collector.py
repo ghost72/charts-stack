@@ -557,11 +557,333 @@ def _dir_stats() -> dict:
     return _stats_cache
 
 
+# ===========================================================================
+# "In progress" pipeline overview (new section). Four honestly-labelled panels:
+#   1. Active downloads (LIVE)   - slskd transfers broken out per song.
+#   2. Queue / missing (SNAPSHOT)- missing*.txt backlog (last charts-sync run).
+#   3. Quarantine / rejected     - files in /charts/_rejected + run message.
+#   4. Upgrade status (last run) - charts-upgrade scan summary.
+# Only panel 1 is truly live; panels 2-4 are snapshots / last-run records. The
+# payload names each sub-object by its nature and `active` is built on a
+# separate uncached path, so the client cannot present a snapshot as live.
+# Every sub-collector is fail-open: a source failure degrades ONE panel to an
+# honest empty/error state, never the whole dashboard. No write into /charts.
+# ===========================================================================
+
+# Missing-file line parser, re-implemented inline from
+# charts-download/app/missing.py (the repo's copy-the-small-helper pattern, like
+# quality.py/manifest.py - not a runtime import of another service).
+import glob as _glob
+import re as _re
+
+_MISSING_LINE_RE = _re.compile(r"^\s*(\d{1,3})\.\s+(.*\S)\s*$")
+
+
+def _missing_source_label(path: str) -> str:
+    """Playlist label from a missing-file path (mirrors missing.source_label).
+
+    /charts/missing.txt -> "charts", /charts/missing-<x>.txt -> "<x>".
+    """
+    base = os.path.basename(path)
+    name = base[:-4] if base.lower().endswith(".txt") else base
+    if name == "missing":
+        return "charts"
+    if name.startswith("missing-"):
+        return name[len("missing-"):]
+    return name or "charts"
+
+
+def _inflight_join_active(transfers: list, requested: dict, max_items: int) -> dict:
+    """PANEL 1 (live) data from the slskd transfer list + the download-state.
+
+    `transfers` is the parsed `GET /api/v0/transfers/downloads` body (a list of
+    users, each {username, directories:[{files:[{state, filename, size,
+    bytesTransferred}]}]}). `requested` is the `.charts-download-state.json`
+    `requested` map {key: {artist, title, username, filename}}.
+
+    A file is ACTIVE iff its lowercased state contains neither "completed" nor
+    "cancelled" - the VERBATIM predicate from _slskd_status, so panel 1's count
+    agrees with the slskd tile. Each active file is joined on (username,
+    filename) to a clean artist/title; unmatched files fall back to the bare
+    filename basename. `pct` is best-effort (null when size <= 0 / absent).
+    """
+    lookup: dict = {}
+    for v in (requested or {}).values():
+        if isinstance(v, dict):
+            lookup[(v.get("username"), v.get("filename"))] = (
+                v.get("artist"), v.get("title"))
+
+    items: list = []
+    count = 0
+    for user in transfers or []:
+        uname = user.get("username")
+        for directory in user.get("directories", []) or []:
+            for f in directory.get("files", []) or []:
+                state = (f.get("state") or "").lower()
+                if "completed" in state or "cancelled" in state:
+                    continue  # terminal -> not in progress
+                count += 1
+                if len(items) >= max_items:
+                    continue  # keep counting the true total, stop collecting
+                fn = f.get("filename") or ""
+                hit = lookup.get((uname, fn))
+                if hit and hit[0] and hit[1]:
+                    artist, title = hit[0], hit[1]
+                    label = f"{artist} \u2013 {title}"  # "Artist – Title"
+                    matched = True
+                else:
+                    artist = title = None
+                    # slskd filenames are Windows-style remote paths; split on
+                    # both separators and take the basename.
+                    label = fn.replace("\\", "/").rsplit("/", 1)[-1]
+                    matched = False
+                # pct: best-effort, guard zero/negative/absent size.
+                pct = None
+                try:
+                    size = int(f.get("size") or 0)
+                    done = int(f.get("bytesTransferred") or 0)
+                    if size > 0:
+                        pct = round(100 * done / size)
+                except (TypeError, ValueError):
+                    pct = None
+                items.append({"artist": artist, "title": title,
+                              "state": f.get("state") or "", "pct": pct,
+                              "label": label, "matched": matched})
+    return {"ok": True, "count": count, "items": items,
+            "truncated": count > max_items}
+
+
+def _inflight_parse_missing(paths: list, preview_n: int) -> dict:
+    """PANEL 2 (snapshot) data from a list of missing*.txt paths.
+
+    Per-file {source, count}, a deduped `total` (by a lightweight
+    lowercase "artist|title" key - this simpler key may OVER-count slightly
+    versus charts-download's full normalize, since fewer near-duplicates
+    collapse; acceptable for a display headline), and the first `preview_n`
+    entries in file order. A single unreadable file is skipped, not fatal.
+    Returns the dict without `snapshot_at`/`available` (the caller fills those).
+    """
+    per_source: list = []
+    preview: list = []
+    seen: set = set()
+    total = 0
+    for path in paths:
+        source = _missing_source_label(path)
+        file_count = 0
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lstrip().startswith("#") or not line.strip():
+                        continue
+                    m = _MISSING_LINE_RE.match(line)
+                    if not m:
+                        continue
+                    rest = m.group(2)
+                    if " - " not in rest:
+                        continue
+                    artist, _, title = rest.partition(" - ")
+                    artist, title = artist.strip(), title.strip()
+                    if not (artist and title):
+                        continue
+                    file_count += 1
+                    key = f"{artist.lower()}|{title.lower()}"
+                    if key not in seen:
+                        seen.add(key)
+                        total += 1
+                        if len(preview) < preview_n:
+                            preview.append({"artist": artist, "title": title})
+        except OSError:
+            continue  # skip an unreadable file, keep the rest
+        per_source.append({"source": source, "count": file_count})
+    return {"total": total, "per_source": per_source,
+            "preview": preview, "preview_n": preview_n}
+
+
+def _inflight_rejected_entries(dir_path: str, max_items: int) -> tuple[int, list]:
+    """PANEL 3 data: (count, preview) of audio files in /charts/_rejected.
+
+    Lists the directory, keeps only audio files, sorts by mtime descending and
+    keeps the newest `max_items` as {name, when: ISO}. A missing dir -> (0, []).
+    A path that vanishes between scandir and stat is skipped.
+    """
+    entries: list = []
+    try:
+        with os.scandir(dir_path) as it:
+            for entry in it:
+                try:
+                    if not entry.is_file():
+                        continue
+                    if not entry.name.lower().endswith(_AUDIO_EXT):
+                        continue  # skip .DS_Store, @eaDir junk, etc.
+                    entries.append((entry.stat().st_mtime, entry.name))
+                except OSError:
+                    continue
+    except OSError:
+        return 0, []
+    entries.sort(key=lambda e: e[0], reverse=True)
+    preview = [
+        {"name": name,
+         "when": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(mtime))}
+        for mtime, name in entries[:max_items]
+    ]
+    return len(entries), preview
+
+
+def _inflight_upgrade_fields(services: dict) -> dict:
+    """PANEL 4 (last run) data from the already-parsed charts-upgrade status."""
+    up = (services or {}).get("charts-upgrade")
+    if not isinstance(up, dict):
+        return {"scan_seen": None, "scan_total": None, "upgraded": None,
+                "status": None, "last_run_end": None, "next_run": None,
+                "available": False}
+    counters = up.get("counters") or {}
+    totals = up.get("totals") or {}
+    return {
+        "scan_seen": counters.get("scan_seen"),
+        "scan_total": counters.get("scan_total"),
+        "upgraded": totals.get("upgraded"),
+        "status": up.get("status"),
+        "last_run_end": up.get("last_run_end"),
+        "next_run": up.get("next_run"),
+        "available": True,
+    }
+
+
+def _inflight_import_message(services: dict) -> tuple[str, int | None]:
+    """PANEL 3 run-level record from the already-parsed charts-import status.
+
+    Returns (message, rejected_counter). No per-file reason exists anywhere
+    (it is log-only), so the panel shows only this run-level note + count.
+    """
+    imp = (services or {}).get("charts-import")
+    if not isinstance(imp, dict):
+        return "", None
+    counter = (imp.get("counters") or {}).get("rejected")
+    return imp.get("message") or "", counter
+
+
+# Snapshot panels (missing + quarantine) sit behind a short TTL cache, mirroring
+# the _ext_cache/_ext_ts and _stats_cache/_stats_ts pattern. The LIVE `active`
+# panel is intentionally NOT cached (rebuilt every call).
+_inflight_cache: dict | None = None
+_inflight_ts: float = 0.0
+
+
+def _inflight_active() -> dict:
+    """Build the LIVE panel 1 (uncached). Fail-open: slskd/state errors degrade
+    to an honest empty/unreachable panel, never raise."""
+    if not config.SLSKD_API_KEY:
+        return {"ok": False, "count": None, "items": [], "truncated": False}
+    base = config.SLSKD_HOST.rstrip("/")
+    headers = {"X-API-Key": config.SLSKD_API_KEY}
+    try:
+        r = httpx.get(f"{base}/api/v0/transfers/downloads",
+                      headers=headers, timeout=8)
+        r.raise_for_status()
+        transfers = r.json()
+    except Exception as e:
+        # Never log the API key - only the exception class name.
+        logger.warning(i18n.t("dashboard.inprogress.log.slskd_failed",
+                              error=e.__class__.__name__))
+        return {"ok": False, "count": None, "items": [], "truncated": False}
+    # Read the clean-label state file tolerantly (missing/corrupt -> empty).
+    requested: dict = {}
+    try:
+        state_path = os.path.join(config.CHARTS_DIR, ".charts-download-state.json")
+        with open(state_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and isinstance(data.get("requested"), dict):
+            requested = data["requested"]
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(i18n.t("dashboard.inprogress.log.state_read_failed",
+                              error=e.__class__.__name__))
+    return _inflight_join_active(transfers, requested, config.INFLIGHT_ACTIVE_MAX)
+
+
+def _inflight_snapshots() -> dict:
+    """Build the cheap SNAPSHOT panels (missing + quarantine) behind INFLIGHT_TTL."""
+    # Panel 2: missing*.txt backlog.
+    paths = sorted(_glob.glob(os.path.join(config.CHARTS_DIR, "missing*.txt")))
+    missing = _inflight_parse_missing(paths, config.INFLIGHT_MISSING_PREVIEW_N)
+    snapshot_at = None
+    newest = 0.0
+    for path in paths:
+        try:
+            mt = os.path.getmtime(path)
+            if mt > newest:
+                newest = mt
+        except OSError:
+            continue
+    if newest > 0:
+        snapshot_at = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(newest))
+    missing["snapshot_at"] = snapshot_at
+    missing["available"] = bool(paths)
+
+    # Panel 3: quarantine files (an empty quarantine is a valid, good state).
+    rejected_dir = os.path.join(config.CHARTS_DIR, "_rejected")
+    count, preview = _inflight_rejected_entries(
+        rejected_dir, config.INFLIGHT_REJECTED_PREVIEW_N)
+    rejected = {"count": count, "preview": preview,
+                "preview_n": config.INFLIGHT_REJECTED_PREVIEW_N,
+                "available": True}
+    return {"missing": missing, "rejected": rejected}
+
+
+def _inflight(services: dict) -> dict:
+    """Assemble the in-progress section. `active` is always live/uncached; the
+    snapshot panels are cached for INFLIGHT_TTL; the upgrade/import fields come
+    free from the already-parsed `services` dict. Fail-open as a whole."""
+    global _inflight_cache, _inflight_ts
+    try:
+        active = _inflight_active()
+
+        now = time.time()
+        if _inflight_cache is not None and (now - _inflight_ts) < config.INFLIGHT_TTL:
+            snapshots = _inflight_cache
+        else:
+            snapshots = _inflight_snapshots()
+            _inflight_cache = snapshots
+            _inflight_ts = now
+
+        rejected = dict(snapshots["rejected"])
+        message, counter = _inflight_import_message(services)
+        rejected["message"] = message
+        rejected["counter"] = counter
+
+        return {
+            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "active": active,
+            "missing": snapshots["missing"],
+            "rejected": rejected,
+            "upgrade": _inflight_upgrade_fields(services),
+        }
+    except Exception as e:  # pragma: no cover - last-resort safety net
+        logger.warning(i18n.t("dashboard.inprogress.log.slskd_failed",
+                              error=e.__class__.__name__))
+        return {
+            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "active": {"ok": False, "count": None, "items": [], "truncated": False},
+            "missing": {"total": 0, "per_source": [], "preview": [],
+                        "preview_n": config.INFLIGHT_MISSING_PREVIEW_N,
+                        "snapshot_at": None, "available": False},
+            "rejected": {"count": 0, "preview": [],
+                         "preview_n": config.INFLIGHT_REJECTED_PREVIEW_N,
+                         "message": "", "counter": None, "available": True},
+            "upgrade": {"scan_seen": None, "scan_total": None, "upgraded": None,
+                        "status": None, "last_run_end": None, "next_run": None,
+                        "available": False},
+        }
+
+
 def collect() -> dict:
     """Assemble the complete dashboard state."""
+    # Capture the status dict once and reuse it for both the "services" key and
+    # the in-progress panels (panels 3+4 read charts-import/charts-upgrade from
+    # it - no extra file read).
+    services = _read_status_files()
     return {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "services": _read_status_files(),
+        "services": services,
         "containers": _container_states(),
         "slskd": _slskd_status(),
         "lidarr": _lidarr_status(),
@@ -569,4 +891,5 @@ def collect() -> dict:
         # validate call) instead of a pure config flag.
         "external": _external_status(),
         "storage": _dir_stats(),
+        "inflight": _inflight(services),
     }
