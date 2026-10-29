@@ -319,14 +319,22 @@ b { font-weight: 600; }
 .ip-head .line { font-size: .78rem; margin: 2px 0; line-height: 1.25; }
 /* The scrollable middle. Fixed max-height so ~4-5 rows show before a thin
    scrollbar appears; a small min-height keeps a near-empty panel from being
-   much shorter than a full one, so the four panels stay visually balanced. */
+   much shorter than a full one, so the four panels stay visually balanced.
+   A subtle 1px border + small radius delineate the scroll box as its own tile
+   (matching the dark-theme card border vocabulary, rgba(255,255,255,.12)); the
+   border lives on this container so it stays fixed while rows scroll inside.
+   The global box-sizing:border-box absorbs the 1px border into the min/max
+   height caps, so the box doesn't grow and the four lists stay equal height. */
 .ip-list {
   flex: 1 1 auto;
   min-height: 56px;
   max-height: 132px;
   overflow-y: auto;
   margin: 6px 0;
-  padding-right: 4px; /* breathing room so rows don't sit under the scrollbar */
+  padding: 6px 8px; /* uniform breathing room so rows don't touch the border/scrollbar */
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .12); /* subtle inset to help delineate the box */
   /* Fine scrollbar (Firefox). */
   scrollbar-width: thin;
   scrollbar-color: #4a4160 transparent;
