@@ -36,6 +36,8 @@ from .i18n import t
 logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://api.deezer.com/search"
+_ALBUM_URL = "https://api.deezer.com/album"
+_TRACK_URL = "https://api.deezer.com/track"
 
 # --- Normalization (identical to charts-flashback/charts-sync library.py) ---
 _NOISE_PATTERNS = [
@@ -130,13 +132,16 @@ def _passes(a_score: int, t_score: int) -> bool:
     return False
 
 
-def _best_canonical(data: list, raw_artist: str, raw_title: str):
-    """Best reliable Deezer hit (per _passes) or None."""
+def _ranked_items(data: list, raw_artist: str, raw_title: str) -> list:
+    """
+    All passing Deezer items (per _passes), ranked best-first by combined score.
+    Returns a list of (combined_score, item_dict). The EXACT scoring the casing
+    resolver uses - so _best_item and resolve_release_meta share one ranking.
+    """
     n_raw_artist = _normalize(raw_artist)
     n_raw_title = _normalize(raw_title)
     n_raw_title_stripped = _normalize(_strip_trailing_paren(raw_title))
-    best = None
-    best_score = -1
+    ranked: list[tuple[int, dict]] = []
     for item in data:
         if not isinstance(item, dict):
             continue
@@ -154,11 +159,28 @@ def _best_canonical(data: list, raw_artist: str, raw_title: str):
             _similarity(n_cand_title, n_raw_title_stripped),
         )
         if _passes(a_score, t_score):
-            combined = a_score + t_score
-            if combined > best_score:
-                best_score = combined
-                best = (cand_artist, cand_title)
-    return best
+            ranked.append((a_score + t_score, item))
+    ranked.sort(key=lambda r: r[0], reverse=True)
+    return ranked
+
+
+def _best_item(data: list, raw_artist: str, raw_title: str) -> "dict | None":
+    """Best reliable Deezer hit item dict (per _passes) or None."""
+    ranked = _ranked_items(data, raw_artist, raw_title)
+    return ranked[0][1] if ranked else None
+
+
+def _best_canonical(data: list, raw_artist: str, raw_title: str):
+    """
+    Best reliable Deezer hit as (artist, title) or None. Thin wrapper over
+    _best_item - public behaviour of resolve_canonical is unchanged.
+    """
+    item = _best_item(data, raw_artist, raw_title)
+    if not item:
+        return None
+    cand_artist = ((item.get("artist") or {}).get("name") or "").strip()
+    cand_title = (item.get("title_short") or item.get("title") or "").strip()
+    return cand_artist, cand_title
 
 
 def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
@@ -218,3 +240,133 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
         cache[k] = [result[0], result[1]]
         _save_cache()
     return result
+
+
+# --- Import-time release-metadata resolver ----------------------------------
+# resolve_release_meta resolves release year + a real (non-compilation) album +
+# album year + track number for a song so EVERY imported song is tagged
+# uniformly. It reuses the casing matcher's ranking (_ranked_items / _best_item)
+# and does two bounded detail GETs (/album/<id>, /track/<id>) only after a
+# non-compilation album has been selected. Results (including a miss) are cached
+# under a "meta|" key namespace in DEEZER_CACHE_FILE, separate from the
+# resolve_canonical [artist, title] list entries, so a cache hit needs no
+# network at all. Fail-open (no cache) on network/HTTP/parse/API error.
+
+_META_PREFIX = "meta|"
+
+
+def _meta_key(artist: str, title: str) -> str:
+    return _META_PREFIX + f"{artist.lower()}|{title.lower()}"
+
+
+def _parse_year(value: str) -> str:
+    """Leading 4-digit year of a 'YYYY-MM-DD' date string, else ""."""
+    if value and len(value) >= 4 and value[:4].isdigit():
+        return value[:4]
+    return ""
+
+
+def _get_json(client, url: str) -> "dict | None":
+    """One GET returning the parsed JSON dict, or None on error/API-error."""
+    resp = client.get(url)
+    resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, dict) or payload.get("error"):
+        return None
+    return payload
+
+
+def resolve_release_meta(artist: str, title: str):
+    """
+    Resolve (year, album, album_year, track) for a song via Deezer. Returns a
+    resolve.ResolvedMeta; an all-empty one on no reliable hit / network error
+    (fail-open). Respects the per-pass Deezer live-lookup budget. The album is
+    dropped (="") when the only candidates are compilations so the importer
+    keeps album=title.
+    """
+    from . import resolve  # lazy to avoid an import cycle at module load
+
+    if not config.DEEZER_CANONICAL_ENABLED:
+        return resolve.ResolvedMeta()
+    a = (artist or "").strip()
+    ti = (title or "").strip()
+    if not a or not ti or a.lower() == "unknown artist" or ti.lower() == "unknown album":
+        return resolve.ResolvedMeta()
+
+    cache = _load_cache()
+    mk = _meta_key(a, ti)
+    if mk in cache:
+        cached = cache[mk]
+        if isinstance(cached, list) and len(cached) == 4:
+            return resolve.ResolvedMeta(year=cached[0], album=cached[1],
+                                        album_year=cached[2], track=cached[3])
+        return resolve.ResolvedMeta()  # cached miss ([])
+
+    # A live lookup is needed - respect the per-pass cap (cache hits above never
+    # reach here).
+    if not resolve.deezer_budget_available():
+        return resolve.ResolvedMeta()
+    resolve.note_deezer_live()
+
+    year = album = album_year = track = ""
+    cacheable = False
+    try:
+        with httpx.Client(timeout=config.HTTP_TIMEOUT, follow_redirects=True) as client:
+            resp = client.get(_SEARCH_URL, params={"q": f"{a} {ti}"})
+            resp.raise_for_status()
+            payload = resp.json()
+            if isinstance(payload, dict) and payload.get("error"):
+                # API error (rate limit/quota) -> NOT a reliable miss, don't cache.
+                logger.debug(t("import.deezer.api_error", artist=a, title=ti,
+                               error=payload["error"]))
+                return resolve.ResolvedMeta()
+            data = payload.get("data", []) if isinstance(payload, dict) else []
+            # The API answered cleanly -> the result (hit OR miss) is cacheable.
+            cacheable = True
+            ranked = _ranked_items(data, a, ti)
+            # Walk down to the first candidate whose album is NOT a compilation.
+            chosen = None
+            for _score, item in ranked:
+                alb = (item.get("album") or {})
+                alb_title = (alb.get("title") or "").strip()
+                if alb_title and resolve.is_compilation_title(alb_title):
+                    continue  # skip a compilation album
+                chosen = item
+                break
+            if chosen is None and ranked:
+                # Only compilations matched: keep year/track from the best hit
+                # but leave album empty (importer keeps album=title).
+                chosen = ranked[0][1]
+                album = ""
+            if chosen is not None:
+                alb = (chosen.get("album") or {})
+                alb_title = (alb.get("title") or "").strip()
+                if alb_title and not resolve.is_compilation_title(alb_title):
+                    album = alb_title
+                # Album detail GET -> album_year.
+                album_id = alb.get("id")
+                if album_id:
+                    adata = _get_json(client, f"{_ALBUM_URL}/{album_id}")
+                    if adata:
+                        album_year = _parse_year(adata.get("release_date") or "")
+                # Track detail GET -> track year (preferred) + track position.
+                track_id = chosen.get("id")
+                if track_id:
+                    tdata = _get_json(client, f"{_TRACK_URL}/{track_id}")
+                    if tdata:
+                        year = _parse_year(tdata.get("release_date") or "")
+                        pos = tdata.get("track_position")
+                        if isinstance(pos, int) and pos > 0:
+                            track = str(pos)
+                # Fall back to the album year for the written date.
+                if not year:
+                    year = album_year
+    except (httpx.HTTPError, ValueError) as e:
+        logger.debug(t("import.deezer.lookup_failed", artist=a, title=ti, error=e))
+        return resolve.ResolvedMeta()
+
+    if cacheable:
+        cache[mk] = [year, album, album_year, track]
+        _save_cache()
+    return resolve.ResolvedMeta(year=year, album=album, album_year=album_year,
+                                track=track)

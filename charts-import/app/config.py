@@ -207,6 +207,25 @@ MB_SCORE_MIN = _get_int("MB_SCORE_MIN", 90)
 # copied _load_cache/_save_cache work unedited.
 MB_CACHE_FILE = os.path.join(DOWNLOADS_DIR, ".charts-import-mbcache.json")
 
+# --- Import-time metadata resolver (Deezer -> MusicBrainz) ---
+# At import time charts-import resolves the release year + a real (non-
+# compilation) album + album year + track number for EVERY manifest song
+# (Deezer first, MusicBrainz as a fallback, both fail-open) and writes them
+# uniformly, so no source lands with a missing year or a sampler album. The
+# deferred MB year backfill above stays the last-resort net.
+# Master switch (0 = resolver off -> today's free-year-only + backfill
+# behavior).
+IMPORT_RESOLVE_ENABLED = _get_bool("IMPORT_RESOLVE_ENABLED", True)
+# Per-pass cap on LIVE Deezer meta lookups (search + up to two detail GETs per
+# song). Bounds the one-off cold-cache cost of a large backlog; cache hits do
+# not count. Past the cap the resolver skips Deezer for the rest of the pass
+# (song falls to MB-within-budget or to pending).
+IMPORT_DEEZER_RESOLVE_LIMIT = _get_int("IMPORT_DEEZER_RESOLVE_LIMIT", 150)
+# Per-pass cap on LIVE MusicBrainz meta lookups (~1.1s each). Past the cap the
+# resolver skips MB (Deezer-only) and the song falls to the pending marker,
+# which the deferred backfill still resolves. Cache hits do not count.
+IMPORT_MB_RESOLVE_LIMIT = _get_int("IMPORT_MB_RESOLVE_LIMIT", 25)
+
 # --- File types ---
 # File extensions considered music files (identical to charts-sync).
 AUDIO_EXTENSIONS = {

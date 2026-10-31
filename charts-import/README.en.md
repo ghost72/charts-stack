@@ -321,6 +321,28 @@ Determines artist/album/title in this order:
    `YEAR_BACKFILL_ENABLED`, `YEAR_BACKFILL_LIMIT`, `YEAR_BACKFILL_MAX_TRIES`
    (see `.env.example`). The year thus lives **only** in the tag, **never** in
    the file/folder name; an existing good year is never overwritten by a guess.
+
+   **Import-time metadata resolver (uniform clean tagging across all sources):**
+   on top of the free-year precedence, charts-import runs a per-song resolver at
+   import time (`app/resolve.py`) that looks up the release **year**, a real
+   **(non-compilation) album**, the album year and a **track number** — **Deezer
+   first, MusicBrainz as a fallback**, both fail-open (a lookup never raises into
+   the import). Because every source (charts-download, Request, Upload, YouTube,
+   and upgrade replaces) passes through the one import block, the tagging is
+   uniform by construction — the same clean year/album/track is written no matter
+   where the file came from. Compilation/sampler album titles are rejected via a
+   title-safe heuristic (`is_compilation_title`) so a single keeps its real album
+   or the song title, never a "Bravo Hits"-style sampler name. For an
+   **upgrade** (a better file replacing an existing one) the old file's year and
+   album are captured **before** it is trashed and used as a "never worse" floor,
+   so a missed fresh lookup never leaves the replacement with fewer populated
+   fields than before. The resolver only ever *clears* a stale embedded date; it
+   never adopts the file's own date. All writes keep the mtime stable (Navidrome
+   "date added" is unchanged). Knobs: `IMPORT_RESOLVE_ENABLED` (master switch,
+   default on), `IMPORT_DEEZER_RESOLVE_LIMIT` (per-pass live Deezer lookup cap,
+   default 150), `IMPORT_MB_RESOLVE_LIMIT` (per-pass live MusicBrainz lookup cap,
+   default 25); `MB_ENABLED=0` disables the MusicBrainz fallback. Cache hits
+   never count against the caps (results are cached under a `meta|` key).
 2. **File tags** (`mutagen`, `albumartist` preferred).
 3. **Fallback** to the filename or `Unknown Artist` / `Unknown Album`.
 
@@ -761,6 +783,14 @@ Then trigger a Navidrome scan so the cleaned tags become visible.
 ```bash
 sudo docker compose up -d --build
 ```
+
+For the import-time metadata resolver + uniform clean tagging change, rebuild
+**charts-import** (resolver/tags/importer/config/provenance) and
+**charts-songrequest** (it drops the yt-dlp `FFmpegMetadata` date in
+`youtube.py`) with `docker compose build --no-cache <service>`;
+charts-download and charts-upgrade need **no** rebuild (no app change). After
+copying the updated `lang/{en,de,fr}.json` into the bind mount, restart both so
+the i18n table reloads: `docker restart charts-import charts-songrequest`.
 
 **Stop / remove:**
 

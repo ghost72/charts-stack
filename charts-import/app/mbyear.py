@@ -87,12 +87,11 @@ def _parse_year(value: str) -> int | None:
     return None
 
 
-def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
+def _mb_fetch(artist: str, title: str) -> "tuple[dict, bool]":
     """
-    Ask MusicBrainz for the earliest studio release year.
-    Returns: (year, ok). year = "YYYY" or "" (no usable hit).
-    ok = True when MusicBrainz answered cleanly (result solid, including an
-    empty one); ok = False on network/HTTP/parse error (transient -> do NOT
+    One rate-limited MusicBrainz recording search. Returns (data, ok): `data` is
+    the parsed JSON dict (empty on error); ok = True when MusicBrainz answered
+    cleanly, False on network/HTTP/parse error (transient -> callers do NOT
     cache so the next run asks again).
     """
     q = f'recording:"{_lucene_phrase(title)}" AND artist:"{_lucene_phrase(artist)}"'
@@ -109,8 +108,16 @@ def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
     except (httpx.HTTPError, ValueError) as e:
         logger.debug(t("import.yearfill.mb_lookup_failed", artist=artist,
                        title=title, error=e))
-        return "", False
+        return {}, False
+    return (data if isinstance(data, dict) else {}), True
 
+
+def _reduce_year(data: dict) -> str:
+    """
+    Pure reducer: earliest studio release year from an MB recording-search dict.
+    Returns "YYYY" or "" (no usable hit). Unchanged from the original _mb_year
+    logic.
+    """
     years: list[int] = []
     for rec in data.get("recordings", []):
         if not isinstance(rec, dict):
@@ -136,11 +143,111 @@ def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
                     gy = _parse_year(rg.get("first-release-date") or "")
                     if gy:
                         years.append(gy)
-    # API answered cleanly -> ok=True, even when no year was found (a real
-    # miss, may be cached).
     if not years:
-        return "", True
-    return str(min(years)), True
+        return ""
+    return str(min(years))
+
+
+def _mb_year(artist: str, title: str) -> "tuple[str, bool]":
+    """
+    Ask MusicBrainz for the earliest studio release year.
+    Returns: (year, ok). year = "YYYY" or "" (no usable hit).
+    ok = True when MusicBrainz answered cleanly (result solid, including an
+    empty one); ok = False on network/HTTP/parse error (transient -> do NOT
+    cache so the next run asks again). Behaviour-identical to the original: now
+    composed from _mb_fetch + _reduce_year.
+    """
+    data, ok = _mb_fetch(artist, title)
+    if not ok:
+        return "", False
+    return _reduce_year(data), True
+
+
+def _reduce_album(data: dict) -> "tuple[str, str]":
+    """
+    Pure reducer: pick a real (non-compilation) album title + its year from an
+    MB recording-search dict. Prefers a release-group of primary-type "Single",
+    else the earliest "Album". Returns (album_title, album_year) or ("", "")
+    when nothing suitable is found. A compilation title is dropped (reject ->
+    "") so the importer keeps album=title. Never raises.
+    """
+    from . import resolve  # lazy to avoid an import cycle at module load
+
+    # Collect candidate (sort_year, is_single, title, year) tuples from releases
+    # on recordings that pass the score + disambiguation gates.
+    candidates: list[tuple[int, int, str, str]] = []
+    for rec in data.get("recordings", []):
+        if not isinstance(rec, dict):
+            continue
+        if (rec.get("score") or 0) < config.MB_SCORE_MIN:
+            continue
+        dis = (rec.get("disambiguation") or "").lower()
+        if any(w in dis for w in _EXCLUDE):
+            continue
+        for rel in rec.get("releases", []) or []:
+            if not isinstance(rel, dict):
+                continue
+            title = (rel.get("title") or "").strip()
+            if not title:
+                continue
+            ry = _parse_year(rel.get("date") or "")
+            rg = rel.get("release-group") if isinstance(rel, dict) else None
+            primary = ""
+            if isinstance(rg, dict):
+                primary = (rg.get("primary-type") or "").strip().lower()
+                if not ry:
+                    ry = _parse_year(rg.get("first-release-date") or "")
+            is_single = 1 if primary == "single" else 0
+            # Sort year: a missing year sinks to the end.
+            sort_year = ry if ry else 9999
+            candidates.append((sort_year, is_single, title, str(ry) if ry else ""))
+
+    if not candidates:
+        return "", ""
+    # Prefer a Single release-group; within that prefer the earliest year. If no
+    # single exists, take the earliest Album/other. (-is_single so singles sort
+    # first; then earliest year.)
+    candidates.sort(key=lambda c: (-c[1], c[0]))
+    _, _, album_title, album_year = candidates[0]
+    if resolve.is_compilation_title(album_title):
+        return "", ""
+    return album_title, album_year
+
+
+def resolve_mb_meta(artist: str, title: str) -> "resolve.ResolvedMeta":
+    """
+    Resolve (year + album + album_year) from MusicBrainz, fail-open to an
+    all-empty ResolvedMeta. MB never supplies a track number (track always "").
+    Cached in MB_CACHE_FILE under a "meta|"-prefixed key (separate from the
+    year-only cache the backfill relies on); a transient error is NOT cached.
+    Respects MB_ENABLED and the per-pass live-lookup budget.
+    """
+    from . import resolve  # lazy: resolve imports nothing heavy from here
+
+    if not (config.MB_ENABLED and artist and title):
+        return resolve.ResolvedMeta()
+    cache = _load_cache()
+    ckey = "meta|" + _key(artist, title)
+    if ckey in cache:
+        cached = cache[ckey]
+        if isinstance(cached, list) and len(cached) == 3:
+            return resolve.ResolvedMeta(year=cached[0], album=cached[1],
+                                        album_year=cached[2], track="")
+        return resolve.ResolvedMeta()  # cached miss
+    # Respect the per-pass cap on LIVE MB lookups.
+    if not resolve.mb_budget_available():
+        return resolve.ResolvedMeta()
+    resolve.note_mb_live()
+    data, ok = _mb_fetch(artist, title)
+    if not ok:
+        return resolve.ResolvedMeta()  # transient -> not cached
+    year = _reduce_year(data)
+    album, album_year = _reduce_album(data)
+    # Cache the reliable three-field tuple (a real miss "" too).
+    cache[ckey] = [year, album, album_year]
+    _save_cache()
+    return resolve.ResolvedMeta(year=year, album=album, album_year=album_year,
+                                track="")
 
 
 def resolve_mb_year(artist: str, title: str) -> "tuple[str, bool, bool]":

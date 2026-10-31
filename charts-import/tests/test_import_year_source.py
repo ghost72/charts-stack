@@ -53,6 +53,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(importer, "_append_import_log", lambda *a, **k: None)
     # No cached miss unless a test says so.
     monkeypatch.setattr(importer.mbyear, "is_cached_miss", lambda a, t: False)
+    # By default the import-time resolver MISSES (empty meta) so the free-year
+    # precedence is exercised in isolation and no network is touched. Individual
+    # tests override this to assert the resolver tier.
+    monkeypatch.setattr(importer.resolve, "resolve_metadata",
+                        lambda a, t: importer.resolve.ResolvedMeta())
 
     return {"music": music, "downloads": downloads, "year_map": year_map,
             "monkeypatch": monkeypatch}
@@ -180,7 +185,7 @@ def test_first_import_no_match_goes_pending(env):
 
 def test_download_embedded_date_not_trusted(env):
     # The fresh download carries an (untrusted) embedded date; import must still
-    # go generic-pending and NOT adopt that date.
+    # go generic-pending, ACTIVELY CLEAR that date, and NOT adopt it.
     _make_download(env, year_in_tag="2008")
     target = str(env["music"] / "Rando" / "Mystery" / "Mystery.mp3")
     _stub_target(env, "Rando", "Mystery", "Mystery", target)
@@ -188,8 +193,163 @@ def test_download_embedded_date_not_trusted(env):
     env["monkeypatch"].setattr(importer, "_song_present_for_artist",
                                lambda md, a, t: None)
     importer.import_downloads()
+    assert _read_date(target) == ""  # the stale 2008 date was actively removed
     m = _read_map(env)["rando|mystery"]
     assert m["pending"] is True and m["year"] == ""  # date NOT adopted
+
+
+def test_no_year_clear_is_noop_without_date(env):
+    # A no-year import of a file with no date must not throw and leaves no date.
+    _make_download(env)  # no embedded date
+    target = str(env["music"] / "Plain" / "Track" / "Track.mp3")
+    _stub_target(env, "Plain", "Track", "Track", target)
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    importer.import_downloads()
+    assert _read_date(target) == ""
+
+
+# --- (d) resolver tier writes year + album + track when map/folder empty ----
+
+def _read_tag(path, key):
+    from mutagen import File as MutagenFile
+    audio = MutagenFile(path, easy=True)
+    return (audio.get(key) or [""])[0]
+
+
+def test_resolver_tier_writes_year_album_track(env):
+    _make_download(env)
+    target = str(env["music"] / "Vanessa Paradis" / "Joe le taxi" / "Joe le taxi.mp3")
+    _stub_target(env, "Vanessa Paradis", "Joe le taxi", "Joe le taxi", target)
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(
+        importer.resolve, "resolve_metadata",
+        lambda a, t: importer.resolve.ResolvedMeta(
+            year="1987", album="M&J", album_year="1988", track="3"))
+    importer.import_downloads()
+    assert _read_date(target) == "1987"
+    assert _read_tag(target, "album") == "M&J"
+    assert _read_tag(target, "tracknumber") == "3"
+    # Resolved -> no pending marker.
+    assert "vanessa paradis|joe le taxi" not in _read_map(env)
+
+
+def test_map_year_wins_but_resolver_album_track_applied(env):
+    _make_download(env)
+    target = str(env["music"] / "Queen" / "Radio Ga Ga" / "Radio Ga Ga.mp3")
+    _stub_target(env, "Queen", "Radio Ga Ga", "Radio Ga Ga", target)
+    env["year_map"].write_text(
+        json.dumps({"queen|radio ga ga": "1984"}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(
+        importer.resolve, "resolve_metadata",
+        lambda a, t: importer.resolve.ResolvedMeta(
+            year="1999", album="The Works", album_year="1984", track="2"))
+    importer.import_downloads()
+    # Map year wins over the resolver year ...
+    assert _read_date(target) == "1984"
+    # ... while the resolver album + track are still applied.
+    assert _read_tag(target, "album") == "The Works"
+    assert _read_tag(target, "tracknumber") == "2"
+
+
+def test_resolver_compilation_album_not_applied(env):
+    _make_download(env)
+    target = str(env["music"] / "Some Act" / "Hit" / "Hit.mp3")
+    _stub_target(env, "Some Act", "Hit", "Hit", target)
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(
+        importer.resolve, "resolve_metadata",
+        lambda a, t: importer.resolve.ResolvedMeta(
+            year="2001", album="Bravo Hits 42", album_year="2001", track=""))
+    importer.import_downloads()
+    assert _read_date(target) == "2001"
+    # A compilation album is rejected -> album stays the title.
+    assert _read_tag(target, "album") == "Hit"
+
+
+def test_resolver_album_year_fallback(env):
+    # No year/map/folder, resolver has no track year but an album_year -> used
+    # as the date (Decision 6 fallback).
+    _make_download(env)
+    target = str(env["music"] / "Act2" / "Song2" / "Song2.mp3")
+    _stub_target(env, "Act2", "Song2", "Song2", target)
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(
+        importer.resolve, "resolve_metadata",
+        lambda a, t: importer.resolve.ResolvedMeta(
+            year="", album="Real Album", album_year="1995", track=""))
+    importer.import_downloads()
+    assert _read_date(target) == "1995"
+    assert _read_tag(target, "album") == "Real Album"
+    assert "act2|song2" not in _read_map(env)  # resolved -> no pending
+
+
+def test_resolver_error_never_throws_goes_pending(env):
+    # A resolver that raises is wrapped elsewhere, but even if resolve_metadata
+    # returns empty the import completes and the song goes pending.
+    _make_download(env)
+    target = str(env["music"] / "Act3" / "Song3" / "Song3.mp3")
+    _stub_target(env, "Act3", "Song3", "Song3", target)
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(importer.resolve, "resolve_metadata",
+                               lambda a, t: importer.resolve.ResolvedMeta())
+    importer.import_downloads()
+    assert _read_date(target) == ""
+    assert _read_map(env)["act3|song3"]["pending"] is True
+
+
+def test_uniform_tagging_across_sources(env):
+    # Two songs with DIFFERENT manifest source values get identically clean
+    # tagging via the one shared block.
+    env["year_map"].write_text(json.dumps({}), encoding="utf-8")
+    env["monkeypatch"].setattr(importer, "_song_present_for_artist",
+                               lambda md, a, t: None)
+    env["monkeypatch"].setattr(
+        importer.resolve, "resolve_metadata",
+        lambda a, t: importer.resolve.ResolvedMeta(
+            year="2010", album=f"Alb {a}", album_year="2010", track="1"))
+    for name, src_label, artist in (("a.mp3", "charts", "Aaa"),
+                                     ("b.mp3", "youtube", "Bbb")):
+        _make_download(env, name=name)
+    results = {}
+    # Rebuild stubs per song via a dispatch on path basename.
+    import os as _os
+
+    def _bt(music_dir, path):
+        base = _os.path.basename(path)
+        if base == "a.mp3":
+            tgt = str(env["music"] / "Aaa" / "S" / "S.mp3")
+            return tgt, ("Aaa", "S", "S", True, False)
+        tgt = str(env["music"] / "Bbb" / "S" / "S.mp3")
+        return tgt, ("Bbb", "S", "S", True, False)
+
+    def _ml(path):
+        base = _os.path.basename(path)
+        if base == "a.mp3":
+            return {"artist": "Aaa", "title": "S", "album": "S", "source": "charts"}
+        return {"artist": "Bbb", "title": "S", "album": "S", "source": "youtube"}
+
+    env["monkeypatch"].setattr(tags, "build_target_path", _bt)
+    env["monkeypatch"].setattr(tags, "manifest_lookup", _ml)
+    importer.import_downloads()
+    for artist in ("Aaa", "Bbb"):
+        tgt = str(env["music"] / artist / "S" / "S.mp3")
+        assert _read_date(tgt) == "2010"
+        assert _read_tag(tgt, "album") == f"Alb {artist}"
+        assert _read_tag(tgt, "tracknumber") == "1"
+        results[artist] = True
+    assert results == {"Aaa": True, "Bbb": True}
 
 
 # --- cached-miss guard suppresses the marker --------------------------------
