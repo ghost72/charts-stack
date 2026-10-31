@@ -343,6 +343,59 @@ def test_recorrect_heuristic_requires_strictly_earlier_year(mp3):
     assert _read_easy(mp3, "album") == "Rumours (Deluxe Edition)"
 
 
+# --- 13b. re-correction: BAD targets never overwrite (conservative) ---------
+
+@pytest.mark.parametrize("bad_album", [
+    "Super Slows: De grootste Slows aller tijden",
+    "Beautiful Duets",
+    "Der Neue Deutsche Welle Mix",
+    "Electronic Pleasure 2",
+    "2 Meter Sessies: De beste allertijden",
+    "Jumpin' Jive Volume 4",
+    "Twelve Deadly Cyns...And Then Some",
+    "A New Day...Live In Las Vegas",
+    "Parts of the Process",
+])
+def test_recorrect_rejects_bad_resolved_targets(mp3, bad_album):
+    # Every BAD album target from the live dry-run must produce NO album change
+    # even on a marker-stamped (eligible) file: the conservative gate rejects a
+    # compilation / live / best-of resolved target and keeps the present album.
+    _tag(mp3, artist="A", title="T", album="The Real Original", date="1990")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run_rc(mp3, ResolvedMeta(year="1988", album=bad_album,
+                                    album_year="1988", track=""))
+    assert res.album_recorrected is False, bad_album
+    assert _read_easy(mp3, "album") == "The Real Original", bad_album
+
+
+def test_recorrect_rejects_title_equals_resolved_album(mp3):
+    # "Push The Feeling On -> Push The Feeling On": a resolved album that merely
+    # equals the song TITLE is the single-as-album placeholder, never a valid
+    # re-correction target. The present album must be kept.
+    _tag(mp3, artist="A", title="Push The Feeling On",
+         album="The Real Original", date="1994")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run_rc(mp3, ResolvedMeta(year="1994", album="Push The Feeling On",
+                                    album_year="1994", track="1"))
+    assert res.album_recorrected is False
+    assert _read_easy(mp3, "album") == "The Real Original"
+
+
+@pytest.mark.parametrize("good_album", [
+    "Synkronized", "Stadium Arcadium", "In Between Dreams",
+    "Queen Of The Clouds", "On The 6",
+])
+def test_recorrect_accepts_good_resolved_targets(mp3, good_album):
+    # The GOOD originals must STILL overwrite a marker-stamped present album, so
+    # the feature keeps fixing the genuinely-wrong albums it was built for.
+    _tag(mp3, artist="A", title="T", album="Some Live Album", date="2005")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run_rc(mp3, ResolvedMeta(year="1998", album=good_album,
+                                    album_year="1998", track=""))
+    assert res.album_recorrected is True, good_album
+    assert _read_easy(mp3, "album") == good_album, good_album
+
+
 # --- 14. mtime preserved on a recorrect write (NFR1) ------------------------
 
 def test_recorrect_write_preserves_mtime(mp3):

@@ -55,6 +55,71 @@ def test_is_compilation_title_flags_observed_best_of_editions():
         assert resolve.is_compilation_title(title) is True, title
 
 
+def test_recorrect_bad_targets_rejected():
+    """
+    The BAD album targets observed in the live --recorrect-albums dry-run over
+    the real NAS library (task "recorrect-conservative"). Each is a
+    compilation / live / best-of / duets / wrong album that MUST be rejected as
+    a re-correction target (so the present album is left unchanged). A target is
+    rejected when is_compilation_title OR is_secondary_edition_title fires - the
+    exact gate apply_backfill's resolved_album_is_original uses.
+    ("Push The Feeling On" is a title-equals-track placeholder; it is rejected
+    by the title-equals-title guard in apply_backfill, tested separately in
+    test_metadata_backfill.py.)
+    """
+    bad_targets = (
+        "Super Slows: De grootste Slows aller tijden",   # Dutch "of all time"
+        "Beautiful Duets",                               # duets compilation
+        "Der Neue Deutsche Welle Mix",                   # NDW mix sampler
+        "Electronic Pleasure 2",                         # sampler series
+        "2 Meter Sessies: De beste allertijden",         # Dutch sessions comp
+        "Jumpin' Jive Volume 4",                         # Vol.N sampler series
+        "Twelve Deadly Cyns...And Then Some",            # best-of
+        "A New Day...Live In Las Vegas",                 # live album
+        "Parts of the Process",                          # best-of comp
+    )
+    for title in bad_targets:
+        rejected = (resolve.is_compilation_title(title)
+                    or resolve.is_secondary_edition_title(title))
+        assert rejected is True, title
+
+
+def test_recorrect_good_targets_still_accepted():
+    """
+    The GOOD originals from the same dry-run: real studio albums that MUST
+    still be accepted (neither a compilation nor a secondary edition), so the
+    feature keeps correcting the genuinely-wrong albums it was built for.
+    """
+    good_targets = (
+        "Synkronized", "Stadium Arcadium", "In Between Dreams",
+        "Queen Of The Clouds", "On The 6",
+    )
+    for title in good_targets:
+        assert resolve.is_compilation_title(title) is False, title
+        assert resolve.is_secondary_edition_title(title) is False, title
+
+
+def test_compilation_volume_token_requires_number():
+    # "Volume N"/"Vol. N" is a sampler-series signal only when the volume word
+    # is a whole token FOLLOWED by a number. A one-off real album literally
+    # called just "Volume" (no number) must NOT be flagged.
+    for yes in ("Jumpin' Jive Volume 4", "Dance Mix Vol. 2", "Hits Vol 3"):
+        assert resolve.is_compilation_title(yes) is True, yes
+    for no in ("Volume", "Revolution", "Volumes"):
+        assert resolve.is_compilation_title(no) is False, no
+
+
+def test_live_in_phrase_demotes_but_not_living():
+    # "live in"/"live at"/"live from" mid-title phrases demote (secondary), but
+    # must never fire on "Living in a Box" / "Live It Up" / "Alive" (the GOOD
+    # dry-run titles that merely contain the letters).
+    for yes in ("A New Day...Live In Las Vegas", "Live At Wembley",
+                "Unplugged: Live From New York"):
+        assert resolve.is_secondary_edition_title(yes) is True, yes
+    for no in ("Living in a Box", "Live It Up", "Alive", "Living in America"):
+        assert resolve.is_secondary_edition_title(no) is False, no
+
+
 def test_is_compilation_title_year_range_marker():
     # A span of years in the title is a reliable compilation signal (checked on
     # the raw title, before normalization collapses the hyphen).

@@ -234,7 +234,15 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
         resolved_album
         and not resolve.is_compilation_title(resolved_album)
         and not resolve.is_junk_album_title(resolved_album)
-        and not resolve.is_secondary_edition_title(resolved_album))
+        and not resolve.is_secondary_edition_title(resolved_album)
+        # A resolved album that merely equals the song TITLE is the
+        # single-as-album placeholder, not a real studio album. It is never a
+        # valid RE-CORRECTION target (overwriting a present album with the
+        # track's own name is never "strictly better" - e.g. the observed
+        # "Push The Feeling On -> Push The Feeling On"). The fill path already
+        # treats album==title as missing, so this only guards the recorrect
+        # path; a fill never reaches here with such a value as an improvement.
+        and resolved_album.strip().lower() != (state.title or "").strip().lower())
 
     # --- decide the final album (never a compilation / never a secondary) ---
     final_album = state.album
