@@ -35,7 +35,7 @@ from mutagen import File as MutagenFile
 
 from . import (backfill_metadata, config, cover, mbyear, recanon, replaygain,
                resolve, tags, yearmap)
-from .backfill_covers import (_iter_manifest_mp3, _iter_mp3, _read_artist_title,
+from .backfill_covers import (_iter_manifest_mp3, _read_artist_title,
                               build_manifest_index)
 from .i18n import t
 
@@ -403,10 +403,15 @@ def _meta_is_eligible(state: dict, relpath: str, mtime: str) -> bool:
 
 def _metadata_pass(music_dir: str) -> dict:
     """
-    Library-wide conservative metadata fill. Walks EVERY mp3 under MUSIC_DIR,
-    fills ONLY missing year/album/track via resolve.resolve_metadata and never
-    overwrites a present value - except a YouTube-marked year, which is replaced
-    by the resolver's real year (marker then cleared). Gated by
+    Manifest-scoped conservative metadata fill. Walks ONLY the library files
+    that correspond to a manifest entry (the songs the stack itself
+    downloaded/imported - sources charts/mundart/flashback/energy-library/
+    upgrade/manuell/upload/youtube/hitparade), exactly like the IMPORT path's
+    REQUIRE_MANIFEST convention, so the user's hand-curated collection and
+    compilations are NEVER touched. For each manifest song it fills ONLY the
+    missing year/album/track via resolve.resolve_metadata and never overwrites a
+    present value - except a YouTube-marked year, which is replaced by the
+    resolver's real year (marker then cleared). Gated by
     METADATA_BACKFILL_ENABLED, capped per pass (METADATA_BACKFILL_LIMIT), with
     progress persisted so settled files are skipped on later passes. Shares the
     Deezer/MB live-lookup budget and BACKFILL_SLEEP_MS. Fail-open per file.
@@ -427,7 +432,10 @@ def _metadata_pass(music_dir: str) -> dict:
     corrected = 0
     dirty = False
 
-    for path in _iter_mp3(music_dir):
+    # Manifest-scoped: only files that correspond to a manifest entry, so the
+    # curated collection / compilations are never considered (REQUIRE_MANIFEST
+    # convention). _iter_manifest_mp3 yields exactly those on-disk paths.
+    for path in _iter_manifest_mp3(music_dir):
         if config.METADATA_BACKFILL_LIMIT and corrected >= config.METADATA_BACKFILL_LIMIT:
             logger.info(t("import.metafill.limit_reached",
                           limit=config.METADATA_BACKFILL_LIMIT))
