@@ -94,7 +94,37 @@ _COMPILATION_TITLE_MARKERS = (
     #     "party mix", "& remixes" -> "and remixes" - so the normalized marker
     #     set carries the folded spelling.)
     "hits", "party mix", "special edition", "remixes", "and remixes",
+    # Third widening (live --recorrect-albums dry-run over the real NAS
+    # library, task "recorrect-conservative"): best-of / sampler / duets /
+    # decade-/language-compilation titles that still carried a plain
+    # record_type=="album" + correct album-artist, so ONLY a title marker can
+    # reject them as a re-correction TARGET. The user explicitly accepts the
+    # deliberate over-rejection (leave the existing album) of a rare real album
+    # literally named with one of these phrases - a wrong/compilation target is
+    # never acceptable; empty / keep-existing always beats wrong.
+    #   Dutch "..of all time" / "greatest ever" sampler language. "aller tijden"
+    #   and the glued "allertijden" are both listed so either spelling fires.
+    "aller tijden", "allertijden", "grootste", "de beste", "beste aller",
+    #   Named sampler SERIES observed as bad targets.
+    "super slows", "2 meter sessies", "meter sessies", "electronic pleasure",
+    "deutsche welle mix", "jumpin jive volume",
+    #   Artist best-of / duets / tribute compilations (specific titles that have
+    #   no generic marker but are definitely not the original studio album).
+    "deadly cyns", "beautiful duets", "parts of the process",
+    #   Generic "duets" collections (a duets album is a collaboration
+    #   compilation, not the track's original studio album).
+    "duets",
 )
+
+# Word-bounded compilation TOKEN markers for short/ambiguous volume words. A
+# "Volume N" / "Vol. N" title is a sampler-series signal, but "vol"/"volume"
+# are too short to match as bare substrings (would hit "Volume" inside a real
+# word or a one-off album literally called "Volume"). Matched only as whole,
+# space-delimited tokens via _NORMALIZED_TOKEN_MARKERS (same discipline as the
+# "va" marker), so they fire on "... volume 4" / "... vol 2" but never inside a
+# longer word. The trailing number is a separate token after normalization, so
+# the marker itself is just the word.
+_COMPILATION_VOLUME_TOKEN_MARKERS = ("volume", "vol")
 
 # A YEAR RANGE in the title (e.g. "Jukebox Hits 1930-1950") is a reliable
 # compilation signal - a studio album is not titled with a span of years.
@@ -129,6 +159,14 @@ _SECONDARY_EDITION_MARKERS = (
     "deluxe", "expanded", "anniversary", "remaster", "remastered",
     "soundtrack", "ost", "motion picture", "super deluxe", "collector",
     "bonus track",
+    # Live-album phrases where "live" is NOT the title tail (so the tail-only
+    # token below does not fire). "A New Day...Live In Las Vegas" normalizes to
+    # "a new day live in las vegas" - "live in" catches the mid-title live
+    # marker. "live at"/"live from" are the other common live-album phrasings.
+    # These are DEMOTE markers: a sole live album is still chosen over empty,
+    # but the re-correction path treats any secondary edition as non-original
+    # and keeps the existing album (never overwrites with a live recording).
+    "live in", "live at", "live from", "live on",
 )
 
 # Tail-only secondary-edition tokens: a token that only demotes when it is the
@@ -177,6 +215,9 @@ _NORMALIZED_TITLE_MARKERS = tuple(
 _NORMALIZED_TOKEN_MARKERS = frozenset(
     norm for norm in (_normalize(m) for m in _COMPILATION_TOKEN_MARKERS) if norm
 )
+_NORMALIZED_VOLUME_TOKEN_MARKERS = frozenset(
+    norm for norm in (_normalize(m) for m in _COMPILATION_VOLUME_TOKEN_MARKERS) if norm
+)
 _NORMALIZED_SECONDARY_MARKERS = tuple(
     norm for norm in (_normalize(m) for m in _SECONDARY_EDITION_MARKERS) if norm
 )
@@ -210,6 +251,16 @@ def is_compilation_title(album_title: str) -> bool:
     padded = f" {norm} "
     for marker in _NORMALIZED_TOKEN_MARKERS:
         if f" {marker} " in padded:
+            return True
+    # A "Volume N" / "Vol. N" sampler-series number: the volume word (whole
+    # token) immediately FOLLOWED by a numeric token. Word-bounded + the
+    # following-number requirement keeps "Vol. 2"/"Volume 4" sampler titles
+    # flagged while a one-off real album literally called just "Volume" (no
+    # trailing number) is left alone.
+    tokens = norm.split()
+    for i, tok in enumerate(tokens):
+        if tok in _NORMALIZED_VOLUME_TOKEN_MARKERS and i + 1 < len(tokens) \
+                and tokens[i + 1].isdigit():
             return True
     return False
 
