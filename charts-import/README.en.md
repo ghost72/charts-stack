@@ -229,6 +229,11 @@ disable "Watch Root Folders for file changes" in Lidarr, otherwise Lidarr might
 grab before charts-import can react. Errors of the Lidarr connection are only
 logged and do not affect the import.
 
+Because the single `Music` folder is the single source of truth for matching and
+Lidarr does not manage the chart singles, those chart songs show up in Lidarr as
+"Unmapped Files". This is expected and harmless — Lidarr lists them but never
+touches, moves, or renames them.
+
 If new songs were imported, an optional **Pushover notification** follows (with
 the list of sorted-in titles plus a breakdown by playlist, e.g.
 "3 aus charts, 2 aus mundart" – derived from the manifest) and a **resync

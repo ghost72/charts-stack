@@ -73,6 +73,13 @@ bump also reflects the new runtime dependencies of the songrequest image (see
 - **charts-energy / charts-config polish.** Shorter one-line Pushover feed-
   handover lines; readable Energy-channel table layout (row spacing, dividers,
   full-width multi-line snippet with copy buttons).
+- **Dashboard "in progress" panels polish.** The four panels use a fixed
+  header / scrollable file list / footer layout (≈⅓ shorter, the full list
+  scrolls behind a thin scrollbar framed by a subtle 1px border), the header and
+  footer bands are aligned across the row, the upgrade panel shows an honest
+  placeholder so its footer pins to the bottom, and the wording was clarified
+  (e.g. "noch nicht geladen (warten auf Download)", "Snapshot vom letzten Sync",
+  honest quarantine subtitle, per-source line).
 
 ### Fixed
 - **DST scheduler double-run** in charts-digest and charts-hitparade is
