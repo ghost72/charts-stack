@@ -48,20 +48,33 @@ logger = logging.getLogger("charts-import.metadata-backfill")
 # trustworthy (no replacement).
 _YOUTUBE_MARKER = "youtube"
 
+# Value stamped on TXXX:CHARTS_ALBUM_SRC whenever the resolver/backfill SETS an
+# album. A present album carrying this marker was written by the stack and is
+# eligible for re-correction (--recorrect-albums); an album WITHOUT the marker
+# is a user's curated value and is NEVER overwritten (original-album report §7).
+_RESOLVER_ALBUM_MARKER = "resolver"
+
 
 @dataclass(frozen=True)
 class Plan:
     """What may be filled/replaced on one file, given its current tags."""
-    fill_year: bool       # year missing (conservative fill)
-    replace_year: bool    # year PRESENT but the youtube marker is set (FR5.2)
-    fill_album: bool      # album missing per the album rule
-    fill_track: bool      # track missing per the track rule
-    is_youtube: bool      # marker present (drives clear-after-correct)
+    fill_year: bool        # year missing (conservative fill)
+    replace_year: bool     # year PRESENT but the youtube marker is set (FR5.2)
+    fill_album: bool       # album missing per the album rule
+    fill_track: bool       # track missing per the track rule
+    is_youtube: bool       # marker present (drives clear-after-correct)
+    recorrect_album: bool  # album PRESENT but eligible to overwrite with a
+                           # freshly resolved non-secondary original (opt-in
+                           # --recorrect-albums: marker-gated OR heuristic
+                           # catch-up for pre-marker files)
+    recorrect_heuristic: bool  # the recorrect eligibility came from the
+                               # one-time heuristic (unmarked file) rather than
+                               # the CHARTS_ALBUM_SRC=resolver marker
 
     def needs_lookup(self) -> bool:
         """True iff something could be written -> a resolver call is worth it."""
         return (self.fill_year or self.replace_year
-                or self.fill_album or self.fill_track)
+                or self.fill_album or self.fill_track or self.recorrect_album)
 
 
 @dataclass(frozen=True)
@@ -72,7 +85,8 @@ class FileState:
     album: str
     year: str
     track: int
-    source: str   # TXXX:CHARTS_SOURCE marker value ("" when absent)
+    source: str       # TXXX:CHARTS_SOURCE marker value ("" when absent)
+    album_src: str    # TXXX:CHARTS_ALBUM_SRC marker value ("" when absent)
 
 
 @dataclass(frozen=True)
@@ -82,6 +96,8 @@ class BackfillResult:
     year_filled: bool
     year_replaced: bool
     album_filled: bool
+    album_recorrected: bool  # a PRESENT album was overwritten with a better
+                             # non-secondary original (--recorrect-albums)
     track_filled: bool
     error: bool
     old_year: str = ""
@@ -127,26 +143,57 @@ def read_state(path: str) -> "FileState | None":
     year, _album = tags.read_existing_year_album(path)
     track = tags.read_track(path)
     source = tags.read_charts_source(path)
+    album_src = tags.read_charts_album_src(path)
     return FileState(artist=artist, title=title, album=album, year=year,
-                     track=track, source=source)
+                     track=track, source=source, album_src=album_src)
 
 
-def missing_fields(state: FileState) -> Plan:
+def missing_fields(state: FileState, *, recorrect_albums: bool = False) -> Plan:
     """
     Compute the per-file Plan from its current tag state. The heart of the
     never-overwrite rule: a field is "fillable" ONLY when it is missing per the
     definitions in the design (§5). The YouTube-year exception is the only path
     that flags a PRESENT year (replace_year) - and only when the durable
     marker says the year came from YouTube.
+
+    recorrect_albums (opt-in --recorrect-albums, original-album report §7) is
+    the ONLY path that flags a PRESENT, non-placeholder album for overwrite. It
+    is eligible in exactly two cases, both manifest-scoped by the caller so a
+    non-manifest file is never seen here:
+      * MARKER-gated: the album carries TXXX:CHARTS_ALBUM_SRC=resolver (the
+        stack wrote it) -> eligible, let apply_backfill decide whether the fresh
+        resolve is a strictly-better non-secondary original.
+      * HEURISTIC catch-up (report §7.3): the album carries NO marker (it was
+        backfilled before the marker shipped) BUT its title matches a
+        secondary-edition pattern. Only then is an unmarked album touched, and
+        apply_backfill additionally requires a strictly-earlier-date
+        non-secondary original before overwriting. A user's curated ORIGINAL
+        album (no marker, no secondary pattern) is never eligible.
     """
     is_youtube = state.source == _YOUTUBE_MARKER
     has_year = bool(state.year)
+    album_present = not _album_is_missing(state.album, state.title)
+
+    recorrect_album = False
+    recorrect_heuristic = False
+    if recorrect_albums and album_present:
+        if state.album_src == _RESOLVER_ALBUM_MARKER:
+            recorrect_album = True
+        elif not state.album_src and resolve.is_secondary_edition_title(state.album):
+            # Pre-marker catch-up: an unmarked album is touched ONLY when its
+            # title already looks like a secondary edition; apply_backfill then
+            # still requires a strictly-earlier-date non-secondary original.
+            recorrect_album = True
+            recorrect_heuristic = True
+
     return Plan(
         fill_year=not has_year,
         replace_year=has_year and is_youtube,
         fill_album=_album_is_missing(state.album, state.title),
         fill_track=state.track <= 0,
         is_youtube=is_youtube,
+        recorrect_album=recorrect_album,
+        recorrect_heuristic=recorrect_heuristic,
     )
 
 
@@ -178,14 +225,42 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
         final_year = resolved_year
         year_replaced = True
 
-    # --- decide the final album (never a compilation) ---
+    # A resolved album is only ever usable (fill OR recorrect) when it is a
+    # real, non-secondary ORIGINAL: present, not a compilation, not junk, and
+    # NOT itself a secondary edition. This single gate honours the hard rule
+    # "prefer the original studio album; a wrong/secondary album is worse than
+    # leaving what's there".
+    resolved_album_is_original = bool(
+        resolved_album
+        and not resolve.is_compilation_title(resolved_album)
+        and not resolve.is_junk_album_title(resolved_album)
+        and not resolve.is_secondary_edition_title(resolved_album))
+
+    # --- decide the final album (never a compilation / never a secondary) ---
     final_album = state.album
     album_filled = False
-    if plan.fill_album and resolved_album \
-            and not resolve.is_compilation_title(resolved_album) \
-            and not resolve.is_junk_album_title(resolved_album):
+    album_recorrected = False
+    if plan.fill_album and resolved_album_is_original:
+        # A missing/placeholder album -> fill with the resolved original.
         final_album = resolved_album
         album_filled = True
+    elif plan.recorrect_album and resolved_album_is_original \
+            and resolved_album.strip().lower() != (state.album or "").strip().lower():
+        # A PRESENT album is overwritten ONLY when the fresh resolve is a
+        # different, non-secondary original. Marker-gated files (the stack wrote
+        # them) need only that. The one-time HEURISTIC catch-up for unmarked
+        # pre-marker files additionally requires the resolved original to have a
+        # STRICTLY EARLIER release year than the present edition (report §7.3) -
+        # the original predates its live/deluxe/anniversary/remaster edition.
+        if plan.recorrect_heuristic:
+            r_year = (meta.album_year or meta.year or "").strip()
+            if (r_year.isdigit() and state.year.isdigit()
+                    and int(r_year) < int(state.year)):
+                final_album = resolved_album
+                album_recorrected = True
+        else:
+            final_album = resolved_album
+            album_recorrected = True
 
     # --- decide the final track ---
     final_track = str(state.track) if state.track > 0 else ""
@@ -196,12 +271,14 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
             final_track = head
             track_filled = True
 
-    changed = year_filled or year_replaced or album_filled or track_filled
+    album_written = album_filled or album_recorrected
+    changed = year_filled or year_replaced or album_written or track_filled
     result = BackfillResult(
         changed=changed, year_filled=year_filled, year_replaced=year_replaced,
-        album_filled=album_filled, track_filled=track_filled, error=False,
+        album_filled=album_filled, album_recorrected=album_recorrected,
+        track_filled=track_filled, error=False,
         old_year=state.year, new_year=final_year if (year_filled or year_replaced) else "",
-        old_album=state.album, new_album=final_album if album_filled else "",
+        old_album=state.album, new_album=final_album if album_written else "",
         new_track=final_track if track_filled else "",
     )
     if not changed or dry_run:
@@ -214,6 +291,11 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
         tags.write_tags(path, state.artist, state.title, final_album,
                         year=final_year or None,
                         track=final_track or None)
+        # Stamp the durable album provenance marker whenever THIS write set the
+        # album (fill OR recorrect), so future re-corrections are marker-gated
+        # and safe (report §7.2). Mirrors the YouTube CHARTS_SOURCE marker.
+        if album_written:
+            tags.stamp_charts_album_src(path, _RESOLVER_ALBUM_MARKER)
         # Graduate a corrected YouTube file: clear the marker so it is not
         # reprocessed forever. Only after an actual year replacement.
         if year_replaced:
@@ -222,7 +304,8 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
         logger.debug(t("import.metafill.write_error", path=path, error=e))
         return BackfillResult(
             changed=False, year_filled=False, year_replaced=False,
-            album_filled=False, track_filled=False, error=True,
+            album_filled=False, album_recorrected=False,
+            track_filled=False, error=True,
             old_year=state.year, old_album=state.album,
         )
     return result
