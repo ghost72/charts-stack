@@ -43,7 +43,12 @@ hand-curated library (compilations, hand-added back catalog) is never touched.
   against the provenance strip), so a user's hand-curated album is never
   overwritten; a bounded one-time heuristic additionally upgrades a
   pre-marker secondary edition when a strictly-earlier original exists. The
-  periodic pass and `fix_youtube_years.py` never re-correct silently.
+  re-correction is **conservative**: a replacement is written only when the new
+  candidate is clearly a non-compilation, non-live, non-best-of, non-soundtrack
+  studio album/single of the same recording and is a clean artist+title match
+  (release date is only a tiebreaker among guard-passing matches); when in doubt
+  the existing album is kept. The periodic pass and `fix_youtube_years.py` never
+  re-correct silently.
 - **charts-songrequest/charts-import — durable YouTube provenance marker**
   (`TXXX:CHARTS_SOURCE=youtube`, whitelisted against the provenance strip). Lets
   the backfill safely replace a YouTube-derived year with the real release year
