@@ -36,6 +36,14 @@ hand-curated library (compilations, hand-added back catalog) is never touched.
   uses). Files not in the manifest — the user's hand-curated compilations and
   hand-added back catalog — are skipped entirely and never modified (no year,
   album, track, or any other tag write).
+- **charts-import — album re-correction mode** (`backfill_metadata.py
+  --recorrect-albums`, opt-in, off by default). Re-resolves and overwrites an
+  album **only** when the file carries the `TXXX:CHARTS_ALBUM_SRC=resolver`
+  provenance marker (stamped whenever the stack sets an album, whitelisted
+  against the provenance strip), so a user's hand-curated album is never
+  overwritten; a bounded one-time heuristic additionally upgrades a
+  pre-marker secondary edition when a strictly-earlier original exists. The
+  periodic pass and `fix_youtube_years.py` never re-correct silently.
 - **charts-songrequest/charts-import — durable YouTube provenance marker**
   (`TXXX:CHARTS_SOURCE=youtube`, whitelisted against the provenance strip). Lets
   the backfill safely replace a YouTube-derived year with the real release year
@@ -60,6 +68,16 @@ hand-curated library (compilations, hand-added back catalog) is never touched.
   that carry `record_type:"album"`. Hard rule: when no clean album is found the
   album is left empty (importer keeps album = title) — a wrong album is never
   written.
+- **Prefer the original studio album.** The resolver now collects the passing
+  album candidates and picks the earliest-release, non-secondary one instead of
+  the first match, so a track is tagged with the studio album it first appeared
+  on rather than a live album, deluxe / expanded / anniversary / remaster
+  edition, soundtrack, or tribute. Secondary editions are demoted (by title
+  markers `deluxe`/`expanded`/`anniversary`/`remaster`/`soundtrack`/`ost`/
+  word-bounded `live`/… and, on the MusicBrainz fallback, the release-group
+  `secondary-types` Live/Compilation/Soundtrack/Remix), never hard-rejected, so
+  a single available secondary edition still beats an empty album. MusicBrainz
+  stays a per-field fallback (no extra load on the critical path).
 - **Provenance strip extended** to also remove `TMED`, `WOAR`, `TOAL` (only when
   the value contains `(CD-Rip)`), and `UFID` (only when the owner is NOT the
   MusicBrainz URL — the MusicBrainz Recording ID is preserved).
