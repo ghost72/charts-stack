@@ -230,6 +230,11 @@ Am besten in Lidarr zusätzlich „Watch Root Folders for file changes" abschalt
 sonst grabbt Lidarr evtl. schon, bevor charts-import reagieren kann. Fehler der
 Lidarr-Anbindung werden nur geloggt und beeinträchtigen den Import nicht.
 
+Da der eine `Music`-Ordner die Single Source of Truth fürs Matching ist und
+Lidarr die Chart-Singles nicht verwaltet, erscheinen diese Chart-Songs in Lidarr
+als „Unmapped Files". Das ist gewollt und harmlos – Lidarr listet sie nur, fasst
+sie aber nie an (kein Verschieben, kein Umbenennen).
+
 Wurden neue Songs importiert, folgt optional eine **Pushover-Meldung** (mit der
 Liste der einsortierten Titel sowie einer Aufschlüsselung nach Playlist, z. B.
 „3 aus charts, 2 aus mundart" – abgeleitet aus dem Manifest) und ein
