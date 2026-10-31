@@ -452,7 +452,7 @@
   "import.mode.copy": "copy",
   "import.mode.move": "move",
   "import.scheduler.started": "charts-import started | Downloads: {downloads} | Library: {library} | Mode: {mode} | Cleanup: {cleanup} | Interval: {interval}min",
-  "import.backfill.active": "Metadata backfill active | every {hours}h | scope: manifest songs",
+  "import.backfill.active": "Metadata backfill active | every {hours}h | periodic pass: covers/ReplayGain for manifest songs + library-wide metadata (whole Music library)",
   "import.scheduler.wait_interval": "RUN_ON_START=0 – waiting for the interval first.",
   "import.scheduler.next_run": "Next run in {interval} minutes.",
   "import.log.write_failed": "Import log not writable ({path}): {error}",

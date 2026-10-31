@@ -52,12 +52,33 @@ class ResolvedMeta:
 # sampler/compilation signals that will not collide with a real album title.
 # These are long / multi-word and are matched as plain substrings because they
 # cannot collapse to a short ambiguous token after normalization.
+#
+# The widened best-of / singles / decade-comp markers below are a cheap
+# SECONDARY net only (resolver report §3/§9.5). The durable fix is the
+# structured VA-album / record_type signals on the /album/<id> detail. Note the
+# deliberate accepted over-rejection under the user's hard rule (never write a
+# wrong album; empty beats wrong):
+#   * "collection" / "anthology" are plain substrings, so a real studio album
+#     whose title merely contains the word (e.g. "Grace (Collection)") is also
+#     left empty - acceptable, never wrong.
+#   * the decade markers "90s"/"80s"/"70s" are reject-biased substrings, NOT
+#     word-bounded tokens: any title whose normalized form contains the
+#     digit-run (e.g. "1990s Demos" -> "1990s demos") is also emptied. Likewise
+#     an accepted casualty of the never-write-wrong rule.
 _COMPILATION_TITLE_MARKERS = (
     "various", "varios", "varias", "verschiedene",
     "compilation", "sampler", "mastermix", "megamix", "mixtape",
     "best of", "greatest hits", "top 100", "top100", "top 40", "top40",
     "bravo hits", "now that", "kontor", "clubland", "dance max",
     "party hits", "hitlist", "hit list",
+    # Widened secondary net (report §3/§9.5): best-of / singles-collection /
+    # generic best-of language.
+    "singles collection", "the singles", "the hits", "all the best",
+    "collection", "anthology", "the essential", "definitive",
+    # Decade / language compilation markers. "annees 90" is the normalized form
+    # of "annees 90"/"annees 90"; include it so the precomputed marker carries
+    # the accent-folded spelling.
+    "90s", "80s", "70s", "hits uit de", "nederpop", "annees 90",
 )
 
 # Short / ambiguous "Various Artists" abbreviations. These collapse to a tiny
@@ -67,6 +88,19 @@ _COMPILATION_TITLE_MARKERS = (
 # "Viva la Vida", Avantasia) would be wrongly flagged. Matched as whole,
 # space-delimited phrases via _NORMALIZED_TOKEN_MARKERS.
 _COMPILATION_TOKEN_MARKERS = ("va", "v.a.")
+
+# Various-Artists identifiers. Used for BOTH the file-artist short-circuit
+# (NO_RESOLVE_ARTISTS) and the album-detail artist guard (is_va_album). Compared
+# case-insensitively against the raw (not normalized) lowercased string.
+VA_ARTIST_NAMES = frozenset({
+    "various artists", "various", "va", "v.a.", "v/a",
+})
+# The set that blocks resolution entirely when it is the FILE's artist.
+NO_RESOLVE_ARTISTS = frozenset({"unknown artist"}) | VA_ARTIST_NAMES
+# Deezer's canonical Various-Artists album owner (artist.id on /album/<id>).
+VA_ARTIST_ID = 5080
+# record_type values accepted as a real album name (positive requirement).
+_ACCEPTABLE_RECORD_TYPES = frozenset({"album", "ep"})
 
 
 def _normalize(text: str) -> str:
@@ -117,6 +151,64 @@ def is_compilation_title(album_title: str) -> bool:
         if f" {marker} " in padded:
             return True
     return False
+
+
+def is_no_resolve_artist(artist: str) -> bool:
+    """
+    True if the FILE's artist must never be resolved (Various Artists / VA /
+    unknown). Blocks any Deezer/MusicBrainz lookup upstream so a Various-Artists
+    file never produces a bogus album and MusicBrainz is never queried (it 503'd
+    / hung ~50 s on VA queries). Compared case-insensitively on the raw string.
+    """
+    return (artist or "").strip().lower() in NO_RESOLVE_ARTISTS
+
+
+def is_junk_album_title(album_title: str) -> bool:
+    """
+    True if an album title is unusable as an album value: empty or single-char
+    after normalization, or literally "various artists" / "various". Applied as
+    the last gate before writing so even a stale cache entry cannot be filed. A
+    legitimately one-character real album title (Ed Sheeran "÷" -> "", "X" ->
+    "x") is a deliberate accepted casualty of the never-write-wrong rule.
+    """
+    raw = (album_title or "").strip().lower()
+    if raw in {"various artists", "various"}:
+        return True
+    return len(_normalize(album_title)) <= 1
+
+
+def is_va_album(album_artist_id, album_artist_name: str) -> bool:
+    """
+    True if a Deezer album DETAIL belongs to Various Artists: artist.id == 5080
+    or artist.name in the VA set. The bulletproof compilation signal (catches
+    "2gether 90 (Années 90)", whose album artist.id is 5080). A non-numeric id
+    falls back to the name check.
+    """
+    try:
+        if album_artist_id is not None and int(album_artist_id) == VA_ARTIST_ID:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return (album_artist_name or "").strip().lower() in VA_ARTIST_NAMES
+
+
+def album_detail_acceptable(album_title: str, record_type,
+                            album_artist_id, album_artist_name: str) -> bool:
+    """
+    Accept an album DETAIL as the written album iff it is not various-artists,
+    not junk, not a title-marked compilation, and its record_type is album/ep.
+    record_type is a POSITIVE requirement: an empty/unknown record_type is not
+    provably album/ep and therefore fails safe to False. Any uncertainty ->
+    False (leave album empty; never wrong).
+    """
+    if is_va_album(album_artist_id, album_artist_name):
+        return False
+    if is_junk_album_title(album_title):
+        return False
+    if is_compilation_title(album_title):
+        return False
+    rt = (record_type or "").strip().lower()
+    return rt in _ACCEPTABLE_RECORD_TYPES
 
 
 # --- Per-run live-lookup budget (reset once per import pass) -----------------
@@ -217,7 +309,9 @@ def resolve_metadata(artist: str, title: str) -> ResolvedMeta:
         return ResolvedMeta()
     a = (artist or "").strip()
     ti = (title or "").strip()
-    if not a or not ti or a.lower() == "unknown artist" or ti.lower() == "unknown album":
+    if not a or not ti or is_no_resolve_artist(a) or ti.lower() == "unknown album":
+        # VA/unknown file artist: never resolve, and never reach _mb_meta below
+        # (so MusicBrainz is not queried for a Various-Artists file).
         return ResolvedMeta()
     primary = _deezer_meta(a, ti)
     # Only pay for MB when Deezer left a field empty.
