@@ -73,6 +73,17 @@ def _hint_year(artist: str, title: str) -> "tuple[str, bool]":
     return yearmap.year_of(val), yearmap.is_pending(val)
 
 
+def _import_source(m: "dict | None") -> str:
+    """
+    The import-source label passed to tags.write_tags for the durable
+    provenance marker. Returns "youtube" iff the manifest entry's source(s)
+    include the YouTube label (reusing tags.manifest_sources, which handles the
+    new "sources" list and the old single "source" string), else "". Only
+    "youtube" is marked today; any other source stamps nothing.
+    """
+    return "youtube" if "youtube" in tags.manifest_sources(m or {}) else ""
+
+
 def _ensure_pending_marker(artist: str, title: str, src: str,
                            decade: str | None = None) -> None:
     """
@@ -618,10 +629,14 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
                             and old_album.strip().lower() != title.strip().lower()):
                         final_album = old_album
 
-                # Single write.
+                # Single write. Pass the import source so a YouTube-sourced
+                # file gets the durable TXXX:CHARTS_SOURCE=youtube marker, which
+                # lets the metadata backfill later replace its (untrusted)
+                # YouTube year with the real release year. _m is the manifest
+                # entry already looked up above (reused, not re-fetched).
                 tags.write_tags(target, artist, title, final_album,
                                 year=final_year, album_year=meta.album_year,
-                                track=track)
+                                track=track, source=_import_source(_m))
                 album = final_album
                 # Side effects by branch (unchanged semantics).
                 if confirm_folder:

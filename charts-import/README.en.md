@@ -268,10 +268,13 @@ charts-import/
 │   ├── lidarr.py         # keep chart artists unmonitored in Lidarr
 │   ├── backfill_covers.py    # one-time script: backfill covers / --fix-broken
 │   ├── backfill_replaygain.py# one-time script: backfill ReplayGain
+│   ├── backfill_metadata.py  # shared core: missing-field decision + write (year/album/track)
 │   ├── notify.py         # optional Pushover notification
 │   └── main.py           # scheduler loop, connects all modules
 ├── scripts/
 │   ├── cleanup_flashback_legacy.py  # one-time script: remove old flashback legacy entries
+│   ├── backfill_metadata.py         # one-time script: conservative library-wide metadata fill
+│   ├── fix_youtube_years.py         # one-time script: fix the year of historical YouTube songs
 │   └── strip_provenance_tags.py     # one-time script: strip provenance/encoder tags from chart songs
 ├── Dockerfile            # python:3.12-slim + ffmpeg, starts app.main
 ├── compose.yml           # service definition for the NAS
@@ -343,6 +346,38 @@ Determines artist/album/title in this order:
    default 150), `IMPORT_MB_RESOLVE_LIMIT` (per-pass live MusicBrainz lookup cap,
    default 25); `MB_ENABLED=0` disables the MusicBrainz fallback. Cache hits
    never count against the caps (results are cached under a `meta|` key).
+
+   **Library-wide conservative metadata backfill (year/album/track):** the
+   import-time resolver only runs on songs passing *through* the pipeline. A
+   file already sitting in the library in good quality (e.g. a 320 kbps single
+   with **no** year) is never re-touched by it. The metadata backfill closes
+   that gap: it walks the **entire** Navidrome library (not just manifest songs)
+   and fills **only the MISSING** fields — release **year** / real **album** /
+   **track number** — via the same resolver (`app/backfill_metadata.py`). It is
+   strictly **conservative: it never overwrites an existing value** (a
+   curated/Lidarr album, a resolver-set year, a positive track number are all
+   left untouched). An `album` counts as *missing* when it is absent, equals the
+   title (the single-as-album placeholder) or is `Unknown Album`; a resolved
+   compilation/sampler title is never written. The **one deliberate exception**
+   is a year that came from a **YouTube** import (the yt-dlp upload/publish year,
+   untrusted): such a file carries a durable `TXXX:CHARTS_SOURCE=youtube`
+   provenance marker (stamped at import, whitelisted so the provenance strip
+   keeps it), and the backfill **replaces** that present year with the
+   resolver's real release year and then clears the marker. Every write is
+   **mtime-preserving** (Navidrome "date added" stays put). It runs as a
+   **periodic pass** in the scheduler loop (shares `BACKFILL_INTERVAL_HOURS`,
+   the Deezer/MB caps and `BACKFILL_SLEEP_MS`), is capped per pass
+   (`METADATA_BACKFILL_LIMIT`, default 50; cache hits are free) and remembers
+   its progress in `MUSIC_DIR/.charts-metadata-backfill-state.json` so a settled
+   file is not re-queried every pass. Fail-open: a resolver miss or per-file
+   error never crashes the pass. Knobs: `METADATA_BACKFILL_ENABLED` (default on),
+   `METADATA_BACKFILL_LIMIT`, `METADATA_BACKFILL_MAX_TRIES` (give up after N
+   resolver misses on non-YouTube files). Two one-shot scripts share the same
+   core: `scripts/backfill_metadata.py` runs the conservative fill over the
+   whole library on demand (`--dry-run` default, `--apply`, `--limit`), and
+   `scripts/fix_youtube_years.py` fixes the year of **historical** YouTube songs
+   (imported before the marker existed) selected via the durable manifest
+   `source="youtube"` field — year-only, nothing else.
 2. **File tags** (`mutagen`, `albumartist` preferred).
 3. **Fallback** to the filename or `Unknown Artist` / `Unknown Album`.
 
@@ -761,6 +796,29 @@ python charts-import/scripts/cleanup_flashback_legacy.py --dry-run
 python charts-import/scripts/cleanup_flashback_legacy.py
 ```
 
+**Conservative metadata backfill over the whole library (one-time).** Fills
+**only the missing** year/album/track on existing library files via the resolver
+and **never overwrites** a present value (one exception: a YouTube-marked year
+is replaced by the real one). Shares the periodic pass's logic + progress state.
+Run it inside the container (where `/music` is writable), **always `--dry-run`
+first** (the default); add `--apply` to write, `--limit N` to cap:
+
+```bash
+sudo docker compose exec charts-import python -m scripts.backfill_metadata --dry-run
+sudo docker compose exec charts-import python -m scripts.backfill_metadata --apply
+```
+
+**Fix the year of historical YouTube songs (one-time).** Songs imported from
+YouTube *before* the provenance marker existed carry a wrong (upload-year) year
+that the conservative pass will not touch. This script selects them via the
+durable manifest `source="youtube"` field and re-resolves + rewrites **only the
+year** (nothing else), mtime-preserving:
+
+```bash
+sudo docker compose exec charts-import python -m scripts.fix_youtube_years --dry-run
+sudo docker compose exec charts-import python -m scripts.fix_youtube_years --apply
+```
+
 **Strip provenance/encoder tags from the existing library (one-time).** New
 imports are cleaned automatically (see `tags.py`); for the **existing** stock
 there is a one-time script with the **same** removal logic. It runs over the
@@ -791,6 +849,13 @@ For the import-time metadata resolver + uniform clean tagging change, rebuild
 charts-download and charts-upgrade need **no** rebuild (no app change). After
 copying the updated `lang/{en,de,fr}.json` into the bind mount, restart both so
 the i18n table reloads: `docker restart charts-import charts-songrequest`.
+
+For the **library-wide metadata backfill** change specifically, only
+**charts-import** needs the `--no-cache` rebuild (new `backfill_metadata.py` +
+`tags.py`/`importer.py`/`backfill.py`/`config.py` changes); **charts-songrequest
+is NOT affected** because the YouTube provenance marker is manifest-carried and
+stamped by charts-import, so `youtube.py` is unchanged. New i18n keys were added,
+so update the mounted `lang/{en,de,fr}.json` and `docker restart charts-import`.
 
 **Stop / remove:**
 

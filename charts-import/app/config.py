@@ -188,6 +188,28 @@ YEAR_BACKFILL_LIMIT = _get_int("YEAR_BACKFILL_LIMIT", 50)
 # cached so it is not re-marked.
 YEAR_BACKFILL_MAX_TRIES = _get_int("YEAR_BACKFILL_MAX_TRIES", 6)
 
+# --- Library-wide conservative metadata backfill (year/album/track) ---
+# Walks the ENTIRE Navidrome library (not just manifest songs) and fills ONLY
+# the MISSING metadata fields (release year / real album / track number) via the
+# import-time resolver (Deezer->MusicBrainz, fail-open). It NEVER overwrites an
+# existing value - with one exception: a year that came from a YouTube import
+# (marked by a durable TXXX:CHARTS_SOURCE=youtube frame) may be replaced by the
+# resolver's real release year. Shares BACKFILL_INTERVAL_HOURS, the Deezer/MB
+# live-lookup caps and BACKFILL_SLEEP_MS with the other passes; remembers its
+# progress in MUSIC_DIR/.charts-metadata-backfill-state.json so a file is not
+# re-queried every pass.
+# Master switch for the periodic pass (0 = the pass is a no-op; the one-shot
+# scripts still work).
+METADATA_BACKFILL_ENABLED = _get_bool("METADATA_BACKFILL_ENABLED", True)
+# Max files CORRECTED per periodic pass (cache hits are free and do not count).
+# Bounds a cold-cache first pass over a large back catalog; a backlog drains
+# over several passes. Mirrors YEAR_BACKFILL_LIMIT.
+METADATA_BACKFILL_LIMIT = _get_int("METADATA_BACKFILL_LIMIT", 50)
+# Give up on a file after this many resolver MISSES (non-youtube files only);
+# it is then marked done so the sources are not hammered forever. YouTube-marked
+# files are not capped this way (their marker is the durable retry signal).
+METADATA_BACKFILL_MAX_TRIES = _get_int("METADATA_BACKFILL_MAX_TRIES", 6)
+
 # --- MusicBrainz year resolution (for the year backfill) ---
 # These constants mirror charts-energy so the MB machinery copied into
 # app/mbyear.py dereferences them unedited. HTTP_TIMEOUT (defined above, 15s) is
