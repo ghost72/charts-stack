@@ -10,6 +10,80 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [Unreleased]
+
+Working notes for the next release (not yet tagged). charts-import gains a
+uniform, source-independent tagging path and a conservative, manifest-scoped
+metadata backfill so every stack-managed song ends up with a correct release
+year, a real (non-compilation) album and a track number — while the user's
+hand-curated library (compilations, hand-added back catalog) is never touched.
+
+### Added
+- **charts-import — import-time metadata resolver** (`app/resolve.py`). Every
+  song that passes through the import pipeline (fresh download, manual
+  request/upload/YouTube, or an upgrade replace) now resolves a release **year**,
+  a real **album** name and a **track** number at import time via Deezer-first →
+  MusicBrainz-fallback, instead of waiting for the deferred MusicBrainz year
+  backfill. Fail-open: any lookup miss/error leaves the field unresolved rather
+  than blocking the import.
+- **charts-import — conservative library backfill** for stack-managed back
+  catalog. A periodic pass (`METADATA_BACKFILL_ENABLED`, default on; shares the
+  backfill cadence/caps) plus two one-shot scripts: `scripts/backfill_metadata.py`
+  (fill missing year/album/track) and `scripts/fix_youtube_years.py` (correct the
+  wrong yt-dlp year on past YouTube-sourced songs). Scope is **manifest songs
+  only** — files the stack itself downloaded/imported; the user's curated
+  compilations and hand-added files are skipped entirely.
+- **charts-songrequest/charts-import — durable YouTube provenance marker**
+  (`TXXX:CHARTS_SOURCE=youtube`, whitelisted against the provenance strip). Lets
+  the backfill safely replace a YouTube-derived year with the real release year
+  and then clear the marker.
+
+### Changed
+- **Uniform tagging across all sources.** The album/year/track resolution and
+  the provenance strip now apply identically to automatic downloads and all
+  manual sources (request/upload/YouTube) and to charts-upgrade replaces — one
+  shared code path, no per-source branch.
+- **charts-upgrade re-correction.** When charts-upgrade replaces an existing
+  file with a higher-bitrate version, the replacement is re-tagged with the full
+  clean metadata and the old file's year/album is captured before trashing, so
+  an upgrade never leaves a file with worse tags than before.
+- **Compilation/junk-album avoidance hardened.** The resolver rejects
+  various-artists albums (Deezer `album.artist.id == 5080`), junk album titles
+  (single-char / empty / "Various Artists"), and `record_type` singles, and
+  prefers a studio-album release over a best-of/compilation via a bounded
+  preference scan over the ranked hits. Widened compilation title markers
+  (`singles collection`, `the hits`, `all the best`, `hits`, `(party mix)`,
+  `(special edition)`, `remixes`, decade/year-range titles, …) catch best-ofs
+  that carry `record_type:"album"`. Hard rule: when no clean album is found the
+  album is left empty (importer keeps album = title) — a wrong album is never
+  written.
+- **Provenance strip extended** to also remove `TMED`, `WOAR`, `TOAL` (only when
+  the value contains `(CD-Rip)`), and `UFID` (only when the owner is NOT the
+  MusicBrainz URL — the MusicBrainz Recording ID is preserved).
+- **YouTube import no longer keeps the wrong yt-dlp date** — the embedded
+  upload/publish year is dropped so the resolver's real release year is used
+  instead.
+
+### Fixed
+- **Umlaut / decoration normalization in the title match key** (transliterate
+  ä→a, strip an unbalanced trailing `(…`), so a decorated manual re-request
+  folds onto the same dedup key as the clean library title.
+
+### Upgrade notes
+- **mtime is preserved on every tag write** (new year/album/track writes, the
+  upgrade re-correction, and the backfill), so Navidrome's "date added" stays
+  stable and corrected songs do not flood "recently added".
+- Rebuild **charts-import** with `docker compose build --no-cache charts-import`;
+  rebuild **charts-songrequest** only if its `youtube.py` changed. New i18n keys
+  were added, so refresh the mounted `lang/{en,de,fr}.json` and
+  `docker restart charts-import` so the table reloads.
+- New optional switches in `.env.example`: `IMPORT_RESOLVE_ENABLED`,
+  `IMPORT_DEEZER_RESOLVE_LIMIT`, `IMPORT_MB_RESOLVE_LIMIT`,
+  `METADATA_BACKFILL_ENABLED`, `METADATA_BACKFILL_LIMIT`,
+  `METADATA_BACKFILL_MAX_TRIES`. Run the one-shots in the container with
+  `python3 -m scripts.backfill_metadata --dry-run` (then `--apply`) and
+  `python3 -m scripts.fix_youtube_years --dry-run` (then `--apply`).
+
 ## [2.0.0] - 2026-10-28
 
 A major feature release. charts-songrequest grows from a single search box into
