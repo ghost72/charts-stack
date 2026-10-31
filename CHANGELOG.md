@@ -26,13 +26,16 @@ hand-curated library (compilations, hand-added back catalog) is never touched.
   MusicBrainz-fallback, instead of waiting for the deferred MusicBrainz year
   backfill. Fail-open: any lookup miss/error leaves the field unresolved rather
   than blocking the import.
-- **charts-import — conservative library backfill** for stack-managed back
-  catalog. A periodic pass (`METADATA_BACKFILL_ENABLED`, default on; shares the
-  backfill cadence/caps) plus two one-shot scripts: `scripts/backfill_metadata.py`
-  (fill missing year/album/track) and `scripts/fix_youtube_years.py` (correct the
-  wrong yt-dlp year on past YouTube-sourced songs). Scope is **manifest songs
-  only** — files the stack itself downloaded/imported; the user's curated
-  compilations and hand-added files are skipped entirely.
+- **charts-import — conservative, manifest-scoped backfill** for stack-managed
+  back catalog. A periodic pass (`METADATA_BACKFILL_ENABLED`, default on; shares
+  the backfill cadence/caps) plus two one-shot scripts:
+  `scripts/backfill_metadata.py` (fill missing year/album/track) and
+  `scripts/fix_youtube_years.py` (correct the wrong yt-dlp year on past
+  YouTube-sourced songs). Scope is **manifest songs only** — only files the
+  stack itself downloaded/imported (same `REQUIRE_MANIFEST` rule the import path
+  uses). Files not in the manifest — the user's hand-curated compilations and
+  hand-added back catalog — are skipped entirely and never modified (no year,
+  album, track, or any other tag write).
 - **charts-songrequest/charts-import — durable YouTube provenance marker**
   (`TXXX:CHARTS_SOURCE=youtube`, whitelisted against the provenance strip). Lets
   the backfill safely replace a YouTube-derived year with the real release year
