@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-One-shot, library-wide conservative metadata backfill.
+One-shot, manifest-scoped conservative metadata backfill.
 
-Walks the ENTIRE Navidrome library (MUSIC_DIR) and fills ONLY the MISSING
-metadata fields (release year / real album / track number) via the import-time
-resolver (Deezer->MusicBrainz, fail-open). It NEVER overwrites an existing value
+Walks ONLY the library files that correspond to a manifest entry (the songs the
+stack itself downloaded/imported, exactly like the IMPORT path's
+REQUIRE_MANIFEST convention) and fills ONLY the MISSING metadata fields (release
+year / real album / track number) via the import-time resolver
+(Deezer->MusicBrainz, fail-open). The user's hand-curated collection and
+compilations (not in the manifest) are NEVER touched. It NEVER overwrites an
+existing value
 (curated/Lidarr album, resolver-set year, existing track number) - with one
 exception: a year that came from a YouTube import (marked by the durable
 TXXX:CHARTS_SOURCE=youtube frame) is replaced by the resolver's real release
@@ -39,7 +43,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import backfill, backfill_metadata, config, resolve, tags  # noqa: E402
-from app.backfill_covers import _iter_mp3  # noqa: E402
+from app.backfill_covers import _iter_manifest_mp3  # noqa: E402
 from app.i18n import t  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -91,7 +95,9 @@ def main() -> int:
     scanned = changed = year_filled = year_replaced = album_filled = 0
     track_filled = errors = 0
 
-    for path in _iter_mp3(music_dir):
+    # Manifest-scoped: only files that correspond to a manifest entry (the
+    # curated collection / compilations are never considered).
+    for path in _iter_manifest_mp3(music_dir):
         if limit and changed >= limit:
             logger.info(t("import.metafill.limit_reached", limit=limit))
             break

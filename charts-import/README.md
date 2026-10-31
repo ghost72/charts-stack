@@ -275,7 +275,7 @@ charts-import/
 │   └── main.py           # Scheduler-Loop, verbindet alle Module
 ├── scripts/
 │   ├── cleanup_flashback_legacy.py  # Einmal-Skript: alte flashback-Altlasten entfernen
-│   ├── backfill_metadata.py         # Einmal-Skript: konservativer library-weiter Metadaten-Fill
+│   ├── backfill_metadata.py         # Einmal-Skript: konservativer Metadaten-Fill (nur Manifest-Songs)
 │   ├── fix_youtube_years.py         # Einmal-Skript: Jahr historischer YouTube-Songs korrigieren
 │   └── strip_provenance_tags.py     # Einmal-Skript: Herkunfts-/Encoder-Tags aus Chart-Songs entfernen
 ├── Dockerfile            # python:3.12-slim + ffmpeg, startet app.main
@@ -353,14 +353,17 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    zählen nie gegen die Deckel (Ergebnisse werden unter einem `meta|`-Key
    gecacht).
 
-   **Library-weiter konservativer Metadaten-Nachlauf (Jahr/Album/Track):** der
-   Import-Zeit-Resolver läuft nur auf Songs, die *durch* die Pipeline kommen.
-   Eine Datei, die bereits in guter Qualität in der Library liegt (z. B. eine
-   320-kbps-Single **ohne** Jahr), fasst er nie wieder an. Der Metadaten-Nachlauf
-   schließt diese Lücke: er läuft über die **ganze** Navidrome-Library (nicht
-   nur Manifest-Songs) und füllt **nur die FEHLENDEN** Felder — Release-**Jahr**
+   **Konservativer Metadaten-Nachlauf für Manifest-Songs (Jahr/Album/Track):**
+   der Import-Zeit-Resolver läuft nur auf Songs, die *durch* die Pipeline
+   kommen. Eine Datei, die bereits in guter Qualität in der Library liegt (z. B.
+   eine 320-kbps-Single **ohne** Jahr), fasst er nie wieder an. Der
+   Metadaten-Nachlauf schließt diese Lücke: er läuft — wie der Import selbst
+   (`REQUIRE_MANIFEST`-Prinzip) — **nur über die Manifest-Songs** (die der Stack
+   selbst geladen/importiert hat), **nicht** über deine hand-kuratierte Sammlung
+   oder Kompilationen, und füllt **nur die FEHLENDEN** Felder — Release-**Jahr**
    / echtes **Album** / **Tracknummer** — über denselben Resolver
-   (`app/backfill_metadata.py`). Er ist strikt **konservativ: er überschreibt nie
+   (`app/backfill_metadata.py`). Dateien, die **nicht** im Manifest stehen,
+   werden komplett übersprungen (kein Jahr, kein Album, kein Track). Er ist strikt **konservativ: er überschreibt nie
    einen vorhandenen Wert** (ein kuratiertes/Lidarr-Album, ein vom Resolver
    gesetztes Jahr, eine positive Tracknummer bleiben unangetastet). Ein `album`
    gilt als *fehlend*, wenn es leer ist, dem Titel entspricht (der
@@ -383,7 +386,7 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    `METADATA_BACKFILL_MAX_TRIES` (Aufgeben nach N Resolver-Misses bei
    Nicht-YouTube-Dateien). Zwei Einmal-Skripte teilen denselben Kern:
    `scripts/backfill_metadata.py` läuft den konservativen Fill auf Wunsch über
-   die ganze Library (`--dry-run` Standard, `--apply`, `--limit`), und
+   die Manifest-Songs (`--dry-run` Standard, `--apply`, `--limit`), und
    `scripts/fix_youtube_years.py` korrigiert das Jahr **historischer**
    YouTube-Songs (importiert bevor es den Marker gab), ausgewählt über das
    dauerhafte Manifest-Feld `source="youtube"` — nur das Jahr, nichts anderes.
@@ -811,9 +814,10 @@ python charts-import/scripts/cleanup_flashback_legacy.py --dry-run
 python charts-import/scripts/cleanup_flashback_legacy.py
 ```
 
-**Konservativer Metadaten-Nachlauf über die ganze Library (einmalig).** Füllt
-**nur die fehlenden** Jahr/Album/Track auf bestehenden Library-Dateien über den
-Resolver und **überschreibt nie** einen vorhandenen Wert (eine Ausnahme: ein
+**Konservativer Metadaten-Nachlauf über die Manifest-Songs (einmalig).** Füllt
+**nur die fehlenden** Jahr/Album/Track auf den vom Stack geladenen/importierten
+Songs (Manifest; die kuratierte Sammlung bleibt unangetastet) über den Resolver
+und **überschreibt nie** einen vorhandenen Wert (eine Ausnahme: ein
 YouTube-markiertes Jahr wird durch das echte ersetzt). Teilt sich Logik +
 Fortschritts-State mit dem periodischen Durchlauf. Im Container ausführen (dort
 ist `/music` beschreibbar), **immer zuerst `--dry-run`** (der Standard); mit
@@ -867,7 +871,7 @@ App-Änderung). Nach dem Kopieren der aktualisierten `lang/{en,de,fr}.json` in d
 Bind-Mount beide neu starten, damit die i18n-Tabelle neu lädt:
 `docker restart charts-import charts-songrequest`.
 
-Speziell für den **library-weiten Metadaten-Nachlauf** braucht nur
+Speziell für den **manifest-scoped Metadaten-Nachlauf** braucht nur
 **charts-import** den `--no-cache`-Rebuild (neues `backfill_metadata.py` +
 Änderungen an `tags.py`/`importer.py`/`backfill.py`/`config.py`);
 **charts-songrequest ist NICHT betroffen**, weil der YouTube-Herkunftsmarker

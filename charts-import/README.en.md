@@ -273,7 +273,7 @@ charts-import/
 │   └── main.py           # scheduler loop, connects all modules
 ├── scripts/
 │   ├── cleanup_flashback_legacy.py  # one-time script: remove old flashback legacy entries
-│   ├── backfill_metadata.py         # one-time script: conservative library-wide metadata fill
+│   ├── backfill_metadata.py         # one-time script: conservative metadata fill (manifest songs only)
 │   ├── fix_youtube_years.py         # one-time script: fix the year of historical YouTube songs
 │   └── strip_provenance_tags.py     # one-time script: strip provenance/encoder tags from chart songs
 ├── Dockerfile            # python:3.12-slim + ffmpeg, starts app.main
@@ -347,13 +347,16 @@ Determines artist/album/title in this order:
    default 25); `MB_ENABLED=0` disables the MusicBrainz fallback. Cache hits
    never count against the caps (results are cached under a `meta|` key).
 
-   **Library-wide conservative metadata backfill (year/album/track):** the
+   **Conservative metadata backfill for manifest songs (year/album/track):** the
    import-time resolver only runs on songs passing *through* the pipeline. A
    file already sitting in the library in good quality (e.g. a 320 kbps single
    with **no** year) is never re-touched by it. The metadata backfill closes
-   that gap: it walks the **entire** Navidrome library (not just manifest songs)
-   and fills **only the MISSING** fields — release **year** / real **album** /
-   **track number** — via the same resolver (`app/backfill_metadata.py`). It is
+   that gap: it walks — like the import itself (`REQUIRE_MANIFEST` convention) —
+   **only the manifest songs** (the ones the stack downloaded/imported), **not**
+   your hand-curated collection or compilations, and fills **only the MISSING**
+   fields — release **year** / real **album** / **track number** — via the same
+   resolver (`app/backfill_metadata.py`). Files that are **not** in the manifest
+   are skipped entirely (no year, no album, no track). It is
    strictly **conservative: it never overwrites an existing value** (a
    curated/Lidarr album, a resolver-set year, a positive track number are all
    left untouched). An `album` counts as *missing* when it is absent, equals the

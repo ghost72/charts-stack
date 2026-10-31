@@ -79,7 +79,27 @@ _COMPILATION_TITLE_MARKERS = (
     # of "annees 90"/"annees 90"; include it so the precomputed marker carries
     # the accent-folded spelling.
     "90s", "80s", "70s", "hits uit de", "nederpop", "annees 90",
+    # Second widening (live dry-run over the real NAS library): best-of /
+    # remix / edition compilations that slipped through with a plain
+    # record_type=="album" + correct album-artist (only a title marker can
+    # catch them). Honouring the user's hard rule "never write a wrong album -
+    # empty beats wrong", the deliberate over-rejection of a rare real album
+    # literally named with these words is ACCEPTABLE.
+    #   * "hits"  -> catches "All Hits", "Jukebox Hits", "Unlimited Hits &
+    #     Remixes"; a rare genuine album with "Hits" in the name being left
+    #     empty is explicitly accepted. (Longer "..hits" markers above still
+    #     fire too; this plain substring generalises them.)
+    #   * remix/deluxe compilation editions. (These normalize to the bracket-
+    #     free, accent-/ampersand-folded forms below - "(party mix)" ->
+    #     "party mix", "& remixes" -> "and remixes" - so the normalized marker
+    #     set carries the folded spelling.)
+    "hits", "party mix", "special edition", "remixes", "and remixes",
 )
+
+# A YEAR RANGE in the title (e.g. "Jukebox Hits 1930-1950") is a reliable
+# compilation signal - a studio album is not titled with a span of years.
+# Implemented as a regex (not a literal substring) because the years vary.
+_YEAR_RANGE_RE = re.compile(r"\b\d{4}\s*-\s*\d{4}\b")
 
 # Short / ambiguous "Various Artists" abbreviations. These collapse to a tiny
 # token after normalization ("VA -"/"va-" -> "va", "V.A." -> "v a") and MUST
@@ -135,6 +155,11 @@ def is_compilation_title(album_title: str) -> bool:
     heuristic). A compilation album is dropped (album="") so the importer keeps
     album=title rather than filing a sampler name.
     """
+    # A year range ("1930-1950") is checked on the RAW title, before
+    # normalization collapses the hyphen to a space - a studio album is never
+    # titled with a span of years, so this is a reliable compilation signal.
+    if album_title and _YEAR_RANGE_RE.search(album_title):
+        return True
     norm = _normalize(album_title)
     if not norm:
         return False

@@ -30,8 +30,39 @@ def test_is_compilation_title_flags_strong_signals():
                   # Deliberate accepted over-rejection: a real album whose title
                   # merely contains "collection" is now flagged (empty beats
                   # wrong). Moved here from the negatives test.
-                  "Legend: The Best Collection", "Grace (Collection)"):
+                  "Legend: The Best Collection", "Grace (Collection)",
+                  # "hits" is now a plain-substring marker, so this (always a
+                  # compilation-style title) is flagged too. Moved from the
+                  # negatives: the user explicitly accepted "Hits" over-reject.
+                  "Super Hits Vol. 2"):
         assert resolve.is_compilation_title(title) is True, title
+
+
+def test_is_compilation_title_flags_observed_best_of_editions():
+    """
+    The 6 best-of / remix / edition / year-range albums observed in the live
+    NAS dry-run. They carry record_type=="album" + a correct album-artist, so
+    only a title marker can catch them. Each must now be classified as a
+    compilation (so the backfill leaves the album empty - never wrong).
+    ("Goin' 50" has no sane marker and deliberately remains best-effort via the
+    preference scan only, so it is NOT asserted here.)
+    """
+    for title in ("Nothing But the Beat (Party Mix)",     # David Guetta
+                  "Mr Bad Guy (Special Edition)",         # Freddie Mercury
+                  "All Hits (Special Edition)",           # All Saints
+                  "Jukebox Hits 1930-1950",               # Cab Calloway
+                  "Unlimited Hits & Remixes"):            # 2 Unlimited
+        assert resolve.is_compilation_title(title) is True, title
+
+
+def test_is_compilation_title_year_range_marker():
+    # A span of years in the title is a reliable compilation signal (checked on
+    # the raw title, before normalization collapses the hyphen).
+    for title in ("Jukebox Hits 1930-1950", "The Collection 1990-1999",
+                  "Live 1972 - 1975"):
+        assert resolve.is_compilation_title(title) is True, title
+    # A single 4-digit year is NOT a range and must not fire on its own.
+    assert resolve.is_compilation_title("Nineteen 1985") is False
 
 
 def test_is_compilation_title_flags_va_token():
@@ -43,8 +74,13 @@ def test_is_compilation_title_flags_va_token():
 
 
 def test_is_compilation_title_keeps_real_albums():
-    for title in ("Super Hits Vol. 2", "Random Access Memories",
+    for title in ("Random Access Memories",
                   "Joe le taxi", "",
+                  # Confirmed-good studio albums / singles / EP-only releases
+                  # must still pass (regression guard for the widened markers).
+                  "Tracy Chapman", "Eye in the Sky", "Get Lucky",
+                  "Please Please Please", "Espresso", "Espresso EP",
+                  "Manchild", "Feather",
                   # Real albums whose titles merely contain the substring "va"
                   # must NOT be flagged (regression guard for the "va" bug).
                   "Nirvana", "Supernova", "Lava", "Viva la Vida", "Avantasia"):
