@@ -50,13 +50,23 @@ class ResolvedMeta:
 # Title-safe compilation markers. Deliberately narrower than matching.py's
 # path-tuned list (see the module docstring): only strong, unambiguous
 # sampler/compilation signals that will not collide with a real album title.
+# These are long / multi-word and are matched as plain substrings because they
+# cannot collapse to a short ambiguous token after normalization.
 _COMPILATION_TITLE_MARKERS = (
-    "various", "va -", "va-", "varios", "varias", "verschiedene",
+    "various", "varios", "varias", "verschiedene",
     "compilation", "sampler", "mastermix", "megamix", "mixtape",
     "best of", "greatest hits", "top 100", "top100", "top 40", "top40",
     "bravo hits", "now that", "kontor", "clubland", "dance max",
     "party hits", "hitlist", "hit list",
 )
+
+# Short / ambiguous "Various Artists" abbreviations. These collapse to a tiny
+# token after normalization ("VA -"/"va-" -> "va", "V.A." -> "v a") and MUST
+# only match on word boundaries, never as a substring, otherwise real album
+# titles that merely contain the letters "va" (Nirvana, Supernova, Lava,
+# "Viva la Vida", Avantasia) would be wrongly flagged. Matched as whole,
+# space-delimited phrases via _NORMALIZED_TOKEN_MARKERS.
+_COMPILATION_TOKEN_MARKERS = ("va", "v.a.")
 
 
 def _normalize(text: str) -> str:
@@ -75,6 +85,16 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# Precompute the normalized long/substring markers once at module load (avoids
+# re-normalizing every marker on each call). Defined after _normalize.
+_NORMALIZED_TITLE_MARKERS = tuple(
+    norm for norm in (_normalize(m) for m in _COMPILATION_TITLE_MARKERS) if norm
+)
+_NORMALIZED_TOKEN_MARKERS = frozenset(
+    norm for norm in (_normalize(m) for m in _COMPILATION_TOKEN_MARKERS) if norm
+)
+
+
 def is_compilation_title(album_title: str) -> bool:
     """
     True if the album title looks like a compilation/sampler (title-safe
@@ -84,16 +104,18 @@ def is_compilation_title(album_title: str) -> bool:
     norm = _normalize(album_title)
     if not norm:
         return False
-    # Compare the normalized title against the normalized markers so spacing /
-    # punctuation differences ("VA-" vs "va -") do not matter.
-    padded = f" {norm} "
-    for marker in _COMPILATION_TITLE_MARKERS:
-        if _normalize(marker) and _normalize(marker) in norm:
+    # Long / multi-word markers are unambiguous and matched as plain substrings.
+    for marker in _NORMALIZED_TITLE_MARKERS:
+        if marker in norm:
             return True
-    # Guard "va" as a standalone leading token (Various Artists abbreviation)
-    # without matching the substring "va" inside real words.
-    if padded.startswith(" va "):
-        return True
+    # Short / ambiguous markers (e.g. "va" / "v a" for Various Artists) are
+    # matched only as whole, space-delimited phrases so they never fire inside a
+    # real word like "Nirvana" / "Supernova" / "Lava" / "Viva la Vida" /
+    # "Avantasia". The space padding enforces the word boundaries on both sides.
+    padded = f" {norm} "
+    for marker in _NORMALIZED_TOKEN_MARKERS:
+        if f" {marker} " in padded:
+            return True
     return False
 
 

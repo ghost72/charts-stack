@@ -25,10 +25,21 @@ def test_is_compilation_title_flags_strong_signals():
         assert resolve.is_compilation_title(title) is True, title
 
 
+def test_is_compilation_title_flags_va_token():
+    # "VA" (Various Artists) must still be detected as a whole token even when
+    # the rest of the title carries no other compilation marker.
+    for title in ("VA - Summer Jams 2024", "va- Road Trip Mix",
+                  "V.A. Festival Anthems"):
+        assert resolve.is_compilation_title(title) is True, title
+
+
 def test_is_compilation_title_keeps_real_albums():
     for title in ("Legend: The Best Collection", "Super Hits Vol. 2",
                   "Grace (Collection)", "Random Access Memories",
-                  "Joe le taxi", ""):
+                  "Joe le taxi", "",
+                  # Real albums whose titles merely contain the substring "va"
+                  # must NOT be flagged (regression guard for the "va" bug).
+                  "Nirvana", "Supernova", "Lava", "Viva la Vida", "Avantasia"):
         assert resolve.is_compilation_title(title) is False, title
 
 
