@@ -209,7 +209,11 @@ def _reduce_album(data: dict) -> "tuple[str, str]":
     # first; then earliest year.)
     candidates.sort(key=lambda c: (-c[1], c[0]))
     _, _, album_title, album_year = candidates[0]
-    if resolve.is_compilation_title(album_title):
+    # Mirror the Deezer-side guards: drop a compilation OR junk album title so
+    # the MB path can never return one either (the VA-album guard is not
+    # applicable - MB release objects carry no Deezer-style artist.id; the VA
+    # protection for MB comes from the upstream file-artist guard).
+    if resolve.is_compilation_title(album_title) or resolve.is_junk_album_title(album_title):
         return "", ""
     return album_title, album_year
 

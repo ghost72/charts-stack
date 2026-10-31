@@ -254,6 +254,11 @@ def resolve_canonical(artist: str, title: str) -> tuple[str, str]:
 
 _META_PREFIX = "meta|"
 
+# Upper bound on ranked candidates whose /album/<id> detail the preference scan
+# fetches. Bounds the extra GETs on a rejected-first song (zero extra when the
+# first candidate is accepted) and is pinned by the call-counter test.
+_PREFERENCE_SCAN_MAX = 4
+
 
 def _meta_key(artist: str, title: str) -> str:
     return _META_PREFIX + f"{artist.lower()}|{title.lower()}"
@@ -290,7 +295,9 @@ def resolve_release_meta(artist: str, title: str):
         return resolve.ResolvedMeta()
     a = (artist or "").strip()
     ti = (title or "").strip()
-    if not a or not ti or a.lower() == "unknown artist" or ti.lower() == "unknown album":
+    if not a or not ti or resolve.is_no_resolve_artist(a) or ti.lower() == "unknown album":
+        # VA/unknown file artist: refuse before any network call (and MB is
+        # skipped upstream in resolve.resolve_metadata for the same input).
         return resolve.ResolvedMeta()
 
     cache = _load_cache()
@@ -324,31 +331,51 @@ def resolve_release_meta(artist: str, title: str):
             # The API answered cleanly -> the result (hit OR miss) is cacheable.
             cacheable = True
             ranked = _ranked_items(data, a, ti)
-            # Walk down to the first candidate whose album is NOT a compilation.
-            chosen = None
-            for _score, item in ranked:
-                alb = (item.get("album") or {})
-                alb_title = (alb.get("title") or "").strip()
-                if alb_title and resolve.is_compilation_title(alb_title):
-                    continue  # skip a compilation album
-                chosen = item
-                break
-            if chosen is None and ranked:
-                # Only compilations matched: keep year/track from the best hit
-                # but leave album empty (importer keeps album=title).
-                chosen = ranked[0][1]
-                album = ""
-            if chosen is not None:
-                alb = (chosen.get("album") or {})
-                alb_title = (alb.get("title") or "").strip()
-                if alb_title and not resolve.is_compilation_title(alb_title):
-                    album = alb_title
-                # Album detail GET -> album_year.
-                album_id = alb.get("id")
-                if album_id:
+            if ranked:
+                best_item = ranked[0][1]
+                chosen = best_item  # safe source of year/track even if no album
+                accepted = False
+                # Bounded preference scan: prefer a studio-album release over a
+                # single/compilation/junk one. Reads record_type + album artist
+                # from the SAME /album/<id> detail the resolver already fetched;
+                # no new HTTP endpoint. The ranking already enforces artist+title
+                # similarity, so iterating never drifts to the wrong song.
+                for _score, item in ranked[:_PREFERENCE_SCAN_MAX]:
+                    alb = (item.get("album") or {})
+                    alb_title = (alb.get("title") or "").strip()
+                    # Cheap pre-filter (no network): skip obvious comp/junk.
+                    if alb_title and (resolve.is_compilation_title(alb_title)
+                                      or resolve.is_junk_album_title(alb_title)):
+                        continue
+                    album_id = alb.get("id")
+                    if not album_id:
+                        # Cannot verify the structured signals -> fail safe.
+                        continue
                     adata = _get_json(client, f"{_ALBUM_URL}/{album_id}")
-                    if adata:
+                    if not adata:
+                        continue
+                    aart = adata.get("artist") or {}
+                    if resolve.album_detail_acceptable(
+                            alb_title, adata.get("record_type"),
+                            aart.get("id"), aart.get("name")):
+                        # Store the thin search-hit alb_title (NOT adata["title"])
+                        # to keep the pre-change observable output + cache shape.
+                        album = alb_title
+                        chosen = item
+                        accepted = True
                         album_year = _parse_year(adata.get("release_date") or "")
+                        break
+                if not accepted:
+                    # No candidate passed: leave album empty (importer keeps
+                    # album=title) but still source album_year from the best
+                    # hit's detail so the `year = album_year` fallback below
+                    # does not regress (Finding 2).
+                    balb = (best_item.get("album") or {})
+                    balb_id = balb.get("id")
+                    if balb_id:
+                        adata = _get_json(client, f"{_ALBUM_URL}/{balb_id}")
+                        if adata:
+                            album_year = _parse_year(adata.get("release_date") or "")
                 # Track detail GET -> track year (preferred) + track position.
                 track_id = chosen.get("id")
                 if track_id:

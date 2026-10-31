@@ -139,6 +139,19 @@ def test_compilation_album_not_written(mp3):
     assert _read_easy(mp3, "album") == "T"  # left as the title placeholder
 
 
+# --- 6b. junk album (stale cache) is never written (defence-in-depth) -------
+
+def test_junk_album_not_written(mp3):
+    # A stale/poisoned resolved album ("c" single-char, or "Various Artists")
+    # must be rejected by the last-gate junk guard even though it is not a
+    # title-marked compilation.
+    for junk in ("c", "Various Artists", "various"):
+        _tag(mp3, artist="A", title="T", album="T", date="2000")
+        res = _run(mp3, ResolvedMeta(year="2000", album=junk, track=""))
+        assert res.album_filled is False, junk
+        assert _read_easy(mp3, "album") == "T", junk  # placeholder kept
+
+
 # --- 7. never-overwrite a present track; fill an absent one -----------------
 
 def test_present_track_never_overwritten(mp3):

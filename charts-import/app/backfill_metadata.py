@@ -24,7 +24,9 @@ Rules:
   * One deliberate exception: a YouTube-sourced year (identified by the durable
     TXXX:CHARTS_SOURCE=youtube marker) MAY be REPLACED by the resolver's real
     release year; the marker is then cleared so the file is not reprocessed.
-  * Compilations are never written as an album (``resolve.is_compilation_title``).
+  * Compilations and junk album titles are never written as an album
+    (``resolve.is_compilation_title`` / ``resolve.is_junk_album_title``) - a
+    last-gate defence-in-depth against a stale cache value from the old code.
   * Every write routes through ``tags`` (write_tags / _write_year_tag /
     clear_charts_source), all inside ``tags.preserve_mtime`` - mtime stays
     stable (NFR1).
@@ -180,7 +182,8 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
     final_album = state.album
     album_filled = False
     if plan.fill_album and resolved_album \
-            and not resolve.is_compilation_title(resolved_album):
+            and not resolve.is_compilation_title(resolved_album) \
+            and not resolve.is_junk_album_title(resolved_album):
         final_album = resolved_album
         album_filled = True
 
