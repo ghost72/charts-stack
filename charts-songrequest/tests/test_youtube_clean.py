@@ -3,6 +3,7 @@ Tests for youtube.clean_title + youtube.suggest_artist_title (suggestion-only
 cleanup/derivation). Pure, no network.
 """
 
+import os
 import pathlib
 import sys
 
@@ -80,3 +81,39 @@ def test_channel_fallback_as_artist():
     artist, title = youtube.suggest_artist_title(info)
     assert artist == "CoolChannel"
     assert title == "Some Song"
+
+
+# --- download_audio postprocessors (FFmpegMetadata dropped) ---------------
+
+def test_download_audio_has_no_ffmpeg_metadata_postprocessor(tmp_path, monkeypatch):
+    """
+    yt-dlp must NOT run the FFmpegMetadata postprocessor (it would write a wrong
+    date into the mp3). Capture the opts handed to YoutubeDL and assert the
+    postprocessor list contains FFmpegExtractAudio + EmbedThumbnail only.
+    """
+    captured = {}
+
+    class _FakeYDL:
+        def __init__(self, opts):
+            captured["opts"] = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def download(self, urls):
+            # Produce the expected "<token>.mp3" so download_audio returns.
+            outtmpl = captured["opts"]["outtmpl"]
+            token = os.path.basename(outtmpl).split(".%(ext)s")[0]
+            open(os.path.join(str(tmp_path), f"{token}.mp3"), "wb").close()
+
+    import types
+    fake = types.SimpleNamespace(YoutubeDL=_FakeYDL)
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake)
+
+    youtube.download_audio("https://youtu.be/abc", str(tmp_path))
+    keys = [pp.get("key") for pp in captured["opts"]["postprocessors"]]
+    assert "FFmpegMetadata" not in keys
+    assert keys == ["FFmpegExtractAudio", "EmbedThumbnail"]

@@ -22,7 +22,7 @@ import unicodedata
 
 from mutagen import File as MutagenFile
 
-from . import config, cover, quality, replaygain, tags, yearmap, mbyear
+from . import config, cover, quality, replaygain, resolve, tags, yearmap, mbyear
 from .i18n import t
 
 logger = logging.getLogger(__name__)
@@ -422,6 +422,9 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
     # Load the manifest fresh at the start of every run (charts-download updates
     # it between runs).
     tags.reload_manifest()
+    # Reset the per-pass live-lookup budget for the import-time metadata resolver
+    # (Deezer/MB caps). Cache hits never consume budget.
+    resolve.reset_run_budget()
 
     imported: list[tuple[str, str]] = []
     rejected: list[dict] = []
@@ -441,6 +444,8 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
         want_replace = bool(_m and _m.get("replace"))
         is_upgrade = False   # becomes True when an existing file is replaced
         upgrade_old_times = None  # (atime, mtime) of the replaced file on upgrade
+        old_year = ""        # year tag of the replaced file (upgrade floor)
+        old_album = ""       # album tag of the replaced file (upgrade floor)
 
         # Only import songs specifically requested by charts-download
         # (REQUIRE_MANIFEST). The downloads folder often contains whole sampler/
@@ -514,6 +519,10 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
                         upgrade_old_times = (_st.st_atime, _st.st_mtime)
                     except OSError:
                         upgrade_old_times = None
+                # Capture the OLD file's year/album BEFORE it is trashed so the
+                # re-correction floor below never leaves the replacement worse
+                # than before (Decision 5). Fail-open to ("","").
+                old_year, old_album = tags.read_existing_year_album(existing)
                 _trash(existing)             # move the old version aside
                 is_upgrade = True            # skip _unique_target
                 # the new file is copied to `target` further below
@@ -546,55 +555,81 @@ def import_downloads() -> "tuple[list[tuple[str, str, str, str, str, str]], list
             # On a manifest hit: write clean chart tags into the target file so
             # Navidrome/charts-sync see correct values.
             if from_manifest:
-                # Year NOT from the file name/title (that polluted path+name
-                # before) - but a FREE year charts-import already has: the
-                # year-map hint (charts-flashback/charts-energy), else an
-                # existing Lidarr "(YYYY)" album folder. A download file's own
-                # embedded date is NEVER trusted (it is often the upload/encode
-                # year, not the release year). Precedence (Decision 3):
-                #   (a) year-map hint;
-                #   conflict: a PENDING midpoint hint vs. an existing Lidarr
-                #       "(YYYY)" folder -> the folder year WINS (confirm);
-                #   (c') an existing Lidarr "(YYYY)" album folder (read-only,
-                #       trustworthy by provenance) against an ALREADY-present
-                #       library match (never the fresh target);
-                #   else -> mark the song pending for the MB year backfill.
+                # Resolve-once -> compute -> write-once (Decision 3). A FREE year
+                # charts-import already has (year-map hint or Lidarr "(YYYY)"
+                # folder) keeps precedence; the import-time metadata resolver
+                # (Deezer->MB) enriches year + a real album + track on every
+                # tier. A download file's own embedded date is NEVER trusted
+                # (the resolver reads Deezer/MB, not the file; a stale date is
+                # only ever cleared by write_tags, never adopted).
+                #
+                # Year precedence:
+                #   (a) confirmed bare-string year-map hint -> wins;
+                #   (b) PENDING midpoint hint vs. existing Lidarr "(YYYY)"
+                #       folder -> folder year wins (confirm), else the midpoint
+                #       (stays pending);
+                #   (c) existing Lidarr "(YYYY)" folder, no hint -> wins;
+                #   (d) resolver meta.year (fallback meta.album_year) -> wins;
+                #   (e) nothing -> year "", pending marker.
+                meta = resolve.resolve_metadata(artist, title)
                 hint_year, hint_pending = _hint_year(artist, title)
                 folder_year = yearmap._album_folder_year(existing or "")
+
+                final_year = ""
+                confirm_folder = False   # (b) folder-wins side effect
+                mark_pending = False     # (e) generic pending marker
                 if hint_pending:
-                    # A charts-energy decade midpoint. Write the midpoint tag
-                    # (so the on-disk invariant holds for the backfill), but if
-                    # a trustworthy Lidarr "(YYYY)" folder exists it wins:
-                    # write + confirm that year, dropping the pending marker.
                     if folder_year:
-                        tags.write_tags(target, artist, title, album,
-                                        year=folder_year)
-                        data = yearmap.load()
-                        yearmap.confirm(
-                            data, f"{artist.lower()}|{title.lower()}",
-                            folder_year)
-                        yearmap.rewrite(data)
-                        year = folder_year
+                        final_year = folder_year
+                        confirm_folder = True
                     else:
                         # Leave the charts-energy object in the map as-is (the
                         # backfill sharpens it); just tag the midpoint on disk.
-                        tags.write_tags(target, artist, title, album,
-                                        year=hint_year)
-                        year = hint_year
+                        final_year = hint_year
                 elif hint_year:
-                    # Confirmed bare-string hint keeps precedence over (c').
-                    tags.write_tags(target, artist, title, album, year=hint_year)
-                    year = hint_year
+                    final_year = hint_year
                 elif folder_year:
-                    # (c') provenance-trustworthy on-disk year -> resolved, no
-                    # pending marker.
-                    tags.write_tags(target, artist, title, album, year=folder_year)
-                    year = folder_year
+                    final_year = folder_year
+                elif meta.year:
+                    final_year = meta.year
+                elif meta.album_year:
+                    # album_year is a FALLBACK source for date only (Decision 6).
+                    final_year = meta.album_year
                 else:
-                    # No free year -> write base tags (no year) and mark the
-                    # song pending for the MB backfill (cached-miss guard
-                    # inside).
-                    tags.write_tags(target, artist, title, album)
+                    final_year = ""
+                    mark_pending = True
+
+                # Album/track from the resolver, independent of the year tier: a
+                # real non-compilation album replaces the default album=title.
+                final_album = album
+                if meta.album and not resolve.is_compilation_title(meta.album):
+                    final_album = meta.album
+                track = meta.track
+
+                # charts-upgrade "never worse" floor (Decision 5): a missed
+                # fresh lookup must not drop the old file's year/album.
+                if is_upgrade:
+                    if not final_year and old_year:
+                        final_year = old_year
+                        mark_pending = False  # a real year is now known
+                    if (final_album == album and old_album
+                            and old_album.strip().lower() != "unknown album"
+                            and not resolve.is_compilation_title(old_album)
+                            and old_album.strip().lower() != title.strip().lower()):
+                        final_album = old_album
+
+                # Single write.
+                tags.write_tags(target, artist, title, final_album,
+                                year=final_year, album_year=meta.album_year,
+                                track=track)
+                album = final_album
+                # Side effects by branch (unchanged semantics).
+                if confirm_folder:
+                    data = yearmap.load()
+                    yearmap.confirm(
+                        data, f"{artist.lower()}|{title.lower()}", folder_year)
+                    yearmap.rewrite(data)
+                elif mark_pending:
                     _ensure_pending_marker(artist, title, src="import-generic")
                 logger.info(t("import.file.tags_set", artist=artist, title=title,
                               album=album))

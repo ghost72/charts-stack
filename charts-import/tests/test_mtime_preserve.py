@@ -65,6 +65,14 @@ def test_write_tags_preserves_mtime_when_on(mp3):
     assert abs(os.stat(mp3).st_mtime - _OLD_TS) <= _TOL
 
 
+def test_write_tags_with_resolver_fields_preserves_mtime(mp3):
+    # A resolver-enriched write (year + album_year + track) must still preserve
+    # the mtime - all new fields go through the same preserve_mtime block.
+    tags.write_tags(mp3, artist="A", title="T", album="Alb",
+                    year="1987", album_year="1988", track="3")
+    assert abs(os.stat(mp3).st_mtime - _OLD_TS) <= _TOL
+
+
 def test_write_tags_bumps_mtime_when_off(mp3, monkeypatch):
     monkeypatch.setattr(config, "PRESERVE_MTIME", False)
     tags.write_tags(mp3, artist="A", title="T", album="Alb")

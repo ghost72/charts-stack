@@ -183,8 +183,11 @@ def download_audio(url: str, dest_dir: str) -> str:
 
     The postprocessor ORDER matters: FFmpegExtractAudio runs first (bestaudio ->
     mp3), then EmbedThumbnail embeds the fetched thumbnail into the mp3 as the
-    cover, then FFmpegMetadata writes title/artist as a sane fallback tag
-    (charts-import re-tags from the manifest anyway).
+    cover. No FFmpegMetadata step is used: yt-dlp would otherwise write a wrong
+    `date` (the upload/encode year, not the release year) into the mp3, and
+    charts-import re-tags artist/title/album/year from the manifest + its
+    metadata resolver anyway. EmbedThumbnail does not depend on FFmpegMetadata
+    (for mp3 it creates the ID3 header it needs itself).
     """
     import yt_dlp  # lazy import so monkeypatched unit tests need no yt-dlp
 
@@ -204,7 +207,6 @@ def download_audio(url: str, dest_dir: str) -> str:
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3",
              "preferredquality": "0"},
             {"key": "EmbedThumbnail"},
-            {"key": "FFmpegMetadata"},
         ],
     }
     with yt_dlp.YoutubeDL(opts) as ydl:

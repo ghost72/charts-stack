@@ -92,8 +92,15 @@ def preserve_mtime(path: str):
 # WHAT STAYS PROTECTED (NEVER touched) - content-valuable tags that in this
 # library sit in TXXX: MusicBrainz IDs and ReplayGain values. These must on NO
 # account be lost (metadata/loudness normalization).
+#   TMED = original media type (rip source, e.g. "CD") -> clear
+#   WOAR = official artist/performer URL (source link) -> clear
+# Plus two value/owner-conditional frames handled separately in the strip loop:
+#   TOAL = original album title: kept normally, but cleared when its value
+#          carries a "(CD-Rip)" rip marker instead of a genuine album name.
+#   UFID = unique file identifier: cleared unless the owner is MusicBrainz
+#          (the one content-valuable UFID), which is kept.
 _PROVENANCE_FULL_PREFIXES = ("COMM", "TENC", "TSSE", "WXXX",
-                             "WCOM", "WOAF", "WPUB", "TOWN")
+                             "WCOM", "WOAF", "WPUB", "TOWN", "TMED", "WOAR")
 # TXXX descriptions (the part after "TXXX:") that are PROTECTED (case-insensitive,
 # checked as a substring): everything around MusicBrainz and ReplayGain.
 _TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain")
@@ -106,6 +113,32 @@ def _is_protected_txxx(frame_key: str) -> bool:
         return False
     desc = ks.split(":", 1)[1].lower() if ":" in ks else ""
     return any(sub in desc for sub in _TXXX_PROTECTED_SUBSTR)
+
+
+def _is_cdrip_toal(frame) -> bool:
+    """
+    True if a TOAL frame's text contains a '(CD-Rip)'/'cd-rip' marker (provenance
+    from a CD rip), which must be stripped. A genuine original-album TOAL returns
+    False and is kept. Fail-open to False (keep) on an unreadable value.
+    """
+    try:
+        text = " ".join(str(x) for x in (getattr(frame, "text", None) or []))
+    except Exception:
+        return False
+    return "cd-rip" in text.lower()
+
+
+def _is_musicbrainz_ufid(frame) -> bool:
+    """
+    True if a UFID frame's owner is MusicBrainz (owner contains
+    'musicbrainz.org'), the one content-valuable UFID that must be kept. Any
+    other / unreadable owner is treated as non-MusicBrainz (deleted).
+    """
+    try:
+        owner = str(getattr(frame, "owner", "") or "")
+    except Exception:
+        return False
+    return "musicbrainz.org" in owner.lower()
 
 
 def strip_provenance_tags(path: str) -> bool:
@@ -131,6 +164,16 @@ def strip_provenance_tags(path: str) -> bool:
             if ku.startswith("TXXX"):
                 # TXXX only if NOT protected (MusicBrainz/ReplayGain stay).
                 if not _is_protected_txxx(k):
+                    to_delete.append(k)
+            elif ku.startswith("TOAL"):
+                # Original-album frame: delete ONLY when it carries a "(CD-Rip)"
+                # rip marker (provenance), keep a genuine original-album title.
+                if _is_cdrip_toal(tags.get(k)):
+                    to_delete.append(k)
+            elif ku.startswith("UFID"):
+                # Unique file id: keep the MusicBrainz one (content-valuable),
+                # delete every other owner (provenance / rip-tool fingerprint).
+                if not _is_musicbrainz_ufid(tags.get(k)):
                     to_delete.append(k)
             elif ku.startswith(_PROVENANCE_FULL_PREFIXES):
                 to_delete.append(k)
@@ -295,19 +338,48 @@ def read_metadata(path: str) -> tuple[str, str, str, bool]:
     return artist, album, title, False
 
 
+def read_existing_year_album(path: str) -> tuple[str, str]:
+    """
+    Reads (year, album) from an existing library file's tags (date/originaldate
+    and album), fail-open to ("", ""). Used by the charts-upgrade replace path
+    to capture the OLD file's metadata BEFORE it is trashed, so a missed fresh
+    lookup never leaves the replacement worse than before.
+    """
+    try:
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            return "", ""
+        year = _first_tag(audio, "date", "originaldate")
+        # Keep only a plausible leading 4-digit year.
+        y = year[:4] if year[:4].isdigit() else ""
+        album = _first_tag(audio, "album")
+        return y, album
+    except Exception:
+        return "", ""
+
+
 def write_tags(path: str, artist: str, title: str, album: str,
-               year=None) -> None:
+               year=None, album_year=None, track=None) -> None:
     """
     Writes artist/title/album into the file tags (only for manifest hits).
     Errors are logged but not propagated - the import should succeed even if
     the tag writing fails.
 
-    year = optional release year from the manifest (e.g. "1987"). If set, it is
-    written as date/originaldate tags so the decade smart playlists in Navidrome
-    assign the song to the right decade. If year is missing (None/""), the date
-    tags stay untouched -> behavior as before (no overwriting of existing years
-    with an empty value).
+    year = optional release year (e.g. "1987"). If set, it is written as
+    date/originaldate tags so the decade smart playlists in Navidrome assign the
+    song to the right decade. If year is missing (None/""), any EXISTING
+    date/originaldate are actively CLEARED (uniform no-year contract across all
+    sources - a stale embedded date must not masquerade as a release year). The
+    clear is a no-op when the keys are absent.
+
+    album_year = optional album release year. It is NOT persisted to any tag
+    here (it is only a fallback year source resolved by the importer, Decision
+    6); the kwarg is accepted so callers can pass it and ignored in the write.
+
+    track = optional track number (e.g. "3"). Written as the tracknumber tag
+    only when a non-empty value is given; absent otherwise.
     """
+    _ = album_year  # accepted for a uniform caller API; not written (Decision 6)
     # Preserve the mtime the file had on entry (fresh copy mtime for a new
     # import, or the original for a retouch) across both the easy-save and the
     # internal strip_provenance_tags save, so a retag never changes "date
@@ -325,6 +397,13 @@ def write_tags(path: str, artist: str, title: str, album: str,
             if year:
                 audio["date"] = str(year)
                 audio["originaldate"] = str(year)
+            else:
+                # Uniform no-year clear: remove any stale embedded date so it
+                # cannot be mistaken for a release year. No-op when absent.
+                audio.pop("date", None)
+                audio.pop("originaldate", None)
+            if track:
+                audio["tracknumber"] = str(track)
             audio.save()
         except Exception as e:
             logger.warning(t("import.tags.write_failed", path=path, error=e))
