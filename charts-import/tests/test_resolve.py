@@ -423,8 +423,9 @@ def test_resolve_metadata_va_skips_both_sources(monkeypatch):
 # Preference scan + bounded GET budget.
 
 def test_meta_prefers_studio_album_over_single(monkeypatch):
-    # Ranked hits: a single first, then the real studio album. The scan must
-    # prefer the album, inspecting at most _PREFERENCE_SCAN_MAX album GETs.
+    # Ranked hits: a single first, then the real studio album. The collect-and-
+    # choose scan (no early break) must prefer the album while still inspecting
+    # at most _PREFERENCE_SCAN_MAX album GETs.
     search = {"data": [
         _hit(1, 10, "Espresso", artist="Sabrina Carpenter", title="Espresso"),
         _hit(2, 20, "Short n' Sweet", artist="Sabrina Carpenter", title="Espresso"),
@@ -447,8 +448,9 @@ def test_meta_prefers_studio_album_over_single(monkeypatch):
 
 
 def test_meta_scan_bounded_to_max_album_gets(monkeypatch):
-    # Six rejectable candidates -> the scan must stop after _PREFERENCE_SCAN_MAX
-    # album GETs (plus possibly one best-hit year-fallback GET), never all six.
+    # Six rejectable candidates. Without the early break the scan now inspects
+    # all _PREFERENCE_SCAN_MAX candidates (never all six), plus ONE best-hit
+    # year-fallback GET on the all-rejected path -> ceiling MAX + 1.
     search = {"data": [_hit(i, 100 + i, f"Comp {i}") for i in range(1, 7)]}
     albums = {100 + i: {"id": 100 + i, "title": f"Comp {i}",
                         "record_type": "single", "release_date": "2000-01-01",
@@ -459,10 +461,117 @@ def test_meta_scan_bounded_to_max_album_gets(monkeypatch):
     _meta_client(monkeypatch, search, albums, tracks, counter=counter)
     meta = deezer.resolve_release_meta("A", "Song")
     assert meta.album == ""
-    # The scan itself inspects at most _PREFERENCE_SCAN_MAX candidates; the
-    # all-rejected path then does ONE extra best-hit /album/<id> GET for the
-    # album_year fallback (FR6). So the hard ceiling is MAX + 1 - never all six.
+    # The scan inspects at most _PREFERENCE_SCAN_MAX candidates; the all-rejected
+    # path then does ONE extra best-hit /album/<id> GET for the album_year
+    # fallback (FR6). Hard ceiling MAX + 1 - never all six.
     assert counter["albums"] <= deezer._PREFERENCE_SCAN_MAX + 1
+
+
+def test_meta_no_early_break_inspects_all_passing_candidates(monkeypatch):
+    # Two passing album candidates: the scan must NOT break on the first accept.
+    # It fetches BOTH /album/<id> details (no break) to compare editions, then
+    # picks the original (earlier, non-secondary).
+    search = {"data": [
+        _hit(1, 10, "Breakfast In America (Deluxe Edition)",
+             artist="Supertramp", title="Breakfast in America"),
+        _hit(2, 20, "Breakfast In America",
+             artist="Supertramp", title="Breakfast in America"),
+    ]}
+    albums = {
+        10: {"id": 10, "title": "Breakfast In America (Deluxe Edition)",
+             "record_type": "album", "release_date": "2010-01-01",
+             "artist": {"id": 5, "name": "Supertramp"}},
+        20: {"id": 20, "title": "Breakfast In America", "record_type": "album",
+             "release_date": "1979-03-29",
+             "artist": {"id": 5, "name": "Supertramp"}},
+    }
+    tracks = {1: {"id": 1, "release_date": "2010-01-01", "track_position": 1},
+              2: {"id": 2, "release_date": "1979-03-29", "track_position": 1}}
+    counter = {}
+    _meta_client(monkeypatch, search, albums, tracks, counter=counter)
+    meta = deezer.resolve_release_meta("Supertramp", "Breakfast in America")
+    assert meta.album == "Breakfast In America"   # original, not the deluxe
+    assert counter["albums"] == 2                  # BOTH fetched (no early break)
+
+
+def test_meta_prefers_original_over_secondary_regardless_of_date(monkeypatch):
+    # The secondary (Deluxe) edition is ranked FIRST and carries an EARLIER
+    # release_date than the original. Non-secondary must still win: the sort key
+    # is (is_secondary, sort_year), so a non-secondary always outranks a
+    # secondary regardless of date.
+    search = {"data": [
+        _hit(1, 10, "Rumours (Deluxe)", artist="Fleetwood Mac",
+             title="Go Your Own Way"),
+        _hit(2, 20, "Rumours", artist="Fleetwood Mac", title="Go Your Own Way"),
+    ]}
+    albums = {
+        10: {"id": 10, "title": "Rumours (Deluxe)", "record_type": "album",
+             "release_date": "1970-01-01",   # deliberately earlier
+             "artist": {"id": 9, "name": "Fleetwood Mac"}},
+        20: {"id": 20, "title": "Rumours", "record_type": "album",
+             "release_date": "1977-02-04",
+             "artist": {"id": 9, "name": "Fleetwood Mac"}},
+    }
+    tracks = {1: {"id": 1, "release_date": "1977-02-04", "track_position": 5},
+              2: {"id": 2, "release_date": "1977-02-04", "track_position": 5}}
+    _meta_client(monkeypatch, search, albums, tracks)
+    meta = deezer.resolve_release_meta("Fleetwood Mac", "Go Your Own Way")
+    assert meta.album == "Rumours"   # non-secondary wins despite later date
+
+
+def test_meta_earliest_original_among_equals(monkeypatch):
+    # Two NON-secondary originals: the earlier release_date wins.
+    search = {"data": [
+        _hit(1, 10, "Later Reissue", artist="A", title="Song"),
+        _hit(2, 20, "First Pressing", artist="A", title="Song"),
+    ]}
+    albums = {
+        10: {"id": 10, "title": "Later Reissue", "record_type": "album",
+             "release_date": "1995-01-01", "artist": {"id": 1, "name": "A"}},
+        20: {"id": 20, "title": "First Pressing", "record_type": "album",
+             "release_date": "1985-01-01", "artist": {"id": 1, "name": "A"}},
+    }
+    tracks = {1: {"id": 1, "release_date": "1985-01-01", "track_position": 1},
+              2: {"id": 2, "release_date": "1985-01-01", "track_position": 1}}
+    _meta_client(monkeypatch, search, albums, tracks)
+    meta = deezer.resolve_release_meta("A", "Song")
+    assert meta.album == "First Pressing"
+    assert meta.album_year == "1985"
+
+
+def test_meta_sole_secondary_edition_still_chosen(monkeypatch):
+    # The ONLY passing candidate is a live album. A secondary edition is a
+    # DEMOTE signal, not a reject, so a sole secondary is still chosen (a
+    # correct-artist album beats an empty one, per the hard rule).
+    search = {"data": [
+        _hit(1, 10, "On The Night (Live)", artist="Dire Straits",
+             title="Money for Nothing"),
+    ]}
+    albums = {
+        10: {"id": 10, "title": "On The Night (Live)", "record_type": "album",
+             "release_date": "1993-05-10",
+             "artist": {"id": 3, "name": "Dire Straits"}},
+    }
+    tracks = {1: {"id": 1, "release_date": "1993-05-10", "track_position": 3}}
+    _meta_client(monkeypatch, search, albums, tracks)
+    meta = deezer.resolve_release_meta("Dire Straits", "Money for Nothing")
+    assert resolve.is_secondary_edition_title("On The Night (Live)") is True
+    assert meta.album == "On The Night (Live)"   # sole secondary -> still chosen
+
+
+def test_is_secondary_edition_title():
+    for yes in ("On The Night (Live)", "Live", "Breakfast In America (Deluxe Edition)",
+                "Rumours (Expanded)", "Thriller 25th Anniversary",
+                "Brothers in Arms (2007 Remaster)", "Remastered",
+                "Bohemian Rhapsody (The Original Soundtrack)",
+                "Love Actually OST", "Super Deluxe Edition",
+                "Collector's Edition", "Album (Bonus Track Version)"):
+        assert resolve.is_secondary_edition_title(yes) is True, yes
+    for no in ("Rumours", "Breakfast In America", "Tracy Chapman",
+               "Eye in the Sky", "Alive", "Live It Up", "Living in America",
+               # bare "edition"/"version" must NOT demote a real album
+               "Special", "Grace", ""):
+        assert resolve.is_secondary_edition_title(no) is False, no
 
 
 def test_meta_all_rejected_keeps_year_from_album_when_track_has_none(monkeypatch):
@@ -580,3 +689,44 @@ def test_resolve_mb_meta_drops_compilation_album(monkeypatch):
     meta = mbyear.resolve_mb_meta("Artist", "Song")
     assert meta.year == "2001"
     assert meta.album == ""  # compilation rejected
+
+
+def test_reduce_album_skips_live_secondary_type():
+    # Two release-groups for the same recording: a Live one (ranked by its
+    # secondary-types) and the real studio album. _reduce_album must DEMOTE the
+    # Live release-group and return the studio album (original-album report §6).
+    data = {
+        "recordings": [
+            {"score": 100, "disambiguation": "",
+             "releases": [
+                 {"title": "On The Night (Live)", "date": "1993-05-10",
+                  "release-group": {"primary-type": "Album",
+                                    "secondary-types": ["Live"],
+                                    "first-release-date": "1993-05-10"}},
+                 {"title": "Brothers in Arms", "date": "1985-05-13",
+                  "release-group": {"primary-type": "Album",
+                                    "first-release-date": "1985-05-13"}},
+             ]},
+        ]
+    }
+    album, album_year = mbyear._reduce_album(data)
+    assert album == "Brothers in Arms"   # Live secondary-type demoted
+    assert album_year == "1985"
+
+
+def test_reduce_album_sole_live_still_returned():
+    # When the ONLY candidate is a Live secondary-type, it is still returned
+    # (demote, not reject - better than an empty album).
+    data = {
+        "recordings": [
+            {"score": 100, "disambiguation": "",
+             "releases": [
+                 {"title": "On The Night", "date": "1993-05-10",
+                  "release-group": {"primary-type": "Album",
+                                    "secondary-types": ["Live"],
+                                    "first-release-date": "1993-05-10"}},
+             ]},
+        ]
+    }
+    album, _ = mbyear._reduce_album(data)
+    assert album == "On The Night"   # sole secondary -> still returned

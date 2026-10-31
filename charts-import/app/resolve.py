@@ -109,6 +109,36 @@ _YEAR_RANGE_RE = re.compile(r"\b\d{4}\s*-\s*\d{4}\b")
 # space-delimited phrases via _NORMALIZED_TOKEN_MARKERS.
 _COMPILATION_TOKEN_MARKERS = ("va", "v.a.")
 
+# Secondary-edition markers (original-album report §4). UNLIKE the compilation
+# markers these are a RANKING DEMOTE signal, NOT a reject: a title carrying one
+# of them (a live album, deluxe/expanded/anniversary/remaster edition, a
+# soundtrack) is ranked BELOW any original but is still chosen when it is the
+# only passing candidate (a correct-artist reissue beats an empty album, per
+# the user's hard rule "a wrong/secondary album is worse than leaving what's
+# there" - and empty is NOT better than a correct-artist secondary edition).
+#
+# Only robust, qualified phrases are plain substrings. DELIBERATELY EXCLUDED:
+#   * bare "edition" / "version" - real studio albums are named "... Edition" /
+#     carry "(... version)"; only QUALIFIED forms (deluxe/expanded/special/
+#     anniversary edition) demote, so those qualifiers appear here, never the
+#     bare words.
+#   * bare "live" as a substring would hit "Alive", "Live It Up", "Living" -
+#     it is a WORD-BOUNDED token instead (see _SECONDARY_EDITION_TOKEN_MARKERS),
+#     mirroring the _COMPILATION_TOKEN_MARKERS discipline.
+_SECONDARY_EDITION_MARKERS = (
+    "deluxe", "expanded", "anniversary", "remaster", "remastered",
+    "soundtrack", "ost", "motion picture", "super deluxe", "collector",
+    "bonus track",
+)
+
+# Tail-only secondary-edition tokens: a token that only demotes when it is the
+# LAST word of the normalized title (a title tail "... (Live)" collapses to a
+# trailing " live") OR the whole title. "live" lives here so it fires on
+# "On The Night (Live)" / "Live" / "The Way We Walk Vol.1 (Live)" but NOT on
+# "Alive" / "Living" (not whole words) and NOT on "Live It Up" (leading word, a
+# real phrase - report §4). Matched tail-anchored, never as a bare substring.
+_SECONDARY_EDITION_TAIL_MARKERS = ("live",)
+
 # Various-Artists identifiers. Used for BOTH the file-artist short-circuit
 # (NO_RESOLVE_ARTISTS) and the album-detail artist guard (is_va_album). Compared
 # case-insensitively against the raw (not normalized) lowercased string.
@@ -147,6 +177,12 @@ _NORMALIZED_TITLE_MARKERS = tuple(
 _NORMALIZED_TOKEN_MARKERS = frozenset(
     norm for norm in (_normalize(m) for m in _COMPILATION_TOKEN_MARKERS) if norm
 )
+_NORMALIZED_SECONDARY_MARKERS = tuple(
+    norm for norm in (_normalize(m) for m in _SECONDARY_EDITION_MARKERS) if norm
+)
+_NORMALIZED_SECONDARY_TAIL_MARKERS = tuple(
+    norm for norm in (_normalize(m) for m in _SECONDARY_EDITION_TAIL_MARKERS) if norm
+)
 
 
 def is_compilation_title(album_title: str) -> bool:
@@ -174,6 +210,35 @@ def is_compilation_title(album_title: str) -> bool:
     padded = f" {norm} "
     for marker in _NORMALIZED_TOKEN_MARKERS:
         if f" {marker} " in padded:
+            return True
+    return False
+
+
+def is_secondary_edition_title(album_title: str) -> bool:
+    """
+    True if the album title looks like a SECONDARY edition (live album, deluxe/
+    expanded/anniversary/remaster edition, soundtrack, collector/bonus-track
+    edition) rather than the original studio album. This is a RANKING DEMOTE
+    signal only (used by the Deezer preference scan to rank an original above a
+    secondary edition); it is NOT a reject gate - a sole secondary edition is
+    still chosen over an empty album. Reuses the same _normalize as the
+    compilation check. See _SECONDARY_EDITION_MARKERS for the excluded bare
+    words ("edition"/"version"/bare "live").
+    """
+    norm = _normalize(album_title)
+    if not norm:
+        return False
+    # Qualified multi-word / robust phrases as plain substrings.
+    for marker in _NORMALIZED_SECONDARY_MARKERS:
+        if marker in norm:
+            return True
+    # Tail-only tokens ("live"): demote when the marker is the WHOLE title or
+    # the LAST word (a title tail "... (Live)" normalizes to a trailing
+    # " live"). This never fires inside a word ("Alive"/"Living") and never on
+    # a leading/middle word ("Live It Up"), honouring report §4.
+    tokens = norm.split()
+    for marker in _NORMALIZED_SECONDARY_TAIL_MARKERS:
+        if tokens and tokens[-1] == marker:
             return True
     return False
 

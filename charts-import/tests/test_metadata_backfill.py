@@ -237,3 +237,119 @@ def test_dry_run_writes_nothing(mp3):
     assert res.changed is True            # it WOULD change
     assert _read_easy(mp3, "date") == ""  # but nothing was written
     assert _read_easy(mp3, "album") == "T"
+
+
+# --- 11. album provenance marker stamped on a fill --------------------------
+
+def _run_rc(path, meta, dry_run=False):
+    """Run with --recorrect-albums enabled (opt-in album overwrite)."""
+    state = backfill_metadata.read_state(path)
+    plan = backfill_metadata.missing_fields(state, recorrect_albums=True)
+    return backfill_metadata.apply_backfill(path, state, plan, meta, dry_run=dry_run)
+
+
+def test_album_fill_stamps_marker_and_survives_strip(mp3):
+    # Filling a missing album stamps TXXX:CHARTS_ALBUM_SRC=resolver so the file
+    # becomes eligible for future marker-gated re-correction.
+    _tag(mp3, artist="A", title="T", album="T", date="1990")
+    res = _run(mp3, ResolvedMeta(year="1990", album="Studio Album", track=""))
+    assert res.album_filled is True
+    assert tags.read_charts_album_src(mp3) == "resolver"
+    assert _read_easy(mp3, "album") == "Studio Album"
+
+
+def test_charts_album_src_marker_survives_strip(mp3, monkeypatch):
+    monkeypatch.setattr(config, "PRESERVE_MTIME", False)
+    from mutagen.id3 import ID3, TXXX
+    _tag(mp3, artist="A", title="T", album="Real")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    id3 = ID3(mp3)
+    id3.add(TXXX(encoding=3, desc="SOME_OTHER", text=["x"]))
+    id3.save(mp3)
+    assert tags.strip_provenance_tags(mp3) is True
+    keys = set(str(k) for k in ID3(mp3).keys())
+    assert "TXXX:CHARTS_ALBUM_SRC" in keys     # protected, survives
+    assert "TXXX:SOME_OTHER" not in keys        # non-protected, deleted
+
+
+# --- 12. re-correction: marker-gated overwrite ------------------------------
+
+def test_recorrect_overwrites_marker_stamped_album(mp3):
+    # A present album the stack wrote (CHARTS_ALBUM_SRC=resolver) is overwritten
+    # with a freshly resolved non-secondary original under --recorrect-albums.
+    _tag(mp3, artist="A", title="T", album="On The Night", date="1993")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run_rc(mp3, ResolvedMeta(year="1985", album="Brothers in Arms",
+                                    album_year="1985", track=""))
+    assert res.album_recorrected is True
+    assert res.album_filled is False
+    assert _read_easy(mp3, "album") == "Brothers in Arms"
+    assert tags.read_charts_album_src(mp3) == "resolver"   # re-stamped
+
+
+def test_recorrect_keeps_unmarked_curated_album(mp3):
+    # A present album WITHOUT the marker (user-curated) is NEVER overwritten,
+    # even with --recorrect-albums, when its title is not a secondary edition.
+    _tag(mp3, artist="A", title="T", album="My Curated Album", date="1990")
+    res = _run_rc(mp3, ResolvedMeta(year="1985", album="Some Original",
+                                    album_year="1985", track=""))
+    assert res.album_recorrected is False
+    assert _read_easy(mp3, "album") == "My Curated Album"
+
+
+def test_recorrect_disabled_by_default_keeps_marked_album(mp3):
+    # Without --recorrect-albums even a marker-stamped present album is kept
+    # (re-correction is strictly opt-in).
+    _tag(mp3, artist="A", title="T", album="On The Night", date="1993")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run(mp3, ResolvedMeta(year="1985", album="Brothers in Arms",
+                                 album_year="1985", track=""))
+    assert res.album_recorrected is False
+    assert _read_easy(mp3, "album") == "On The Night"
+
+
+def test_recorrect_rejects_secondary_resolved_album(mp3):
+    # Even eligible (marker-stamped), the overwrite is refused when the freshly
+    # resolved album is ITSELF a secondary edition (never write a worse value).
+    _tag(mp3, artist="A", title="T", album="On The Night", date="1993")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    res = _run_rc(mp3, ResolvedMeta(year="1990", album="Wembley (Live)",
+                                    album_year="1990", track=""))
+    assert res.album_recorrected is False
+    assert _read_easy(mp3, "album") == "On The Night"
+
+
+# --- 13. re-correction: heuristic catch-up for pre-marker files -------------
+
+def test_recorrect_heuristic_catches_unmarked_secondary(mp3):
+    # A pre-marker file (NO marker) whose album is a secondary-edition pattern
+    # IS overwritten under --recorrect-albums, but ONLY when the resolved
+    # original has a strictly-earlier year than the present edition.
+    _tag(mp3, artist="A", title="T", album="Rumours (Deluxe Edition)", date="2004")
+    res = _run_rc(mp3, ResolvedMeta(year="1977", album="Rumours",
+                                    album_year="1977", track=""))
+    assert res.album_recorrected is True
+    assert _read_easy(mp3, "album") == "Rumours"
+    assert tags.read_charts_album_src(mp3) == "resolver"   # stamped on catch-up
+
+
+def test_recorrect_heuristic_requires_strictly_earlier_year(mp3):
+    # The heuristic refuses to overwrite an unmarked secondary edition when the
+    # resolved original is NOT strictly earlier (no confident originality).
+    _tag(mp3, artist="A", title="T", album="Rumours (Deluxe Edition)", date="1977")
+    res = _run_rc(mp3, ResolvedMeta(year="1977", album="Rumours",
+                                    album_year="1977", track=""))
+    assert res.album_recorrected is False
+    assert _read_easy(mp3, "album") == "Rumours (Deluxe Edition)"
+
+
+# --- 14. mtime preserved on a recorrect write (NFR1) ------------------------
+
+def test_recorrect_write_preserves_mtime(mp3):
+    _tag(mp3, artist="A", title="T", album="On The Night", date="1993")
+    tags.stamp_charts_album_src(mp3, "resolver")
+    _set_mtime(mp3, _OLD_TS)
+    res = _run_rc(mp3, ResolvedMeta(year="1985", album="Brothers in Arms",
+                                    album_year="1985", track=""))
+    assert res.album_recorrected is True
+    assert abs(os.stat(mp3).st_mtime - _OLD_TS) <= _TOL

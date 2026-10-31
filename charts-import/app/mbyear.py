@@ -173,9 +173,15 @@ def _reduce_album(data: dict) -> "tuple[str, str]":
     """
     from . import resolve  # lazy to avoid an import cycle at module load
 
-    # Collect candidate (sort_year, is_single, title, year) tuples from releases
-    # on recordings that pass the score + disambiguation gates.
-    candidates: list[tuple[int, int, str, str]] = []
+    # Collect candidate (is_secondary, is_single, sort_year, title, year) tuples
+    # from releases on recordings that pass the score + disambiguation gates.
+    # is_secondary (original-album report §6): the release-group secondary-types
+    # array - already present in the recording-search payload, no new HTTP - is
+    # the MOST reliable originality signal MB exposes. A release-group tagged
+    # Live/Compilation/Soundtrack/Remix is demoted below every original; it is
+    # chosen only when it is the SOLE candidate (still better than empty).
+    _SECONDARY_TYPES = {"live", "compilation", "soundtrack", "remix"}
+    candidates: list[tuple[int, int, int, str, str]] = []
     for rec in data.get("recordings", []):
         if not isinstance(rec, dict):
             continue
@@ -193,22 +199,29 @@ def _reduce_album(data: dict) -> "tuple[str, str]":
             ry = _parse_year(rel.get("date") or "")
             rg = rel.get("release-group") if isinstance(rel, dict) else None
             primary = ""
+            is_secondary = 0
             if isinstance(rg, dict):
                 primary = (rg.get("primary-type") or "").strip().lower()
                 if not ry:
                     ry = _parse_year(rg.get("first-release-date") or "")
+                sec = rg.get("secondary-types") or []
+                if isinstance(sec, list) and any(
+                        str(s).strip().lower() in _SECONDARY_TYPES for s in sec):
+                    is_secondary = 1
             is_single = 1 if primary == "single" else 0
             # Sort year: a missing year sinks to the end.
             sort_year = ry if ry else 9999
-            candidates.append((sort_year, is_single, title, str(ry) if ry else ""))
+            candidates.append((is_secondary, is_single, sort_year, title,
+                               str(ry) if ry else ""))
 
     if not candidates:
         return "", ""
-    # Prefer a Single release-group; within that prefer the earliest year. If no
-    # single exists, take the earliest Album/other. (-is_single so singles sort
-    # first; then earliest year.)
-    candidates.sort(key=lambda c: (-c[1], c[0]))
-    _, _, album_title, album_year = candidates[0]
+    # Prefer NON-secondary (live/comp/soundtrack/remix demoted to the end);
+    # then a Single release-group (track-first-appearance signal); then the
+    # earliest first-release-date. (is_secondary asc, -is_single so singles
+    # sort first, then earliest year.)
+    candidates.sort(key=lambda c: (c[0], -c[1], c[2]))
+    _is_sec, _is_single, _sort_year, album_title, album_year = candidates[0]
     # Mirror the Deezer-side guards: drop a compilation OR junk album title so
     # the MB path can never return one either (the VA-album guard is not
     # applicable - MB release objects carry no Deezer-style artist.id; the VA

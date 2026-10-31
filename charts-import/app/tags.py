@@ -108,12 +108,21 @@ _PROVENANCE_FULL_PREFIXES = ("COMM", "TENC", "TSSE", "WXXX",
 # YouTube year apart from a trustworthy one. The marker must survive every
 # provenance strip (import, backfill, year-only writes), exactly like the
 # MusicBrainz/ReplayGain TXXX frames.
-_TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain", "charts_source")
+_TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain", "charts_source",
+                          "charts_album_src")
 
 # Description of the durable provenance marker frame (TXXX:CHARTS_SOURCE). Kept
 # as a module constant so the stamp, the backfill (clear-after-correct) and the
 # tests all refer to the same name.
 CHARTS_SOURCE_DESC = "CHARTS_SOURCE"
+
+# Description of the durable ALBUM provenance marker frame
+# (TXXX:CHARTS_ALBUM_SRC). Stamped whenever the resolver/backfill SETS an album,
+# with value "resolver". Mirrors CHARTS_SOURCE exactly: whitelisted against the
+# provenance strip (see _TXXX_PROTECTED_SUBSTR above) so it survives every
+# write, and read by the --recorrect-albums mode to tell a stack-written album
+# (eligible for re-correction) from a user's hand-curated album (never touched).
+CHARTS_ALBUM_SRC_DESC = "CHARTS_ALBUM_SRC"
 
 
 def _is_protected_txxx(frame_key: str) -> bool:
@@ -458,6 +467,53 @@ def clear_charts_source(path: str) -> None:
             id3.save(path)
     except Exception as e:
         logger.debug(t("import.tags.marker_clear_failed", path=path, error=e))
+
+
+def read_charts_album_src(path: str) -> str:
+    """
+    Read the durable TXXX:CHARTS_ALBUM_SRC provenance marker from a file (e.g.
+    "resolver"), or "" when it is absent/unreadable. Mirrors read_charts_source
+    exactly. Used by --recorrect-albums to tell a stack-written album (eligible
+    for re-correction) from a user's curated album (no marker -> never touched).
+    Fail-open.
+    """
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        try:
+            id3 = ID3(path)
+        except ID3NoHeaderError:
+            return ""
+        frame = id3.get(f"TXXX:{CHARTS_ALBUM_SRC_DESC}")
+        if frame is None:
+            return ""
+        texts = getattr(frame, "text", None) or []
+        return str(texts[0]).strip() if texts else ""
+    except Exception:
+        return ""
+
+
+def stamp_charts_album_src(path: str, source: str) -> None:
+    """
+    Stamp the durable TXXX:CHARTS_ALBUM_SRC=<source> provenance marker onto a
+    file, mtime-preserving. Mirrors stamp_charts_source exactly (raw ID3; the
+    easy interface cannot write an arbitrary TXXX). Fail-open: a write error
+    only means the marker is missing, never an exception into the caller. No-op
+    for an empty source.
+    """
+    if not source:
+        return
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError, TXXX
+        with preserve_mtime(path):
+            try:
+                id3 = ID3(path)
+            except ID3NoHeaderError:
+                id3 = ID3()
+            id3.setall(f"TXXX:{CHARTS_ALBUM_SRC_DESC}",
+                       [TXXX(encoding=3, desc=CHARTS_ALBUM_SRC_DESC, text=[source])])
+            id3.save(path)
+    except Exception as e:
+        logger.debug(t("import.tags.marker_stamp_failed", path=path, error=e))
 
 
 def write_tags(path: str, artist: str, title: str, album: str,

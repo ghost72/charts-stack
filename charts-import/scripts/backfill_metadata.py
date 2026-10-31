@@ -30,9 +30,23 @@ Usage (inside the charts-import container; /music is rw there):
   python -m scripts.backfill_metadata --apply --limit 200
 
 Flags:
-  --dry-run   change nothing, only log what WOULD change (the default).
-  --apply     actually write (required to change files).
-  --limit N   stop after N files CHANGED (0 = no cap). Invalid -> 0.
+  --dry-run            change nothing, only log what WOULD change (the default).
+  --apply              actually write (required to change files).
+  --limit N            stop after N files CHANGED (0 = no cap). Invalid -> 0.
+  --recorrect-albums   opt-in: also OVERWRITE a present album with a freshly
+                       resolved non-secondary original (original-album report
+                       §7). Default OFF. Two cases, both manifest-scoped:
+                         * an album carrying TXXX:CHARTS_ALBUM_SRC=resolver (the
+                           stack wrote it) is overwritten with a better original;
+                         * a pre-marker file (no marker) whose album title looks
+                           like a secondary edition is corrected ONLY when a
+                           strictly-earlier-date non-secondary original exists
+                           (the one-time heuristic catch-up).
+                       A user's hand-curated ORIGINAL album (no marker, no
+                       secondary pattern) is NEVER overwritten. The periodic
+                       pass and fix_youtube_years.py never recorrect - it is
+                       opt-in to THIS script only. Combine with --dry-run (the
+                       default) FIRST to preview every overwrite per file.
 """
 
 import argparse
@@ -72,11 +86,15 @@ def main() -> int:
                     help="actually write (required to change files)")
     ap.add_argument("--limit", default="0",
                     help="stop after N files changed (0 = no cap)")
+    ap.add_argument("--recorrect-albums", action="store_true",
+                    help="also overwrite a present stack-written / secondary "
+                         "album with a resolved original (opt-in, default off)")
     args = ap.parse_args()
 
     # Default-safe: write only when --apply is given AND --dry-run is not.
     dry_run = not args.apply or args.dry_run
     limit = _parse_limit(args.limit)
+    recorrect_albums = args.recorrect_albums
 
     music_dir = config.MUSIC_DIR
     if not os.path.isdir(music_dir):
@@ -86,6 +104,8 @@ def main() -> int:
     mode = t("import.metafill.cli_mode_dry") if dry_run else t("import.metafill.cli_mode_apply")
     logger.info(t("import.metafill.cli_started", music_dir=music_dir, mode=mode,
                   limit=limit))
+    if recorrect_albums:
+        logger.info(t("import.metafill.cli_recorrect_on"))
 
     # Reset the per-pass live-lookup budget; share the periodic state record.
     resolve.reset_run_budget()
@@ -93,7 +113,7 @@ def main() -> int:
     state = backfill._load_meta_state(music_dir)
 
     scanned = changed = year_filled = year_replaced = album_filled = 0
-    track_filled = errors = 0
+    album_recorrected = track_filled = errors = 0
 
     # Manifest-scoped: only files that correspond to a manifest entry (the
     # curated collection / compilations are never considered).
@@ -111,7 +131,8 @@ def main() -> int:
                 if not dry_run:
                     backfill._mark_meta_done(state, relpath, mtime)
                 continue
-            plan = backfill_metadata.missing_fields(fstate)
+            plan = backfill_metadata.missing_fields(
+                fstate, recorrect_albums=recorrect_albums)
             if not plan.needs_lookup():
                 if not dry_run:
                     backfill._mark_meta_done(state, relpath, mtime)
@@ -143,11 +164,16 @@ def main() -> int:
                         year_filled += 1
                     if res.year_replaced:
                         year_replaced += 1
-                if res.album_filled:
-                    parts.append(t("import.metafill.cli_field",
-                                   field=t("import.metafill.cli_f_album"),
+                if res.album_filled or res.album_recorrected:
+                    field = (t("import.metafill.cli_f_album_recorrect")
+                             if res.album_recorrected
+                             else t("import.metafill.cli_f_album"))
+                    parts.append(t("import.metafill.cli_field", field=field,
                                    old=_none(res.old_album), new=res.new_album))
-                    album_filled += 1
+                    if res.album_filled:
+                        album_filled += 1
+                    if res.album_recorrected:
+                        album_recorrected += 1
                 if res.track_filled:
                     parts.append(t("import.metafill.cli_field",
                                    field=t("import.metafill.cli_f_track"),
@@ -174,6 +200,9 @@ def main() -> int:
                   year_filled=year_filled, year_replaced=year_replaced,
                   album_filled=album_filled, track_filled=track_filled,
                   errors=errors))
+    if album_recorrected:
+        logger.info(t("import.metafill.cli_summary_recorrect",
+                      album_recorrected=album_recorrected))
     if dry_run:
         logger.info(t("import.metafill.cli_dry_notice"))
     return 0

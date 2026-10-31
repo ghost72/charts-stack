@@ -335,11 +335,23 @@ def resolve_release_meta(artist: str, title: str):
                 best_item = ranked[0][1]
                 chosen = best_item  # safe source of year/track even if no album
                 accepted = False
-                # Bounded preference scan: prefer a studio-album release over a
-                # single/compilation/junk one. Reads record_type + album artist
-                # from the SAME /album/<id> detail the resolver already fetched;
-                # no new HTTP endpoint. The ranking already enforces artist+title
+                # Bounded preference scan (original-album report §5): COLLECT
+                # every passing candidate, then CHOOSE the original. Reads
+                # record_type + album artist + release_date from the SAME
+                # /album/<id> detail the resolver already fetched; no new HTTP
+                # endpoint. The ranking already enforces artist+title
                 # similarity, so iterating never drifts to the wrong song.
+                #
+                # Unlike the old first-accept-and-break, this no longer stops on
+                # the first passing hit: it inspects up to _PREFERENCE_SCAN_MAX
+                # candidates (same GET ceiling), collecting
+                # (is_secondary, sort_year, alb_title, item, album_year), then
+                # sorts by (is_secondary, sort_year) and picks [0]. Net effect:
+                # a NON-secondary original always outranks a secondary edition
+                # regardless of date; among equals the earliest release_date
+                # wins; a secondary edition is chosen ONLY when every passing
+                # candidate is secondary (still better than an empty album).
+                candidates = []
                 for _score, item in ranked[:_PREFERENCE_SCAN_MAX]:
                     alb = (item.get("album") or {})
                     alb_title = (alb.get("title") or "").strip()
@@ -355,16 +367,27 @@ def resolve_release_meta(artist: str, title: str):
                     if not adata:
                         continue
                     aart = adata.get("artist") or {}
-                    if resolve.album_detail_acceptable(
+                    if not resolve.album_detail_acceptable(
                             alb_title, adata.get("record_type"),
                             aart.get("id"), aart.get("name")):
-                        # Store the thin search-hit alb_title (NOT adata["title"])
-                        # to keep the pre-change observable output + cache shape.
-                        album = alb_title
-                        chosen = item
-                        accepted = True
-                        album_year = _parse_year(adata.get("release_date") or "")
-                        break
+                        continue
+                    ay = _parse_year(adata.get("release_date") or "")
+                    # A missing/unparseable date must sink to the end (never win
+                    # the earliest-date tiebreak by accident).
+                    sort_year = int(ay) if ay else 9999
+                    is_secondary = 1 if resolve.is_secondary_edition_title(alb_title) else 0
+                    candidates.append((is_secondary, sort_year, alb_title, item, ay))
+                if candidates:
+                    # Prefer NON-secondary, then EARLIEST release_date. Python's
+                    # sort is stable, so ranking order breaks any remaining tie.
+                    candidates.sort(key=lambda c: (c[0], c[1]))
+                    _is_sec, _sy, alb_title, item, ay = candidates[0]
+                    # Store the thin search-hit alb_title (NOT adata["title"]) to
+                    # keep the pre-change observable output + cache shape.
+                    album = alb_title
+                    chosen = item
+                    accepted = True
+                    album_year = ay
                 if not accepted:
                     # No candidate passed: leave album empty (importer keeps
                     # album=title) but still source album_year from the best
