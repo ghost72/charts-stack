@@ -102,8 +102,18 @@ def preserve_mtime(path: str):
 _PROVENANCE_FULL_PREFIXES = ("COMM", "TENC", "TSSE", "WXXX",
                              "WCOM", "WOAF", "WPUB", "TOWN", "TMED", "WOAR")
 # TXXX descriptions (the part after "TXXX:") that are PROTECTED (case-insensitive,
-# checked as a substring): everything around MusicBrainz and ReplayGain.
-_TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain")
+# checked as a substring): everything around MusicBrainz and ReplayGain, plus
+# the charts-stack provenance marker (TXXX:CHARTS_SOURCE) that records a song's
+# origin (e.g. "youtube") so the metadata backfill can tell an untrusted
+# YouTube year apart from a trustworthy one. The marker must survive every
+# provenance strip (import, backfill, year-only writes), exactly like the
+# MusicBrainz/ReplayGain TXXX frames.
+_TXXX_PROTECTED_SUBSTR = ("musicbrainz", "replaygain", "charts_source")
+
+# Description of the durable provenance marker frame (TXXX:CHARTS_SOURCE). Kept
+# as a module constant so the stamp, the backfill (clear-after-correct) and the
+# tests all refer to the same name.
+CHARTS_SOURCE_DESC = "CHARTS_SOURCE"
 
 
 def _is_protected_txxx(frame_key: str) -> bool:
@@ -358,8 +368,100 @@ def read_existing_year_album(path: str) -> tuple[str, str]:
         return "", ""
 
 
+def read_track(path: str) -> int:
+    """
+    Read the current track number from a library file as a positive int, or 0
+    when there is none / it is not a positive number. Fail-open to 0. A
+    "tracknumber" like "3/12" or "3" with a positive leading integer counts as
+    present; absent / "0" / non-numeric counts as missing. Used by the metadata
+    backfill's missing-field check.
+    """
+    try:
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            return 0
+        raw = _first_tag(audio, "tracknumber")
+        if not raw:
+            return 0
+        # Keep the part before a possible "N/M" total, parse the leading int.
+        head = raw.split("/", 1)[0].strip()
+        m = re.match(r"\d+", head)
+        if not m:
+            return 0
+        num = int(m.group(0))
+        return num if num > 0 else 0
+    except Exception:
+        return 0
+
+
+def read_charts_source(path: str) -> str:
+    """
+    Read the durable TXXX:CHARTS_SOURCE provenance marker from a file (e.g.
+    "youtube"), or "" when it is absent/unreadable. Uses the raw ID3 view
+    because the easy interface cannot read an arbitrary TXXX frame. Fail-open.
+    """
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        try:
+            id3 = ID3(path)
+        except ID3NoHeaderError:
+            return ""
+        frame = id3.get(f"TXXX:{CHARTS_SOURCE_DESC}")
+        if frame is None:
+            return ""
+        texts = getattr(frame, "text", None) or []
+        return str(texts[0]).strip() if texts else ""
+    except Exception:
+        return ""
+
+
+def stamp_charts_source(path: str, source: str) -> None:
+    """
+    Stamp the durable TXXX:CHARTS_SOURCE=<source> provenance marker onto a file,
+    mtime-preserving. Uses the raw ID3 interface (the easy interface cannot
+    write an arbitrary TXXX). Fail-open: a write error only means the marker is
+    missing, never an exception into the caller. No-op for an empty source.
+    """
+    if not source:
+        return
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError, TXXX
+        with preserve_mtime(path):
+            try:
+                id3 = ID3(path)
+            except ID3NoHeaderError:
+                id3 = ID3()
+            id3.setall(f"TXXX:{CHARTS_SOURCE_DESC}",
+                       [TXXX(encoding=3, desc=CHARTS_SOURCE_DESC, text=[source])])
+            id3.save(path)
+    except Exception as e:
+        logger.debug(t("import.tags.marker_stamp_failed", path=path, error=e))
+
+
+def clear_charts_source(path: str) -> None:
+    """
+    Remove the TXXX:CHARTS_SOURCE marker from a file, mtime-preserving. Used by
+    the metadata backfill to "graduate" a YouTube file after its wrong year was
+    corrected, so it is not reprocessed forever. Fail-open; no-op when absent.
+    """
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        with preserve_mtime(path):
+            try:
+                id3 = ID3(path)
+            except ID3NoHeaderError:
+                return
+            key = f"TXXX:{CHARTS_SOURCE_DESC}"
+            if id3.get(key) is None:
+                return
+            id3.delall(key)
+            id3.save(path)
+    except Exception as e:
+        logger.debug(t("import.tags.marker_clear_failed", path=path, error=e))
+
+
 def write_tags(path: str, artist: str, title: str, album: str,
-               year=None, album_year=None, track=None) -> None:
+               year=None, album_year=None, track=None, source="") -> None:
     """
     Writes artist/title/album into the file tags (only for manifest hits).
     Errors are logged but not propagated - the import should succeed even if
@@ -378,6 +480,12 @@ def write_tags(path: str, artist: str, title: str, album: str,
 
     track = optional track number (e.g. "3"). Written as the tracknumber tag
     only when a non-empty value is given; absent otherwise.
+
+    source = optional import-source label. When it equals "youtube" a durable
+    TXXX:CHARTS_SOURCE=youtube provenance marker is stamped on the file (inside
+    the same mtime-preserving block, before the provenance strip, which keeps
+    it via the whitelist) so the metadata backfill can later tell this YouTube
+    year apart from a trustworthy one. Any other / empty value stamps nothing.
     """
     _ = album_year  # accepted for a uniform caller API; not written (Decision 6)
     # Preserve the mtime the file had on entry (fresh copy mtime for a new
@@ -405,6 +513,25 @@ def write_tags(path: str, artist: str, title: str, album: str,
             if track:
                 audio["tracknumber"] = str(track)
             audio.save()
+            # Stamp the durable YouTube provenance marker (raw ID3, the easy
+            # interface above cannot write a TXXX). Inside the SAME
+            # preserve_mtime block and BEFORE strip_provenance_tags, which keeps
+            # it via the _TXXX_PROTECTED_SUBSTR whitelist.
+            if source == "youtube":
+                try:
+                    from mutagen.id3 import ID3, ID3NoHeaderError, TXXX
+                    try:
+                        id3 = ID3(path)
+                    except ID3NoHeaderError:
+                        id3 = ID3()
+                    id3.setall(
+                        f"TXXX:{CHARTS_SOURCE_DESC}",
+                        [TXXX(encoding=3, desc=CHARTS_SOURCE_DESC,
+                              text=["youtube"])])
+                    id3.save(path)
+                except Exception as e:
+                    logger.debug(t("import.tags.marker_stamp_failed",
+                                   path=path, error=e))
         except Exception as e:
             logger.warning(t("import.tags.write_failed", path=path, error=e))
         # Remove provenance/encoder frames (fre:ac comment, TENC/TSSE/TXXX ...)
