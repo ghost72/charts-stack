@@ -71,10 +71,11 @@ Details zu den Modi: [`charts-energy/README.md`](../charts-energy/README.md).
 Das einzige **Schreib**-Werkzeug auf der Seite. Durchsuche die Musik-Library,
 wähle einen Song und bearbeite seine Tags (Künstler, Titel, Album, Jahr, Track)
 und/oder ersetze das eingebettete Cover (Upload oder Bild-URL), dann
-**Speichern**. Änderungen werden **an Ort und Stelle** in die vorhandene `.mp3`
-geschrieben (kein Verschieben, kein Umbenennen), die Änderungszeit der Datei
-bleibt **erhalten** (so wird eine „kürzlich hinzugefügt"-Flut vermieden), und es
-werden nur die tatsächlich geänderten Felder geschrieben.
+**Speichern**. Die Tag-Änderung wird immer **zuerst an Ort und Stelle** in die
+vorhandene `.mp3` geschrieben (fail-open: die Änderung geht nie verloren, auch
+wenn das Verschieben unten scheitert), die Änderungszeit der Datei bleibt
+**erhalten** (so wird eine „kürzlich hinzugefügt"-Flut vermieden), und es werden
+nur die tatsächlich geänderten Felder geschrieben.
 
 Bei jedem erfolgreichen Speichern werden die beiden Stack-Herkunftsmarker
 (`TXXX:CHARTS_SOURCE` und `TXXX:CHARTS_ALBUM_SRC`) **entfernt**, damit der
@@ -84,6 +85,42 @@ Feld** – ein leeres Jahr- oder Track-Feld behält den vorhandenen Wert (ein
 geleertes Feld auf einem Manifest-Song würde vom Backfill wieder gefüllt). Ein
 kleines Badge markiert jeden Treffer als **Stack** (vom Stack geladen, über den
 Marker oder das Manifest) oder **kuratiert** (eigene Datei).
+
+**Ordner folgt dem Künstler-Tag (automatisches Verschieben).** Ändert ein
+Speichern den *Künstler*, wird die Datei auf der Platte so verschoben, dass ihr
+Ordner zum korrigierten Künstler passt – mit einer strikten
+**Ein-Ordner-Garantie**:
+
+- Ein vorhandener Künstlerordner mit **gleichem Namen** oder **gleichem
+  gefalteten Schlüssel** (Gross-/Kleinschreibung, Bindestrich, Apostroph oder
+  Akzent-Varianten wie `Motörhead`/`Motorhead`, `rod stewart`/`Rod Stewart`,
+  `DJ.ILHAM`/`DJ ILHAM`) → die Datei wird **automatisch dort einsortiert**, kein
+  zweiter Ordner entsteht.
+- Leert sich der alte Künstlerordner nach dem Weggang der Datei **vollständig**
+  und gibt es keinen passenden Ordner → der alte Ordner wird auf den neuen
+  Künstlernamen **umbenannt** (ein Ordner, nimmt alles mit).
+- Ein **echt neuer** Künstler ohne Treffer → ein neuer Ordner wird automatisch
+  angelegt.
+- Ein **Entscheidungsdialog** erscheint nur in zwei wirklich mehrdeutigen Fällen,
+  und **es wird nichts verschoben, bis du wählst**:
+  - eine *stilisierte Fast-Schreibweise* (z. B. `P!nk`), die zu einem
+    vorhandenen `Pink/`-Ordner passt, der noch **andere Songs** enthält → *in
+    `Pink/` einsortieren* / *neuen Ordner `P!nk/` anlegen* / *abbrechen*;
+  - eine **Song-Kollision** — am Ziel existiert dieser Song bereits (exakte
+    Datei oder derselbe Titel unter einem Lidarr-`NN - Titel`-Namen) →
+    *vorhandenen behalten, meinen nicht verschieben* / *abbrechen*. Der Editor
+    **überschreibt nie** und legt nie ein `(2)` an.
+- Ein Abbruch behält die **gespeicherten Tags am alten Pfad** — die
+  Tag-Änderung ist bereits geschrieben, nur das Verschieben entfällt.
+
+Verschoben werden **nur Stack-Singles** (`<Künstler>/<Titel>/<Titel>.mp3`);
+Lidarr-`<Album> (Jahr)/NN - Titel`-Alben und kuratierte/`Various Artists`-
+Compilations bleiben **an Ort und Stelle**. Das Verschieben ist ein reines
+`os.rename` (mtime bleibt erhalten, kein Copy-Fallback: ein Cross-Device-Layout
+wird hart abgelehnt, die Datei bleibt mit ihren gespeicherten Tags liegen). Die
+Ein-Ordner-Dauerhaftigkeit **setzt voraus, dass Lidarr „Rename Tracks" AUS ist**
+– sonst kann ein späterer Lidarr-Scan die verschobene Single in einen
+`<Album> (Jahr)/`-Ordner umbenennen und wieder eine Dublette erzeugen.
 
 Hinweise und Grenzen:
 

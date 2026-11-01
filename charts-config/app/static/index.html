@@ -111,6 +111,7 @@
             <div class="te-grid">
               <label data-i18n="tageditor.label.artist">Artist</label>
               <input id="te-artist" autocomplete="off">
+              <div id="te-artist-hint" class="te-hint muted-txt" data-i18n="tageditor.move_hint" hidden></div>
               <label data-i18n="tageditor.label.title">Title</label>
               <input id="te-title" autocomplete="off">
               <label data-i18n="tageditor.label.album">Album</label>
@@ -164,6 +165,19 @@
             <span class="te-legend-note" data-i18n="tageditor.legend.note"></span>
           </div>
         </form>
+
+        <!-- Move decision dialog (rules 4 + 5). Hidden until a save returns a
+             decision_needed payload. The question text + buttons are filled in
+             by openMoveDialog() per variant (loose vs collision); the chosen
+             action POSTs to /api/tageditor/move and reloads the moved file. -->
+        <div id="te-move-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-move-title">
+            <h3 id="te-move-title" data-i18n="tageditor.move_dialog.title"></h3>
+            <p id="te-move-question" class="te-modal-q"></p>
+            <div id="te-move-buttons" class="te-modal-buttons"></div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -637,6 +651,10 @@ function initTagEditor() {
       el.dataset.orig = el.value;
       el.classList.remove("changed");
     });
+    // Reset the "file will be moved" hint (shown only while the artist field
+    // differs from its loaded value).
+    const artistHint = document.getElementById("te-artist-hint");
+    if (artistHint) artistHint.hidden = true;
     // Cover preview + reset the cover inputs. ALWAYS reset the image first so a
     // newly selected song never shows the previous song's cover: clear the src
     // and hide the img, THEN show the new cover only if this song has one.
@@ -675,6 +693,12 @@ function initTagEditor() {
     const el = document.getElementById("te-" + f);
     el.addEventListener("input", () => {
       el.classList.toggle("changed", el.value !== el.dataset.orig);
+      // Only the artist field drives the pre-save move hint: changing the
+      // artist will move the file into the new artist's folder on save.
+      if (f === "artist") {
+        const artistHint = document.getElementById("te-artist-hint");
+        if (artistHint) artistHint.hidden = (el.value === el.dataset.orig);
+      }
     });
   });
   const fileEl = document.getElementById("te-cover-file");
@@ -705,8 +729,17 @@ function initTagEditor() {
       const r = await fetch("/api/tageditor/save", {method: "POST", body: fd, cache: "no-store"});
       const d = await r.json();
       if (r.ok && d && d.ok) {
+        // prefill repoints #te-path to d.song.path (the NEW path after a move)
+        // and re-reads every field, so the editor is selected on the moved
+        // file; a subsequent save/search targets the new path.
         prefill(d.song);
-        setMsg(t("tageditor.saved"), false);
+        // Rules 4/5: the tags are saved in place but the move needs a user
+        // choice -> open the decision dialog (no terminal message yet).
+        if (d.song.decision) {
+          openMoveDialog(d.song.decision);
+        } else {
+          reportMoveResult(d.song);
+        }
       } else {
         setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
       }
@@ -714,6 +747,88 @@ function initTagEditor() {
       setMsg(t("tageditor.unreachable"), true);
     }
   });
+
+  // Honest terminal result message for an auto (rules 1,2,3,6) or post-dialog
+  // save, based on the moved flag + move_reason the engine returned.
+  function reportMoveResult(song) {
+    if (song.moved) {
+      setMsg(t("tageditor.moved", {artist: song.moved_to_artist}), false);
+    } else if (song.move_reason === "target_exists") {
+      setMsg(t("tageditor.move_blocked_exists"), false);
+    } else if (song.move_reason === "cross_device"
+               || song.move_reason === "move_failed") {
+      setMsg(t("tageditor.move_failed"), false);
+    } else if (song.move_reason === "kept_in_place") {
+      setMsg(t("tageditor.move_kept_in_place"), false);
+    } else {
+      // unchanged / album_managed / no artist change -> plain success.
+      setMsg(t("tageditor.saved"), false);
+    }
+  }
+
+  // Build + show the move decision dialog for a decision payload. `loose`
+  // offers [into existing] [create new] [cancel]; `collision` offers
+  // [keep existing / cancel]. Each button wires its choice to submitMoveChoice.
+  function openMoveDialog(dec) {
+    const dialog = document.getElementById("te-move-dialog");
+    const q = document.getElementById("te-move-question");
+    const btns = document.getElementById("te-move-buttons");
+    btns.innerHTML = "";
+    const addBtn = (label, choice, primary) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "te-modal-btn" + (primary ? " primary" : "");
+      b.textContent = label;
+      b.addEventListener("click", () => submitMoveChoice(dec, choice));
+      btns.appendChild(b);
+    };
+    if (dec.variant === "loose") {
+      q.textContent = t("tageditor.move_dialog.loose_question",
+        {existing: dec.existing_folder, count: dec.other_count,
+         newname: dec.new_folder});
+      addBtn(t("tageditor.move_dialog.into_existing",
+        {existing: dec.existing_folder}), "into_existing", true);
+      addBtn(t("tageditor.move_dialog.create_new",
+        {newname: dec.new_folder}), "create_new", false);
+      addBtn(t("tageditor.move_dialog.cancel"), "cancel", false);
+    } else {  // collision
+      q.textContent = t("tageditor.move_dialog.collision_question",
+        {existing: dec.existing_folder});
+      addBtn(t("tageditor.move_dialog.keep_existing"), "cancel", true);
+      addBtn(t("tageditor.move_dialog.cancel"), "cancel", false);
+    }
+    dialog.hidden = false;
+  }
+
+  // POST the chosen action to /api/tageditor/move, then reload the editor on
+  // the returned (possibly new) path and show the honest terminal message.
+  async function submitMoveChoice(dec, choice) {
+    document.getElementById("te-move-dialog").hidden = true;
+    const fd = new FormData();
+    fd.append("path", dec.file);
+    fd.append("choice", choice);
+    fd.append("artist", dec.artist);
+    fd.append("title", dec.title);
+    fd.append("album", dec.album);
+    setMsg(t("tageditor.searching"), false);
+    try {
+      const r = await fetch("/api/tageditor/move",
+        {method: "POST", body: fd, cache: "no-store"});
+      const d = await r.json();
+      if (r.ok && d && d.ok) {
+        prefill(d.song);
+        if (choice === "cancel") {
+          setMsg(t("tageditor.move_kept_in_place"), false);
+        } else {
+          reportMoveResult(d.song);
+        }
+      } else {
+        setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+      }
+    } catch (e3) {
+      setMsg(t("tageditor.unreachable"), true);
+    }
+  }
 }
 
 applyStaticI18n();   // populate the static head/body markup once on load

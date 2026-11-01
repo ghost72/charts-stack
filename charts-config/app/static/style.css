@@ -542,6 +542,31 @@ body.login {
 .te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
 .te-msg.err { color: var(--err); font-weight: 600; }
+/* Pre-save hint under the Artist field (shown only while the artist value
+   differs from the loaded one): the file will be moved into the new artist's
+   folder on save. Spans the full width of the two-column .te-grid so it does
+   not squeeze the input column. */
+.te-hint { grid-column: 1 / -1; font-size: .8rem; line-height: 1.2; margin-top: -4px; }
+/* Move decision dialog (rules 4 + 5): a lightweight centered modal over a dim
+   backdrop. Hidden via the [hidden] attribute; shown by openMoveDialog(). */
+.te-modal {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .55); padding: 1rem;
+}
+.te-modal[hidden] { display: none; }
+.te-modal-card {
+  background: var(--card, #1d1f24); border-radius: 12px; padding: 1.25rem 1.4rem;
+  max-width: 480px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, .4);
+}
+.te-modal-card h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
+.te-modal-q { margin: 0 0 1rem; font-size: .9rem; line-height: 1.4; }
+.te-modal-buttons { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+.te-modal-btn {
+  padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--border, #3a3d45);
+  background: transparent; color: inherit; cursor: pointer; font-size: .85rem;
+}
+.te-modal-btn.primary { background: var(--accent, #4f8cff); border-color: transparent; color: #fff; }
 /* Label legend under the button row: explains the two result badges. One
    compact, muted line that wraps into stacked items on narrow screens. Reuses
    the real .badge/.badge-stack/.badge-curated markup, so the margin-left:auto

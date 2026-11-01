@@ -23,6 +23,7 @@ Design trade-offs (documented per the design):
 
 import os
 import re
+import shutil
 import threading
 import time
 import unicodedata
@@ -83,6 +84,315 @@ def _extract_title_from_filename(filename: str) -> str:
         base = base.rsplit(" - ", 1)[-1]
     base = re.sub(r"^\s*\d{1,3}\s*[-.\)]\s*", "", base)  # leading track no.
     return base.strip()
+
+
+# --- "Folder follows the artist tag" move primitives ------------------------
+# When a tag-editor save changes the Artist, the edited file is moved on disk
+# into the resolved artist folder so a path-derived search no longer surfaces
+# the old folder name. These pure filesystem helpers (no FastAPI, no network)
+# are unit-testable with tmp dirs; editor.save_song is the thin orchestrator.
+#
+# The one-folder guarantee lives in _find_artist_dir: the destination artist
+# folder is resolved against EXISTING folders via this module's accent-folding
+# _artist_key, so key(P!nk) == key(Pink) -> the file moves INTO the established
+# Pink/ folder and a second P!nk/ is never created. Only a stack-single
+# <Artist>/<Title>/<Title>.mp3 is ever moved; Lidarr (Year)/NN - Title albums
+# and curated compilations are left in place.
+
+# Ignorable sidecar entries: a folder holding only these counts as empty.
+_CLEANUP_IGNORE = {"@eaDir", "#recycle", ".DS_Store"}
+
+# Compilation / Various-Artists markers (NEW local constant; charts-config has
+# no compilation helper). Mirrors - not imports - the path heuristic documented
+# in charts-import/charts-sync. Folded artist-folder names and lowercased album
+# basenames that hit a marker are never moved (they are hand-managed samplers).
+_COMPILATION_MARKERS = {"various", "variousartists", "va"}
+_COMPILATION_ALBUM_MARKERS = (
+    "top 100", "bravo hits", "kuschelrock", "sampler", "best of", "mastermix",
+)
+
+# Lidarr '<Album> (YYYY)' album-folder suffix and the leading 'NN - Title'
+# track-name pattern - either marks an album-managed file (not a stack single).
+_YEAR_ALBUM_RE = re.compile(r"\(\d{4}\)\s*$")
+_NN_TITLE_RE = re.compile(r"^\s*\d{1,3}\s*-\s+")
+
+
+# --- Loose "could be the same artist" stylization table ---------------------
+# loose_key folds a small FIXED set of leet/stylization substitutions (so
+# 'P!nk' -> 'pink', 'Ke$ha' -> 'kesha') BEFORE the strict [a-z0-9] fold. It is
+# used ONLY to DETECT an ambiguous candidate worth asking the user about - it is
+# NEVER used to auto-merge, never for on-disk folder names, and never for the
+# search index. No edit-distance, no fuzzy/semantic matching: names that do not
+# match under strict_key OR this fixed table are different artists, full stop.
+_LOOSE_SUBSTITUTIONS = str.maketrans({
+    "$": "s", "!": "i", "0": "o", "1": "i", "3": "e",
+    "4": "a", "@": "a", "5": "s", "7": "t",
+})
+
+
+def _loose_key(artist: str) -> str:
+    """
+    Looser artist key for AMBIGUITY DETECTION ONLY (never auto-merge / folder
+    names / index). lowercase -> NFKD accent-fold -> fixed stylization table
+    (single pass) -> drop all non-[a-z0-9]. 'P!nk' -> 'pink', 'Ke$ha' -> 'kesha'.
+    """
+    a = unicodedata.normalize("NFKD", (artist or "").lower())
+    a = "".join(c for c in a if not unicodedata.combining(c))
+    a = a.translate(_LOOSE_SUBSTITUTIONS)
+    return re.sub(r"[^a-z0-9]+", "", a)
+
+
+def _find_artist_dir(music_dir: str, artist: str) -> str | None:
+    """
+    Resolve the on-disk artist folder under music_dir for an AUTO merge: literal
+    folder-name fast path, then a STRICT _artist_key fold across all folders. So
+    'rod stewart'/'Rod Stewart', 'DJ.ILHAM'/'DJ ILHAM' and 'Motörhead'/'Motorhead'
+    resolve to the same existing folder. Returns the folder path or None.
+    Fail-open (OSError -> None).
+
+    NOTE: this uses the STRICT _artist_key only. The looser stylization match
+    (_loose_key) is deliberately NOT used here - a loose-only match is ambiguous
+    and routed to the decision dialog, never auto-merged. Copies the resolver
+    STRUCTURE from charts-songrequest/app/library.py but binds to the local
+    accent-folding _artist_key, so it is not a byte-for-byte copy.
+    """
+    safe_artist = _clean_component(artist, "")
+    if not safe_artist:
+        return None
+    exact = os.path.join(music_dir, safe_artist)
+    if os.path.isdir(exact):
+        return exact
+    target = _artist_key(artist)
+    if not target:
+        return None
+    try:
+        for name in os.listdir(music_dir):
+            if _artist_key(name) == target and os.path.isdir(
+                    os.path.join(music_dir, name)):
+                return os.path.join(music_dir, name)
+    except OSError:
+        pass
+    return None
+
+
+def _find_loose_artist_dir(music_dir: str, artist: str, exclude: str) -> str | None:
+    """
+    Find an existing artist folder that matches `artist` under _loose_key but
+    NOT under the strict _artist_key - i.e. a stylized near-spelling worth a
+    decision dialog (e.g. existing 'Pink/' when the user typed 'P!nk'). Skips
+    the folder named `exclude` (the current source artist folder). Returns the
+    folder path or None. Fail-open.
+
+    Only a loose-but-not-strict match qualifies: a strict match is handled by
+    _find_artist_dir (auto), so this never shadows the auto path.
+    """
+    target_loose = _loose_key(artist)
+    target_strict = _artist_key(artist)
+    if not target_loose:
+        return None
+    exclude_base = os.path.basename(exclude.rstrip(os.sep)) if exclude else ""
+    try:
+        for name in os.listdir(music_dir):
+            if name == exclude_base:
+                continue
+            path = os.path.join(music_dir, name)
+            if not os.path.isdir(path):
+                continue
+            if _artist_key(name) == target_strict:
+                continue  # strict match -> auto path, not a dialog candidate
+            if _loose_key(name) == target_loose:
+                return path
+    except OSError:
+        pass
+    return None
+
+
+def _count_audio_files(folder: str, exclude_path: str = "") -> int:
+    """
+    Count audio files anywhere under `folder` (recursively), skipping the
+    @eaDir/#recycle sidecar trees and optionally one specific file (exclude_path,
+    the edited file). Used to decide 'does this folder hold OTHER songs' and
+    'would the old folder empty out'. Fail-open -> 0 on error.
+    """
+    excl = os.path.realpath(exclude_path) if exclude_path else ""
+    count = 0
+    try:
+        for root, dirs, files in os.walk(folder):
+            dirs[:] = [d for d in dirs if d not in _CLEANUP_IGNORE]
+            for name in files:
+                ext = os.path.splitext(name)[1].lower()
+                if ext not in AUDIO_EXTENSIONS:
+                    continue
+                if excl and os.path.realpath(os.path.join(root, name)) == excl:
+                    continue
+                count += 1
+    except OSError:
+        return count
+    return count
+
+
+def _build_move_target(music_dir: str, cur_path: str, artist: str,
+                       title: str, album: str) -> str:
+    """
+    Build the move target Music/<Artist>/<Album>/<Title>.<ext>.
+
+    - artist folder: _find_artist_dir resolved (established spelling wins when a
+      key-matching folder exists); else _clean_component(artist, ...).
+    - album component: _clean_component(album, "Unknown Album"). For a stack
+      single album == title, so a title change repoints the inner folder too.
+    - track name: _clean_component(title, "track") + ext (ext from cur_path).
+
+    Mirrors charts-import.build_target_path, differing only in resolving the
+    artist folder through the accent-folding _artist_key. '!' survives
+    _clean_component unchanged (not in _INVALID_CHARS), so 'P!nk'/'Snap!' are
+    byte-stable; folder comparison is on the key fold, never the raw string.
+    """
+    resolved = _find_artist_dir(music_dir, artist)
+    if resolved:
+        safe_artist = os.path.basename(resolved)
+    else:
+        safe_artist = _clean_component(artist, "Unknown Artist")
+    safe_album = _clean_component(album, "Unknown Album")
+    ext = os.path.splitext(cur_path)[1].lower()
+    track_name = _clean_component(title, "track") + ext
+    return os.path.join(music_dir, safe_artist, safe_album, track_name)
+
+
+def _is_movable_single(music_dir: str, cur_path: str) -> bool:
+    """
+    True only for a stack-single <Artist>/<Title>/<Title>.mp3 layout.
+
+    False (=> do not move, write tags in place) when:
+      - the album folder matches the Lidarr '<Album> (YYYY)' pattern,
+      - the basename matches a leading 'NN - Title' track pattern, or
+      - the artist folder is a compilation/Various folder, or the album basename
+        carries a compilation marker (Bravo Hits, sampler, ...).
+    Fail-safe: any read error is treated as NOT movable (prefer in-place).
+    """
+    try:
+        album_dir = os.path.dirname(cur_path)
+        artist_dir = os.path.dirname(album_dir)
+        album_base = os.path.basename(album_dir)
+        artist_base = os.path.basename(artist_dir)
+        name_no_ext = os.path.splitext(os.path.basename(cur_path))[0]
+    except Exception:
+        return False
+    # Lidarr year-suffixed album folder.
+    if _YEAR_ALBUM_RE.search(album_base):
+        return False
+    # Lidarr 'NN - Title' track name.
+    if _NN_TITLE_RE.match(name_no_ext):
+        return False
+    # Compilation / Various-Artists folder.
+    if _artist_key(artist_base) in _COMPILATION_MARKERS:
+        return False
+    album_low = album_base.lower()
+    if any(marker in album_low for marker in _COMPILATION_ALBUM_MARKERS):
+        return False
+    return True
+
+
+def _target_collision(target: str, title: str) -> str | None:
+    """
+    Return a collision reason ("target_exists") or None.
+
+    Collision if the exact target file already exists, OR a same-_title_key but
+    different-filename audio file already sits in the target's album folder
+    (Lidarr 'NN - Title' vs single 'Title'). Never overwrite, never write a
+    parallel '(2)'. Fail-safe: an OSError scanning the destination is treated as
+    a collision (refuse) - the safest default.
+    """
+    if os.path.exists(target):
+        return "target_exists"
+    album_dir = os.path.dirname(target)
+    if not os.path.isdir(album_dir):
+        return None
+    want = _title_key(title)
+    if not want:
+        return None
+    target_base = os.path.basename(target)
+    try:
+        for name in os.listdir(album_dir):
+            if name == target_base:
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in AUDIO_EXTENSIONS:
+                continue
+            if _title_key(_extract_title_from_filename(name)) == want:
+                return "target_exists"
+    except OSError:
+        return "target_exists"
+    return None
+
+
+def _move_file(src: str, dst: str) -> None:
+    """
+    Move src -> dst with os.rename, preserving mtime. Creates the destination
+    album folder first (directory creation is cross-device-safe; only the file
+    rename can raise EXDEV). Snapshots (atime, mtime) of src BEFORE the rename
+    and restores them on dst AFTER (the path-bound preserve_mtime cannot be used
+    because src is gone after the rename). On one ext4 mount os.rename already
+    preserves mtime; this is belt-and-suspenders and re-stamps correctly if the
+    platform ever differs.
+
+    Raises OSError (the caller maps EXDEV -> cross_device, any other ->
+    move_failed). NEVER falls back to shutil.move/copy.
+    """
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    times = None
+    if config.PRESERVE_MTIME:
+        try:
+            st = os.stat(src)
+            times = (st.st_atime, st.st_mtime)
+        except OSError:
+            times = None
+    os.rename(src, dst)
+    if times is not None:
+        tags.restore_mtime(dst, times)
+
+
+def _rename_artist_folder(old_dir: str, new_name: str) -> str:
+    """
+    Rename an artist folder old_dir to its sibling `new_name` (used by rule 3:
+    the old folder is about to hold only the edited file, so renaming the whole
+    folder keeps one folder and moves every inner subfolder/file with it).
+    Returns the NEW folder path. Raises OSError (caller maps EXDEV/other).
+    NEVER falls back to copy. The destination must not already exist (the caller
+    only picks this path when no strict/loose folder matches).
+    """
+    new_dir = os.path.join(os.path.dirname(old_dir), new_name)
+    os.rename(old_dir, new_dir)
+    return new_dir
+
+
+def _cleanup_empty_dirs(*dirs: str) -> None:
+    """
+    For each dir (in the given order - pass deepest first), remove it if,
+    ignoring @eaDir/#recycle/.DS_Store, it holds no real entries. The ignorable
+    sidecars are removed first (os.remove a file, shutil.rmtree an @eaDir
+    directory) ONLY when nothing else remains, then os.rmdir the now-empty dir.
+    Fail-open: never raises; a dir that still holds real audio is left alone and
+    never recursively force-deleted.
+    """
+    for d in dirs:
+        try:
+            if not d or not os.path.isdir(d):
+                continue
+            entries = list(os.scandir(d))
+            if any(e.name not in _CLEANUP_IGNORE for e in entries):
+                continue  # holds real content -> keep
+            # Only ignorable sidecars remain: remove them, then the dir.
+            for e in entries:
+                try:
+                    if e.is_dir():
+                        shutil.rmtree(e.path)
+                    else:
+                        os.remove(e.path)
+                except OSError:
+                    pass
+            os.rmdir(d)
+        except OSError:
+            pass
 
 
 # --- Lazily-built, TTL-cached in-memory search index ------------------------
@@ -184,6 +494,50 @@ def update_index_entry(path: str, artist: str, title: str) -> None:
                     rec["title"] = title
                     rec["title_key"] = _title_key(title)
                 break
+
+
+def move_index_entry(old_path: str, new_path: str, artist: str,
+                     title: str) -> None:
+    """
+    After a file move: drop the cached record for old_path and upsert a record
+    for new_path so a search right after the save is consistent (the old path is
+    no longer returned, the file is found at its new path/name).
+
+    The upserted record is built the same way _build_records does: a
+    path-derived display from the NEW path, with the authoritative saved
+    artist/title (and their folded keys) overlaid. No-op when no index is built
+    (the next search builds a fresh one anyway). Thread-safe.
+    """
+    with _INDEX_LOCK:
+        if _index is None:
+            return
+        # Remove any stale record for the old path.
+        for i in range(len(_index) - 1, -1, -1):
+            if _index[i]["path"] == old_path:
+                del _index[i]
+        # Path-derived display for the new path (parent-of-parent = artist dir,
+        # parent = album dir, title from the file name), then overlay the saved
+        # artist/title + their keys.
+        root = os.path.dirname(new_path)
+        album_dir = os.path.basename(root)
+        artist_dir = os.path.basename(os.path.dirname(root))
+        disp_title = _extract_title_from_filename(os.path.basename(new_path))
+        rec = {
+            "path": new_path,
+            "artist_key": _artist_key(artist or artist_dir),
+            "title_key": _title_key(title or disp_title),
+            "artist": artist or artist_dir,
+            "album": album_dir,
+            "title": title or disp_title,
+            "basename": os.path.basename(new_path).lower(),
+        }
+        # Upsert: replace an existing new_path record if one is somehow present.
+        for existing in _index:
+            if existing["path"] == new_path:
+                existing.update(rec)
+                break
+        else:
+            _index.append(rec)
 
 
 def search(query: str, limit: int = 20) -> list[dict]:

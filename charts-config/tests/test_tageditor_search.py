@@ -177,15 +177,22 @@ def test_search_after_save_reflects_new_artist(tmp_path, monkeypatch):
     assert p in before
     assert editor.search("pnk", limit=20) == []
 
-    # Save a new artist tag (Pink -> P!nk). TTL has NOT expired, so without the
+    # Save a new artist tag (Pink -> P!nk). The lone source folder empties out,
+    # so rule 3 RENAMES Pink/ -> P!nk/ and the file follows the move; the index
+    # is refreshed to the NEW path (and the old path is dropped). Without the
     # on-save index refresh the stale cache would still only match 'pink'.
-    editor.save_song(p, {"artist": "P!nk", "title": "So What"})
+    res = editor.save_song(p, {"artist": "P!nk", "title": "So What"})
+    assert res["moved"] is True
+    new_path = res["path"]
+    assert new_path != p
 
-    # The same cached index now reflects the saved tag: 'pnk' finds it.
+    # The same cached index now reflects the saved tag at the new path: 'pnk'
+    # finds it, and the stale old path is gone.
     after = {r["path"] for r in editor.search("pnk", limit=20)}
-    assert p in after
+    assert new_path in after
+    assert p not in after
     # And the refreshed record carries the new display artist.
-    rec = next(r for r in editor.search("pnk", limit=20) if r["path"] == p)
+    rec = next(r for r in editor.search("pnk", limit=20) if r["path"] == new_path)
     assert rec["artist"] == "P!nk"
 
 
