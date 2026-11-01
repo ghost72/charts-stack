@@ -387,6 +387,7 @@
   "hitparade.run.done": "=== Lauf fertig ===",
   "hitparade.run.error": "Lauf fehlgeschlagen: {error}",
   "hitparade.notify.title": "🇨🇭 {service}",
+  "hitparade.notify.run_failed": "⚠️ Wöchentlicher Lauf fehlgeschlagen, keine Playlist geschrieben: {error}",
   "hitparade.notify.summary_header": "<b>{matched}</b> in Library, {missing} werden nachgeladen:",
   "hitparade.notify.chart_line": "{matched} vorhanden, {missing} fehlen (von {total})",
   "hitparade.status.disabled": "deaktiviert",

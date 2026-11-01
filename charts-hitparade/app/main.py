@@ -223,6 +223,22 @@ def _notify(results: list[dict]) -> None:
     notify.send(push_title, message)
 
 
+def _notify_run_failed(reason: str) -> None:
+    """Pushover alert when a scheduled run failed to produce a playlist.
+
+    The watchdog only sees container state (running/exited/unhealthy), so a
+    running container whose weekly run failed internally (hitparade.ch 5xx,
+    scraper error) is otherwise silent. This sends one honest failure message
+    so a missed weekly run is noticed. Best-effort: never raises.
+    """
+    try:
+        push_title = t("hitparade.notify.title", service="charts-hitparade")
+        message = t("hitparade.notify.run_failed", error=reason)
+        notify.send(push_title, _truncate_for_pushover(message))
+    except Exception as e:  # pragma: no cover - notification must never break a run
+        logger.debug("run-failed notification could not be sent: %s", e)
+
+
 def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
     """Truncate the message to Pushover's 1024-char limit (at a line boundary)."""
     if len(message) <= max_len:
@@ -262,8 +278,17 @@ _COUNTER_LABEL_KEYS = {
 }
 
 
-def _guarded_run() -> None:
-    """Run run_once() and write the status (success/error)."""
+def _guarded_run() -> bool:
+    """Run run_once() and write the status.
+
+    Returns True only when the run genuinely succeeded (status "ok"). A
+    disabled service, a temporarily unreachable source (HitparadeUnavailable),
+    a partial error, or any unexpected exception returns False so the caller
+    does NOT stamp the weekly run-gate for a run that did not actually produce
+    a playlist. This prevents a failed run (e.g. a RUN_ON_START run that hit a
+    transient hitparade.ch 5xx) from burning the day's scheduled slot; the run
+    is retried at the next scheduler check instead.
+    """
     next_run = _next_run_iso()
     if not config.HITPARADE_ENABLED:
         # Disabled: container keeps running, but no fetch/playlist/Pushover.
@@ -271,7 +296,7 @@ def _guarded_run() -> None:
         status.start()
         status.finish("idle", t("hitparade.status.disabled"), {}, next_run)
         logger.info(t("hitparade.disabled_skip"))
-        return
+        return False
     status.start()
     try:
         result = run_once() or {}
@@ -284,22 +309,28 @@ def _guarded_run() -> None:
         msg = ", ".join(parts) if parts else t("hitparade.status.nothing_to_do")
         if error_note:
             # Partial error: the run ran, but one source was broken -> mark as
-            # an error so it stands out in the dashboard.
+            # an error so it stands out in the dashboard. Not a success: do not
+            # stamp the gate (return False) so it is retried next check.
             status.finish("error",
                           t("hitparade.status.error_suffix", msg=msg, error=error_note),
                           counters, next_run)
-        else:
-            status.finish("ok", msg, counters, next_run)
+            return False
+        status.finish("ok", msg, counters, next_run)
+        return True
     except hitparade.HitparadeUnavailable as e:
         # hitparade.ch temporarily unreachable (5xx/timeout) - NOT a scraper
-        # defect. Idle (yellow/gray in the dashboard, no Pushover alarm);
-        # recovers on its own at the next run.
+        # defect. Idle (yellow/gray in the dashboard); no success -> do not
+        # stamp the gate, so the next scheduler check retries the run today.
         logger.warning(t("hitparade.unavailable.warn", error=e))
         status.finish("idle", t("hitparade.status.source_unavailable", error=e),
                       {}, next_run)
+        _notify_run_failed(t("hitparade.status.source_unavailable", error=e))
+        return False
     except Exception as e:
         logger.exception(t("hitparade.run.error", error=e))
         status.finish("error", str(e), {}, next_run)
+        _notify_run_failed(str(e))
+        return False
 
 
 def _guarded_resync() -> None:
@@ -355,9 +386,14 @@ def main() -> None:
     # shows no / an old value until the first run).
     status.set_next_run(_next_run_iso())
 
+    start_run_ok = False
     if config.RUN_ON_START:
-        _guarded_run()
-        status.set_last_fired(date.today().isoformat())  # stamp the gate too
+        # Only stamp the weekly gate if the start-up run actually succeeded.
+        # A failed run (e.g. a transient hitparade.ch 5xx) must NOT burn today's
+        # scheduled slot - it will be retried at the next scheduler check.
+        start_run_ok = _guarded_run()
+        if start_run_ok:
+            status.set_last_fired(date.today().isoformat())
         _clear_hitparade_resync_signal()  # clear a signal set during the run
 
     # Sleep the shorter of the weekly check and the resync probe so a signal is
@@ -366,17 +402,18 @@ def main() -> None:
                         config.HITPARADE_RESYNC_CHECK_SECONDS))
     # Seed last_run_day from the persisted last-fired date so a restart inside
     # the due window (same weekday, past RUN_HOUR) after the weekly run does not
-    # re-fire. Fall back to the old in-memory behaviour only when nothing is
-    # persisted (first-ever start / cleared status): today if RUN_ON_START
-    # (which just fired and stamped above), else None (never fired).
+    # re-fire. Fall back to the in-memory value only when nothing is persisted
+    # (first-ever start / cleared status): today ONLY if the start-up run just
+    # SUCCEEDED (start_run_ok, which also stamped), else None (never fired) so a
+    # failed start-up run leaves the slot open for a retry at the next check.
     _persisted = status.get_last_fired()  # "YYYY-MM-DD" or ""
     try:
         last_run_day: date | None = (
             date.fromisoformat(_persisted) if _persisted
-            else (date.today() if config.RUN_ON_START else None))
+            else (date.today() if start_run_ok else None))
     except ValueError:
         logger.debug("ignoring malformed last_fired_local_date %r", _persisted)
-        last_run_day = date.today() if config.RUN_ON_START else None
+        last_run_day = date.today() if start_run_ok else None
 
     while True:
         time.sleep(check)
@@ -405,9 +442,12 @@ def main() -> None:
         if due:
             logger.info(t("hitparade.scheduler.due",
                           hour=config.RUN_HOUR, minute=config.RUN_MINUTE))
-            _guarded_run()
-            last_run_day = now.date()
-            status.set_last_fired(now.date().isoformat())  # persist the gate
+            # Only stamp the gate on a genuine success. A failed run (source
+            # 5xx/error) leaves last_run_day unchanged, so the next check within
+            # today's window retries it instead of waiting a whole week.
+            if _guarded_run():
+                last_run_day = now.date()
+                status.set_last_fired(now.date().isoformat())  # persist the gate
 
 
 if __name__ == "__main__":

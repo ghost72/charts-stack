@@ -387,6 +387,7 @@
   "hitparade.run.done": "=== Run finished ===",
   "hitparade.run.error": "Run failed: {error}",
   "hitparade.notify.title": "🇨🇭 {service}",
+  "hitparade.notify.run_failed": "⚠️ Weekly run failed, no playlist written: {error}",
   "hitparade.notify.summary_header": "<b>{matched}</b> in the library, {missing} to be downloaded:",
   "hitparade.notify.chart_line": "{matched} present, {missing} missing (of {total})",
   "hitparade.status.disabled": "disabled",
