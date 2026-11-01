@@ -50,7 +50,7 @@ any Subsonic client works, on any platform.
 | **charts-songrequest** | Web UI (FastAPI), multi-user login, three tabs: request a song (slskd search), upload an MP3, or import from a YouTube URL | on-demand |
 | **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
 | **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections, run stats, and an "in progress" overview (active downloads, queue, quarantine, upgrade) | service |
-| **charts-config** | Password-protected web UI (port 5058) hosting the source finder + the Energy-channel browser; read-only (no config is changed) | service |
+| **charts-config** | Password-protected web UI (port 5058) hosting the source finder, the Energy-channel browser, and the manual tag editor (edit a library song's tags/cover in place) | service |
 | **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
 
 ### The glue: two shared folders + the manifest
