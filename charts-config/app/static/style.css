@@ -372,13 +372,18 @@ body.login {
   overflow: hidden;                 /* clips the img to the rounded corners */
   margin-bottom: 8px;
 }
-/* Faint centered "no cover" glyph, visible only while the box is empty (the img
-   inside carries the [hidden] attribute). Pure CSS, no markup/i18n text. */
-.te-cover-box:has(> .te-cover-img[hidden])::after {
-  content: "🖼";
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 2rem; color: var(--muted); opacity: .35;
+/* Music-note placeholder (same logo as charts-songrequest): centered at a
+   tasteful size (~45% of the box, not full-bleed) while the box is empty, and
+   hidden once a real cover img is loaded. The real img carries [hidden] when
+   absent, so :has() on that state keeps the placeholder visible. */
+.te-cover-placeholder {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 45%; height: auto; display: none;
+  pointer-events: none;
+}
+.te-cover-box:has(> .te-cover-img[hidden]) .te-cover-placeholder {
+  display: block;
 }
 /* The preview fills the rounded box; object-fit keeps the aspect ratio without
    distortion. Border/background now come from the box, not the img itself. */
@@ -423,6 +428,44 @@ body.login {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(30,95,168,.4);
 }
+/* Cover upload controls on one responsive row: "choose file" | file name |
+   image-URL field | [Save]. flex-wrap keeps it sane on narrow screens (the
+   row wraps instead of overflowing). The URL field flexes to fill the gap so
+   the Save button sits immediately to its right. */
+.te-cover-controls {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px; margin-top: 2px;
+}
+/* Row layout overrides for the file input that previously stacked on its own
+   line: drop the block max-width/bottom margin so it fits inline with the rest. */
+.te-cover-controls .te-file-input {
+  width: auto; max-width: none; margin-bottom: 0; flex: 0 1 auto;
+}
+.te-cover-controls .te-file { flex: 0 0 auto; }
+/* Image-URL field: themed to match the other charts-config text inputs (was a
+   bare native input before); grows to fill the row before the Save button. */
+#te-cover-url {
+  flex: 1 1 160px; min-width: 140px;
+  padding: 7px 10px;
+  border: 1px solid #3a3350; border-radius: 8px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+}
+#te-cover-url::placeholder { color: var(--muted); }
+#te-cover-url:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(30,95,168,.4);
+}
+/* Primary Save button, sitting immediately right of the URL field. Reuses the
+   accent primary-button look from the finder forms. */
+.te-save {
+  flex: 0 0 auto;
+  border: 0; border-radius: 8px; background: var(--accent); color: #fff;
+  padding: 8px 16px; font-size: .85rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.te-save:hover { filter: brightness(1.1); }
+.te-save:disabled { opacity: .5; cursor: not-allowed; }
+/* Save status message row below the controls (button moved out of here). */
 .te-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
 .te-msg { font-size: .85rem; }
 .te-msg.ok { color: var(--ok); }
