@@ -387,6 +387,7 @@
   "hitparade.run.done": "=== Analyse terminée ===",
   "hitparade.run.error": "Analyse en échec : {error}",
   "hitparade.notify.title": "🇨🇭 {service}",
+  "hitparade.notify.run_failed": "⚠️ Analyse hebdomadaire en échec, aucune playlist écrite : {error}",
   "hitparade.notify.summary_header": "<b>{matched}</b> dans la bibliothèque, {missing} à télécharger :",
   "hitparade.notify.chart_line": "{matched} présents, {missing} manquants (sur {total})",
   "hitparade.status.disabled": "désactivé",

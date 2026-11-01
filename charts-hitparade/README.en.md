@@ -14,7 +14,8 @@ same mechanics, just a different source: the official IFPI Switzerland chart.
 
 ## What it does
 
-- **Sunday 20:00** (configurable): fetches the current Top 100 from hitparade.ch.
+- **Sunday 18:00** (configurable via `HITPARADE_WEEKDAY`/`HITPARADE_HOUR`):
+  fetches the current Top 100 from hitparade.ch.
 - Matches each song against the library (same logic as charts-sync: fuzzy match,
   `IGNORE_COMPILATIONS`).
 - **Hits** → `hitparade.m3u` (Navidrome playlist).
@@ -46,10 +47,17 @@ recommended (would permanently report an error because 0 songs).
 
 ## Monitoring
 
-If hitparade.ch returns **0 songs** (page rebuilt/blocked) or is unreachable, the
-service reports `status=error` → the dashboard tile turns red/orange and a
-Pushover message is sent. So a broken fetch is noticed immediately instead of
-silently writing an empty playlist.
+If hitparade.ch returns **0 songs** (page rebuilt/blocked), the service reports
+`status=error` → the dashboard tile turns red/orange. If hitparade.ch is
+temporarily **unreachable** (5xx/timeout), the run reports `idle` (not a scraper
+defect, it recovers on its own). In **both** failure cases a Pushover message is
+sent so a missed run is noticed — the watchdog only sees container state, not a
+failed run inside a still-running container.
+
+A failed run does **not** consume the day's scheduled slot: the weekly run-gate
+is only stamped on a genuine success, so a run that hit a transient fetch error
+(including a `RUN_ON_START` run right after a container restart) is retried at
+the next scheduler check the same day instead of waiting a whole week.
 
 ## Configuration (central `.env`)
 

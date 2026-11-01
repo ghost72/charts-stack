@@ -12,8 +12,8 @@ dieselbe Mechanik, nur eine andere Quelle: die offizielle IFPI-Schweiz-Chart.
 
 ## Was es macht
 
-- **Sonntag 20:00** (konfigurierbar): holt die aktuelle Top-100 von
-  hitparade.ch.
+- **Sonntag 18:00** (konfigurierbar über `HITPARADE_WEEKDAY`/`HITPARADE_HOUR`):
+  holt die aktuelle Top-100 von hitparade.ch.
 - Matcht jeden Song gegen die Library (gleiche Logik wie charts-sync:
   Fuzzy-Match, `IGNORE_COMPILATIONS`).
 - **Treffer** → `hitparade.m3u` (Navidrome-Playlist).
@@ -46,10 +46,19 @@ Fehler gemeldet, weil 0 Songs).
 
 ## Monitoring
 
-Liefert hitparade.ch **0 Songs** (Seite umgebaut/blockiert) oder ist nicht
-erreichbar, meldet der Dienst `status=error` → die Dashboard-Kachel wird
-rot/orange und es kommt eine Pushover-Meldung. So fällt ein kaputter Abruf
-sofort auf, statt still eine leere Playlist zu schreiben.
+Liefert hitparade.ch **0 Songs** (Seite umgebaut/blockiert), meldet der Dienst
+`status=error` → die Dashboard-Kachel wird rot/orange. Ist hitparade.ch
+vorübergehend **nicht erreichbar** (5xx/Timeout), meldet der Lauf `idle` (kein
+Scraper-Defekt, erholt sich von selbst). In **beiden** Fehlerfällen kommt eine
+Pushover-Meldung, damit ein verpasster Lauf auffällt — der Watchdog sieht nur
+den Container-Zustand, nicht einen fehlgeschlagenen Lauf in einem weiterhin
+laufenden Container.
+
+Ein fehlgeschlagener Lauf verbraucht den Tages-Slot **nicht**: Das wöchentliche
+Run-Gate wird nur bei echtem Erfolg gestempelt. Ein Lauf, der an einem
+vorübergehenden Abruffehler scheitert (auch ein `RUN_ON_START`-Lauf direkt nach
+einem Container-Neustart), wird noch am selben Tag beim nächsten Scheduler-Check
+erneut versucht, statt eine ganze Woche zu warten.
 
 ## Konfiguration (zentrale `.env`)
 
