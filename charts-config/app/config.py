@@ -98,3 +98,39 @@ def _parse_users() -> dict:
 
 APP_USERS = _parse_users()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "").strip()
+
+
+# --- Manual Tag Editor (library paths + cover/index limits) ---
+# MUSIC_DIR: the Navidrome library root the editor searches and writes into
+# (Music/<Artist>/<Album>/<Track>). Mounted read-write for this feature; without
+# the mount the editor is inert (the real off-switch, so there is NO
+# TAGEDITOR_ENABLED flag).
+MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music/Music")
+
+# charts-config-side path for the SAME physical manifest file charts-import keys
+# under DOWNLOADS_DIR/.charts-manifest.json: charts-config mounts the Charts dir
+# at /charts, so this literal resolves to the same host file as charts-import's
+# DOWNLOADS_DIR default (/volume2/music/Charts/.charts-manifest.json). It is a
+# different literal from charts-import's config only because the mount point
+# differs, not a mismatch.
+MANIFEST_FILE = os.environ.get("MANIFEST_FILE", "/charts/.charts-manifest.json")
+
+# Gates tags.preserve_mtime; default on (the hard mtime invariant). Parsed with
+# the repo's boolean-env idiom (same as CONFIG_ENABLED / CONFIG_DONATE above) so
+# only "0"/"false"/"no" turn it off and nothing else does - NOT a bare bool(...)
+# which would treat "0" as truthy. charts-config has no _get_bool helper, so the
+# idiom is inlined. The copied tags.py reads config.PRESERVE_MTIME from here.
+PRESERVE_MTIME = os.environ.get("PRESERVE_MTIME", "1").strip().lower() not in (
+    "0", "false", "no")
+
+# Rebuild interval (seconds) for the lazily-built in-memory search index. A
+# keystroke must not re-walk thousands of folders; the index is rebuilt on the
+# next search only after this TTL expires.
+TAGEDITOR_INDEX_TTL = _get_int("TAGEDITOR_INDEX_TTL", 300)
+
+# Hard byte cap for a cover image (upload stream or URL fetch). Also the
+# threshold above which an embedded cover preview is omitted from the song view.
+TAGEDITOR_COVER_MAX_BYTES = _get_int("TAGEDITOR_COVER_MAX_BYTES", 8 * 1024 * 1024)
+
+# Timeout (seconds) for the cover-from-URL httpx fetch.
+TAGEDITOR_COVER_FETCH_TIMEOUT = _get_int("TAGEDITOR_COVER_FETCH_TIMEOUT", 15)
