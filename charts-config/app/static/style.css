@@ -327,6 +327,10 @@ body.login {
 /* Search results dropdown: a scrollable list of clickable rows under the
    search input. Each row shows artist/title, the album, and an origin badge. */
 .te-results { margin: 8px 0; max-height: 320px; overflow-y: auto; }
+/* No-matches message inside the search dropdown: the plain muted grey was too
+   dark to read against the dark results area, so use the bright foreground
+   colour with a bit of padding. */
+.te-no-hits { color: var(--fg); padding: 8px 10px; font-size: .85rem; }
 .te-row {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 7px 10px; border-radius: 8px; cursor: pointer;
@@ -547,6 +551,11 @@ body.login {
    folder on save. Spans the full width of the two-column .te-grid so it does
    not squeeze the input column. */
 .te-hint { grid-column: 1 / -1; font-size: .8rem; line-height: 1.2; margin-top: -4px; }
+/* The move hint announces an irreversible side effect (the file is MOVED on
+   save), so lift it out of the dim muted style: amber warning colour + a ⚠️
+   prefix (via ::before so the three translations stay clean text). */
+.te-hint-warn { color: var(--warn); font-weight: 600; }
+.te-hint-warn::before { content: "\26A0\FE0F"; margin-right: 6px; }
 /* Move decision dialog (rules 4 + 5): a lightweight centered modal over a dim
    backdrop. Hidden via the [hidden] attribute; shown by openMoveDialog(). */
 .te-modal {
