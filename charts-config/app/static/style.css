@@ -322,3 +322,30 @@ body.login {
   border-bottom: 1px dotted #5a8fe055;
 }
 .site-footer a:hover { color: var(--fg); }
+
+/* --- Manual tag editor ---------------------------------------------------- */
+/* Search results dropdown: a scrollable list of clickable rows under the
+   search input. Each row shows artist/title, the album, and an origin badge. */
+.te-results { margin: 8px 0; max-height: 320px; overflow-y: auto; }
+.te-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  background: var(--tile);
+}
+.te-row + .te-row { margin-top: 5px; }
+.te-row:hover { background: #352b48; }
+.te-row-main { font-weight: 600; }
+.te-row-album { color: var(--muted); font-size: .82rem; }
+/* Origin badge: stack songs (manifest/marker) vs. hand-curated files. */
+.badge {
+  margin-left: auto; padding: 2px 8px; border-radius: 999px;
+  font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+}
+.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; coloact.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12te.badge-stack { background: #4a2a12; color: #f.badge-stack { background:dth.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12in.badge-stack { background: #4a2a12; color: #f.badge-stack { backgr(a.badge-s t.badge-stack { background: #4a2a12; color: #f.badge-stack { backut.badge-stack { background: #4a2a12; color: #f.badge-stacse.badge-stack { backgroundgin:.badge-stack { background: #4a2a12; cn:.badge-stack { background: #4a2a12; x; }
+.te-cover-label { color: var(--mu.te-cover-label { color: var(--mu.te-cover-label { colopx;.te-cover-label { color: var(--mu.te-cover-label { color: var(--mu.te-cor(.teile); border: 1px solid #3a3048;
+}
+.te-file { color: var(--muted); font-size: .82rem; }
+.te-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.te-msg { font-size: .85rem; }
+.te-msg.ok { color: var(--ok); }
+.te-msg.err { color: var(--err); font-weight: 600; }
