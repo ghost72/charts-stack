@@ -424,7 +424,15 @@ def _build_records(music_dir: str) -> list[dict]:
     if not music_dir or not os.path.isdir(music_dir):
         return records
     try:
-        for root, _dirs, files in os.walk(music_dir, followlinks=False):
+        for root, dirs, files in os.walk(music_dir, followlinks=False):
+            # Never descend into sidecar/trash/hidden folders: the Synology
+            # @eaDir/#recycle trees, the stack's own .charts-trash (deleted-file
+            # bin from the upgrade/replace path), and any dot-folder. Editing a
+            # file inside .charts-trash from the tag editor would be wrong - it
+            # is scheduled for cleanup. Dirs are pruned in place so os.walk skips
+            # their whole subtree.
+            dirs[:] = [d for d in dirs
+                       if d not in _CLEANUP_IGNORE and not d.startswith(".")]
             for name in files:
                 ext = os.path.splitext(name)[1].lower()
                 if ext not in AUDIO_EXTENSIONS:

@@ -155,6 +155,35 @@ def test_limit_clamped_high(music_tree):
     assert len(out) <= 50
 
 
+# --- walk pruning: trash / sidecar / hidden folders are excluded ------------
+
+def test_build_records_excludes_trash_sidecar_hidden(tmp_path, monkeypatch):
+    """_build_records must not descend into .charts-trash (the deleted-file bin),
+    the @eaDir/#recycle sidecar trees, or any dot-folder. Only the normal
+    artist/album/song is indexed; the trash/sidecar/hidden ones are skipped."""
+    root = tmp_path / "Music"
+    root.mkdir()
+    # A normal, real artist/album/song that MUST be indexed.
+    p_normal = _mk_song(str(root), "Chappell Roan",
+                        "The Rise and Fall of a Midwest Princess",
+                        "Pink Pony Club.mp3")
+    # A file inside the stack's own deleted-file bin -> must be excluded.
+    p_trash = _mk_song(str(root), ".charts-trash/2026-01-01/Chappell Roan",
+                       "Album", "Pink Pony Club.mp3")
+    # A Synology sidecar subtree -> must be excluded.
+    p_sidecar = _mk_song(str(root), "@eaDir", "thumbs", "Pink Pony Club.mp3")
+    # Any other dot-folder -> must be excluded.
+    p_hidden = _mk_song(str(root), ".hidden", "Album", "Pink Pony Club.mp3")
+
+    monkeypatch.setattr(config, "MUSIC_DIR", str(root))
+
+    paths = {r["path"] for r in library._build_records(str(root))}
+    assert p_normal in paths
+    assert p_trash not in paths
+    assert p_sidecar not in paths
+    assert p_hidden not in paths
+
+
 # --- search index refreshes on save (stale-after-save fix) ------------------
 
 def test_search_after_save_reflects_new_artist(tmp_path, monkeypatch):
