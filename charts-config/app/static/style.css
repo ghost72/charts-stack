@@ -370,6 +370,12 @@ body.login {
   aspect-ratio: 1 / 1; max-height: 220px;
   border-radius: 10px; border: 1px solid #3a3048; background: #1b1626;
   overflow: hidden;                 /* clips the img to the rounded corners */
+  /* Safari ignores a parent's border-radius when clipping composited/replaced
+     children (the cover <img>), so the box read as square-cornered even though
+     the radius was set. A new stacking/compositing context forces Safari to
+     honour the rounded clip; the child radius below is the belt-and-suspenders. */
+  isolation: isolate;
+  transform: translateZ(0);
   margin-bottom: 8px;
 }
 /* Music-note placeholder (same logo as charts-songrequest): centered at a
@@ -386,11 +392,14 @@ body.login {
   display: block;
 }
 /* The preview fills the rounded box; object-fit keeps the aspect ratio without
-   distortion. Border/background now come from the box, not the img itself. */
+   distortion. Border/background come from the box, but the img also carries the
+   matching radius directly so Safari rounds the real cover even when it skips
+   the parent's overflow clip. */
 .te-cover-img {
   display: block;
   width: 100%; height: 100%;
   object-fit: contain;
+  border-radius: 10px;
 }
 .te-file { color: var(--muted); font-size: .82rem; }
 /* File input ("choose file"): the native button is unstyled/light, so match it
@@ -465,8 +474,14 @@ body.login {
 }
 .te-save:hover { filter: brightness(1.1); }
 .te-save:disabled { opacity: .5; cursor: not-allowed; }
-/* Save status message row below the controls (button moved out of here). */
-.te-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
-.te-msg { font-size: .85rem; }
+/* Save status message gets its own fixed slot below the controls row. The
+   min-height reserves space for up to two wrapped lines so the message
+   appearing/disappearing or wrapping never reflows the row above it — the Save
+   button stays put next to the URL field regardless of the status text. */
+.te-actions {
+  display: flex; align-items: flex-start; gap: 12px; margin-top: 6px;
+  min-height: 2.4em;                /* reserve two lines so text never shifts layout */
+}
+.te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
 .te-msg.err { color: var(--err); font-weight: 600; }
