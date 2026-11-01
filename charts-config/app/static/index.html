@@ -141,6 +141,22 @@
           <div class="te-actions">
             <span id="te-msg" class="te-msg"></span>
           </div>
+          <!-- Label legend: explains the two result badges shown on the right
+               of each search row. Reuses the exact badge markup/classes
+               (.badge .badge-stack / .badge-curated) and their existing i18n
+               labels (tageditor.origin.*) so the legend badges look identical
+               to the list badges. Compact, muted, wraps on narrow screens. -->
+          <div class="te-legend muted-txt">
+            <span class="te-legend-item">
+              <span class="badge badge-stack" data-i18n="tageditor.origin.stack">stack</span>
+              <span data-i18n="tageditor.legend.stack"></span>
+            </span>
+            <span class="te-legend-item">
+              <span class="badge badge-curated" data-i18n="tageditor.origin.curated">curated</span>
+              <span data-i18n="tageditor.legend.curated"></span>
+            </span>
+            <span class="te-legend-note" data-i18n="tageditor.legend.note"></span>
+          </div>
         </form>
       </div>
     </div>
