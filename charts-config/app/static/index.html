@@ -111,7 +111,7 @@
             <div class="te-grid">
               <label data-i18n="tageditor.label.artist">Artist</label>
               <input id="te-artist" autocomplete="off">
-              <div id="te-artist-hint" class="te-hint muted-txt" data-i18n="tageditor.move_hint" hidden></div>
+              <div id="te-artist-hint" class="te-hint te-hint-warn" data-i18n="tageditor.move_hint" hidden></div>
               <label data-i18n="tageditor.label.title">Title</label>
               <input id="te-title" autocomplete="off">
               <label data-i18n="tageditor.label.album">Album</label>
@@ -598,7 +598,7 @@ function initTagEditor() {
       const d = await r.json();
       if (!d || !d.ok) { results.innerHTML = ""; return; }
       if (!d.results.length) {
-        results.innerHTML = `<div class="muted-txt">${t("tageditor.no_hits")}</div>`;
+        results.innerHTML = `<div class="te-no-hits">${t("tageditor.no_hits")}</div>`;
         return;
       }
       results.innerHTML = d.results.map(s => {
