@@ -118,9 +118,14 @@
           </div>
           <div class="te-cover">
             <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
-            <img id="te-cover-img" class="te-cover-img" alt="" hidden>
+            <!-- Rounded placeholder box: stays as a tidy empty card when no
+                 cover is loaded; the img (overflow-clipped by the box) inherits
+                 the rounded corners when present. -->
+            <div class="te-cover-box">
+              <img id="te-cover-img" class="te-cover-img" alt="" hidden>
+            </div>
             <label class="te-file" data-i18n="tageditor.cover.upload">Upload image</label>
-            <input id="te-cover-file" type="file" accept="image/jpeg,image/png">
+            <input id="te-cover-file" class="te-file-input" type="file" accept="image/jpeg,image/png">
             <input id="te-cover-url" autocomplete="off" data-i18n-ph="tageditor.cover.url"
                    placeholder="…or image URL">
           </div>
