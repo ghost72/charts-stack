@@ -38,6 +38,70 @@ _NOISE_PATTERNS = [
 ]
 
 
+# A trailing CLOSED parenthetical/bracketed subtitle, e.g.
+# "Against All Odds (Take a Look at Me Now)". The ICY radio stream feeds the
+# SHORT title while the (metadata-backfilled) library now carries the EXTENDED
+# Deezer-canonical title with this subtitle, so the plain normalize()/similarity
+# path scores ~59 and the owned song reads as "missing". We strip such a tail to
+# form a "core title" key used ONLY for scoring/matching (never for anything
+# written to disk, tagged, notified, or put in the missing list / year map).
+#
+# CONSERVATIVE, mirroring the stack's existing _title_key discipline
+# (charts-import/app/importer.py and charts-songrequest's _OPEN_TAIL_DECORATION):
+# a tail is only stripped when it is a DESCRIPTIVE word subtitle. A numeric or
+# "part"/"pt"/roman-numeral tail that distinguishes genuinely different songs is
+# KEPT, so "(Part 2)", "(Pt. 2)", "(Part II)" and a bare number tail stay
+# distinct and cannot collapse two different songs onto one key.
+_SUBTITLE_TAIL_RE = re.compile(
+    r"\s*[\(\[]\s*"
+    r"(?P<body>[^\(\)\[\]]*?)"
+    r"\s*[\)\]]\s*$"
+)
+# A subtitle body that must NOT be stripped: a part/disc marker or a purely
+# numeric tail. "part"/"pt"/"no"/"vol" optionally followed by a number or a
+# roman numeral, or a tail that is only digits / only a roman numeral.
+_NUMERIC_PART_TAIL_RE = re.compile(
+    r"^(?:"
+    r"(?:part|pt|no|nr|vol|volume|disc|cd|chapter)\.?\s*"
+    r"(?:\d+|[ivxlcdm]+)?"
+    r"|\d+"
+    r"|[ivxlcdm]+"
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def _strip_subtitle_tail(title: str) -> str:
+    """
+    Strip a single trailing CLOSED '( ... )' / '[ ... ]' subtitle from a title,
+    but ONLY when its contents read as a descriptive word subtitle - not a
+    numeric / 'part N' / 'pt N' / roman-numeral marker. Returns the title
+    unchanged when there is no such tail (e.g. a short bare title stays as-is).
+
+    MATCH key only - never touches what is written to disk, tagged, or notified.
+    """
+    t = (title or "").strip()
+    m = _SUBTITLE_TAIL_RE.search(t)
+    if not m:
+        return t
+    body = m.group("body").strip()
+    # Keep numeric/part/roman tails distinct; keep an empty "()" group as-is.
+    if not body or _NUMERIC_PART_TAIL_RE.match(body):
+        return t
+    stripped = t[:m.start()].rstrip()
+    # Never strip the whole title down to nothing (e.g. "(Live Version)" alone).
+    return stripped or t
+
+
+def normalize_core(text: str) -> str:
+    """
+    Like normalize(), but first strips a trailing descriptive '(subtitle)' so
+    the short stream title and the extended library title fold to the SAME core
+    key. Used ONLY for title scoring in find_match.
+    """
+    return normalize(_strip_subtitle_tail(text))
+
+
 def normalize(text: str) -> str:
     """
     Normalize a string for comparison:
@@ -115,6 +179,9 @@ class LibraryTrack:
         self.is_compilation = is_compilation
         self.norm_artist = normalize(artist)
         self.norm_title = normalize(title)
+        # Core title with a trailing descriptive '(subtitle)' stripped, for the
+        # subtitle-tolerant title score only (see normalize_core / find_match).
+        self.norm_core_title = normalize_core(title)
         # Combined search string for the fallback comparison.
         self.norm_combined = f"{self.norm_artist} {self.norm_title}".strip()
         # Is the track in a Lidarr "(year)" album? For the tie-break.
@@ -177,6 +244,7 @@ class Library:
         """
         n_artist = normalize(artist)
         n_title = normalize(title)
+        n_core_title = normalize_core(title)
         n_combined = f"{n_artist} {n_title}".strip()
 
         best: LibraryTrack | None = None
@@ -186,7 +254,16 @@ class Library:
             if config.IGNORE_COMPILATIONS and track.is_compilation:
                 continue
 
-            title_score = similarity(n_title, track.norm_title)
+            # Title score: the better of the full-title similarity and the
+            # subtitle-stripped "core title" similarity (both sides stripped
+            # symmetrically). Taking the MAX only ever RAISES a true match - it
+            # lets a short stream title ("Against All Odds") match an extended
+            # library title ("Against All Odds (Take a Look at Me Now)") and the
+            # reverse, without ever lowering a score that already matched.
+            title_score = max(
+                similarity(n_title, track.norm_title),
+                similarity(n_core_title, track.norm_core_title),
+            )
             artist_score = similarity(n_artist, track.norm_artist)
 
             if track.norm_title and track.norm_artist:
