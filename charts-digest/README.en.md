@@ -104,6 +104,12 @@ docker exec charts-digest python -m app.main --now   # send immediately
 The service appears on the **charts-dashboard** in the monitoring zone (status,
 last run, next scheduled run, cumulative summaries).
 
+A failed daily run does **not** consume the day's slot: the once-per-day gate is
+stamped only on a genuine success, so a run that failed (e.g. a Pushover/network
+error) is retried at the next poll the same day instead of being silently lost
+until tomorrow. On a failed run a Pushover alert is sent as well — the watchdog
+only sees container state, not a failed run inside a still-running container.
+
 ## Legal note
 
 Pure notification service – it neither downloads nor modifies content. See the

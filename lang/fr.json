@@ -171,6 +171,8 @@
   "digest.status.error": "Erreur : {error}",
   "digest.notify.empty_title": "😴 Aucun nouveau titre",
   "digest.notify.empty_body": "🗓️ Au cours des {hours} dernières h, aucun nouveau titre n'est entré dans la bibliothèque. Peut-être demain ! 🎧",
+  "digest.notify.run_failed_title": "⚠️ charts-digest",
+  "digest.notify.run_failed": "⚠️ L'analyse quotidienne a échoué, aucun résumé envoyé : {error}",
   "digest.notify.title": "{emoji} {count} nouveaux titres dans ta bibliothèque",
   "digest.notify.header_period": "🗓️ <b>Nouvelle musique</b> du {period_from} au {period_to}",
   "digest.notify.header_count": "🎵 <b>{count}</b> nouveaux titres de <b>{sources}</b> source(s)",

@@ -104,6 +104,14 @@ docker exec charts-digest python -m app.main --now   # sofort senden
 Der Dienst erscheint auf dem **charts-dashboard** in der Überwachungs-Zone
 (Status, letzter Lauf, nächster geplanter Lauf, kumulierte Zusammenfassungen).
 
+Ein fehlgeschlagener Tageslauf verbraucht den Tages-Slot **nicht**: Das
+Einmal-pro-Tag-Gate wird nur bei echtem Erfolg gestempelt. Ein gescheiterter
+Lauf (z. B. ein Pushover-/Netzfehler) wird beim nächsten Poll am selben Tag
+erneut versucht, statt still bis morgen verloren zu gehen. Bei einem
+fehlgeschlagenen Lauf kommt zudem eine Pushover-Meldung — der Watchdog sieht nur
+den Container-Zustand, nicht einen fehlgeschlagenen Lauf in einem weiterhin
+laufenden Container.
+
 ## Rechtlicher Hinweis
 
 Reiner Benachrichtigungsdienst – lädt oder verändert keine Inhalte. Siehe die
