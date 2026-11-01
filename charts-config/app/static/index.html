@@ -637,12 +637,15 @@ function initTagEditor() {
       el.dataset.orig = el.value;
       el.classList.remove("changed");
     });
-    // Cover preview + reset the cover inputs.
+    // Cover preview + reset the cover inputs. ALWAYS reset the image first so a
+    // newly selected song never shows the previous song's cover: clear the src
+    // and hide the img, THEN show the new cover only if this song has one.
+    // Placeholder-vs-image is mutually exclusive — the [hidden] img drives the
+    // CSS :has() that reveals the music-note placeholder.
     const img = document.getElementById("te-cover-img");
+    img.src = ""; img.removeAttribute("src"); img.hidden = true;
     if (song.cover && song.cover.present && song.cover.data_url) {
       img.src = song.cover.data_url; img.hidden = false;
-    } else {
-      img.removeAttribute("src"); img.hidden = true;
     }
     const fileEl = document.getElementById("te-cover-file");
     const urlEl = document.getElementById("te-cover-url");
