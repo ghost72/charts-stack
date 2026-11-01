@@ -341,8 +341,33 @@ body.login {
   margin-left: auto; padding: 2px 8px; border-radius: 999px;
   font-size: .72rem; font-weight: 700; letter-spacing: .02em;
 }
-.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12; coloact.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12te.badge-stack { background: #4a2a12; color: #f.badge-stack { background:dth.badge-stack { background: #4a2a12; color: #f.badge-stack { background: #4a2a12in.badge-stack { background: #4a2a12; color: #f.badge-stack { backgr(a.badge-s t.badge-stack { background: #4a2a12; color: #f.badge-stack { backut.badge-stack { background: #4a2a12; color: #f.badge-stacse.badge-stack { backgroundgin:.badge-stack { background: #4a2a12; cn:.badge-stack { background: #4a2a12; x; }
-.te-cover-label { color: var(--mu.te-cover-label { color: var(--mu.te-cover-label { colopx;.te-cover-label { color: var(--mu.te-cover-label { color: var(--mu.te-cor(.teile); border: 1px solid #3a3048;
+.badge-stack { background: #4a2a12; color: #f0b57a; }
+.badge-curated { background: #1d3350; color: #9cc3ff; }
+/* Editable fields column: label + input pairs stacked one per row. This is the
+   left-hand column whose height the cover preview is matched against. */
+.te-grid {
+  display: grid; gap: 8px 12px;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+}
+.te-grid label { color: var(--muted); font-size: .85rem; }
+/* Cover block sits under the fields; the preview is a bounded square thumbnail
+   (album-art size), not the image's native full-bleed dimensions. */
+.te-cover { margin-top: 12px; }
+.te-cover-label {
+  display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
+}
+/* Constrain the cover preview so it never grows past the fields column: a
+   square box capped at the stacked Artist/Title/Album/Year/Track height.
+   object-fit keeps the aspect ratio without distortion, and max-width keeps it
+   inside the card on narrow / mobile viewports. */
+.te-cover-img {
+  display: block;
+  width: 100%; max-width: 220px;
+  aspect-ratio: 1 / 1; max-height: 220px;
+  object-fit: contain;
+  border-radius: 10px; border: 1px solid #3a3048; background: #1b1626;
+  margin-bottom: 8px;
 }
 .te-file { color: var(--muted); font-size: .82rem; }
 .te-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
