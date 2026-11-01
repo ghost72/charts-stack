@@ -343,6 +343,9 @@ body.login {
 }
 .badge-stack { background: #4a2a12; color: #f0b57a; }
 .badge-curated { background: #1d3350; color: #9cc3ff; }
+/* Select-a-song hint ("Wähle oben einen Song…"): give it a little breathing
+   room below so it does not cling to the first input row of the form. */
+#te-hint { margin-bottom: 14px; }
 /* The tag-editor form sits inside .finder-box, which sets `form { display:
    flex }` (a horizontal row) for the small search forms. That rule also hit
    #te-form, so its blocks (fields grid, cover, actions, legend) were laid out
@@ -383,6 +386,10 @@ body.login {
 .te-cover {
   flex: 0 0 auto;
   display: flex; flex-direction: column;
+  /* Lift the column by the "Cover" label height + its bottom margin so the
+     label rises into the hint-line region and the cover BOX top-aligns with the
+     first input row (Künstler) instead of dropping ~22px below it. */
+  margin-top: -22px;
 }
 .te-cover-label {
   display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
@@ -406,7 +413,7 @@ body.login {
   /* 14px radius: at the large album-art size the old 10px read as square to the
      eye; 14px is visibly rounded. This box is the element that paints the
      visible rectangle (bg + border) and clips the cover <img> to the curve. */
-  border-radius: 14px; border: 1px solid #3a3048; background: #1b1626;
+  border-radius: 14px; border: 1px solid #5a5172; background: #1b1626;
   overflow: hidden;                 /* clips the img to the rounded corners */
   /* Safari ignores a parent's border-radius when clipping composited/replaced
      children (the cover <img>), so the box read as square-cornered even though
@@ -522,7 +529,7 @@ body.login {
    button stays put next to the URL field regardless of the status text. */
 .te-actions {
   display: flex; align-items: flex-start; gap: 12px; margin-top: 6px;
-  min-height: 2.4em;                /* reserve two lines so text never shifts layout */
+  min-height: 1.2em;                /* reserve one line so a short status never shifts layout */
 }
 .te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
@@ -534,7 +541,7 @@ body.login {
    the far right of its legend item. */
 .te-legend {
   display: flex; flex-wrap: wrap; align-items: center;
-  gap: 6px 16px; margin-top: 10px; font-size: .78rem; line-height: 1.4;
+  gap: 6px 16px; margin-top: 6px; font-size: .78rem; line-height: 1.4;
 }
 .te-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .te-legend .badge { margin-left: 0; }
