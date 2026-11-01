@@ -10,6 +10,71 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [2.2.0] - 2026-11-01
+
+charts-config gains a **Manual Tag Editor** — a password-protected web tool to
+fix a library song's tags and cover art by hand, in place, and (when the artist
+changes) move the file into the correct artist folder so one artist always lives
+in exactly one folder. Two scheduler services (charts-hitparade, charts-digest)
+are hardened so a failed run no longer burns its once-per-slot schedule and now
+alerts on failure.
+
+### Added
+- **charts-config — Manual Tag Editor.** Search the music library, pick a song,
+  and edit artist/title/album/year/track + cover art in place. Saving writes
+  only changed fields, clears the stack provenance markers
+  (`TXXX:CHARTS_SOURCE` + `TXXX:CHARTS_ALBUM_SRC`) so the song becomes
+  hand-managed and the automatic backfill never re-touches it, and preserves
+  mtime (no Navidrome "recently added" flood). MP3-only on save; cover replace
+  via upload or http/https URL (square-cropped, SSRF-guarded). Admin login like
+  the dashboard. Needs a read-write `/music/Music` mount (added to compose.yml)
+  and `mutagen`/`Pillow` (no ffmpeg); tunables `TAGEDITOR_INDEX_TTL`,
+  `TAGEDITOR_COVER_MAX_BYTES`, `TAGEDITOR_COVER_FETCH_TIMEOUT`.
+- **charts-config — "folder follows the artist tag".** When a save changes the
+  artist, the file is moved into the canonical artist folder so one artist =
+  one folder, never a duplicate created by guessing. A strict key
+  (case/punctuation/accent fold) auto-merges unambiguous variants
+  (`rod stewart`/`Rod Stewart`, `Motörhead`/`Motorhead`, casing/hyphen/apostrophe
+  differences); when the old folder empties it is renamed; a looser key
+  (leet/stylization: `P!nk`↔`Pink`, `Ke$ha`↔`Kesha`) that matches a different
+  populated folder raises a decision dialog (file in / create new / cancel); an
+  exact song-file collision raises a keep-existing/cancel dialog and **never
+  overwrites**. `os.rename` only (mtime preserved; cross-device is refused);
+  empty source folders are cleaned up (skipping `@eaDir`/`#recycle`/`.DS_Store`).
+  Scope is stack-single `<Artist>/<Title>/` files only — Lidarr `<Album> (Year)/`
+  albums and curated compilations are left in place. An amber ⚠️ pre-save hint
+  warns before the move.
+- **charts-hitparade / charts-digest — failure Pushover alert.** A failed
+  scheduled run now sends a Pushover message (the watchdog only sees container
+  state, not a failed run inside a running container).
+
+### Fixed
+- **charts-hitparade — a failed run no longer burns the weekly slot.** The
+  once-per-week run-gate is now stamped only on a genuine success, so a run that
+  hit a transient hitparade.ch 5xx (or a `RUN_ON_START` run after a restart) is
+  retried at the next scheduler check the same day instead of waiting a week.
+- **charts-digest — a failed run no longer burns the daily slot.** Same fix: the
+  once-per-day gate is stamped only on success, so a failed daily digest is
+  retried the same day instead of being silently lost until tomorrow.
+- **charts-config — tag-editor search no longer lists trash/sidecar/hidden
+  folders.** The search index prunes `.charts-trash`, `@eaDir`, `#recycle`,
+  `.DS_Store` and any dot-folder, so a deleted-file bin entry can no longer be
+  opened for editing.
+- **charts-config — tag-editor cover no longer shows the previous song's art.**
+  Switching to a song without an embedded cover now resets the cover area and
+  shows only the placeholder, instead of leaving the prior image behind it.
+
+### Changed
+- **charts-config — "curated" badge renamed to hand-managed** (de:
+  `handgepflegt`, fr: `géré à la main`, fixing the previous French `curé` =
+  "parish priest" mistranslation) across badge, legend and editor hint.
+- **charts-config — tag-editor UI** polished: side-by-side fields/cover layout,
+  cover sized to the field stack with visibly rounded corners, upload row with
+  equal-width file/URL inputs, full-width legend, and a brighter amber ⚠️ move
+  hint + legible "no matches" message.
+- Root README: the charts-config service description no longer says "read-only"
+  (it now hosts the Manual Tag Editor).
+
 ## [2.1.0] - 2026-11-01
 
 charts-import gains a uniform, source-independent tagging path and a

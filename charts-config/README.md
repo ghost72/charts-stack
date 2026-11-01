@@ -167,6 +167,9 @@ kann von außen erreichbar sein.
 | `DASHBOARD_GENRE_CACHE_TTL` | `86400` | Cache-TTL der Deezer-Genre-Tabelle im Quellen-Finder (Sekunden; Refresh beim ersten Aufruf nach Ablauf) |
 | `CHARTS_LANG` | – (leer = Englisch) | Sprache für UI **und** Logs (`de`/`fr` verfügbar) – stackweiter Schalter, kein eigener UI-Umschalter |
 | `CONFIG_DONATE` | `1` | dezenter Spenden-Footer (PayPal/Revolut); `0`/`false`/`no` blendet ihn aus |
+| `TAGEDITOR_INDEX_TTL` | `300` | Rebuild-Takt des Tag-Editor-Suchindex (Sekunden); von compose gesetzt |
+| `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max. Cover-Upload/-Download-Größe (8 MiB); von compose gesetzt |
+| `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | Timeout für Cover-URL-Abruf (Sekunden); von compose gesetzt |
 
 ## Zugriff
 

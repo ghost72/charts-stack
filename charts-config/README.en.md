@@ -161,6 +161,9 @@ exposed.
 | `DASHBOARD_GENRE_CACHE_TTL` | `86400` | cache TTL of the Deezer genre table in the source finder (seconds; refreshed on the first call after expiry) |
 | `CHARTS_LANG` | – (empty = English) | language for the UI **and** logs (`de`/`fr` available) – one stack-wide switch, no in-UI toggle |
 | `CONFIG_DONATE` | `1` | discreet donate footer (PayPal/Revolut); `0`/`false`/`no` hides it |
+| `TAGEDITOR_INDEX_TTL` | `300` | tag-editor search-index rebuild cadence (seconds); supplied by compose |
+| `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max cover upload/fetch size (8 MiB); supplied by compose |
+| `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | cover URL fetch timeout (seconds); supplied by compose |
 
 ## Access
 
