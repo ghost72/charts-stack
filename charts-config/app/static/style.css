@@ -485,3 +485,15 @@ body.login {
 .te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
 .te-msg.err { color: var(--err); font-weight: 600; }
+/* Label legend under the button row: explains the two result badges. One
+   compact, muted line that wraps into stacked items on narrow screens. Reuses
+   the real .badge/.badge-stack/.badge-curated markup, so the margin-left:auto
+   those get inside .te-row must be reset here or the badge would be shoved to
+   the far right of its legend item. */
+.te-legend {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 16px; margin-top: 10px; font-size: .78rem; line-height: 1.4;
+}
+.te-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.te-legend .badge { margin-left: 0; }
+.te-legend-note { flex-basis: 100%; }
