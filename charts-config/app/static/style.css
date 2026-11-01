@@ -377,24 +377,36 @@ body.login {
   align-items: center;
 }
 .te-grid label { color: var(--muted); font-size: .85rem; }
-/* Cover block on the right of the top row; the preview is a bounded square
-   thumbnail (album-art size), not the image's native full-bleed dimensions. */
-.te-cover { flex: 0 0 auto; }
+/* Cover block on the right of the top row: the "Cover" label stacked over the
+   square cover box as a flex column. flex:0 0 auto so it keeps its intrinsic
+   (square) width next to the flexible fields column. */
+.te-cover {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column;
+}
 .te-cover-label {
   display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
 }
 /* Cover placeholder box: a rounded, themed square that holds the preview image.
    When no cover is loaded (img hidden) it reads as a tidy empty card matching
    the other inputs/tiles; the border-radius + overflow:hidden clip the img so
-   it inherits the rounded corners. Square box capped at the stacked
-   Artist/Title/Album/Year/Track height; max-width keeps it inside the card on
-   narrow / mobile viewports. */
+   it inherits the rounded corners. Sized to stand as tall as the field stack. */
 .te-cover-box {
   position: relative;
-  display: block;
-  width: 100%; max-width: 220px;
-  aspect-ratio: 1 / 1; max-height: 220px;
-  border-radius: 10px; border: 1px solid #3a3048; background: #1b1626;
+  /* A fixed square sized to the field stack: the 5 input rows (Künstler →
+     Track) measure ~187px tall, so a 200px square makes the cover as tall as
+     that stack (its top sits near the Künstler row, its bottom near the Track
+     row) while staying a true square. A definite width+height is used on
+     purpose instead of an aspect-ratio derived from height: the box must stay
+     square in BOTH states, and when the placeholder (not an <img>) is shown
+     there is no intrinsic width to drive an aspect-ratio, which previously
+     collapsed the empty box to a thin vertical strip. */
+  width: 200px; height: 200px;
+  flex: 0 0 auto;
+  /* 14px radius: at the large album-art size the old 10px read as square to the
+     eye; 14px is visibly rounded. This box is the element that paints the
+     visible rectangle (bg + border) and clips the cover <img> to the curve. */
+  border-radius: 14px; border: 1px solid #3a3048; background: #1b1626;
   overflow: hidden;                 /* clips the img to the rounded corners */
   /* Safari ignores a parent's border-radius when clipping composited/replaced
      children (the cover <img>), so the box read as square-cornered even though
@@ -402,7 +414,6 @@ body.login {
      honour the rounded clip; the child radius below is the belt-and-suspenders. */
   isolation: isolate;
   transform: translateZ(0);
-  margin-bottom: 8px;
 }
 /* Music-note placeholder (same logo as charts-songrequest): centered at a
    tasteful size (~45% of the box, not full-bleed) while the box is empty, and
@@ -429,7 +440,7 @@ body.login {
   display: block;
   width: 100%; height: 100%;
   object-fit: contain;
-  border-radius: 9px;
+  border-radius: 13px;              /* box radius (14px) minus the box's 1px border */
 }
 .te-file { color: var(--muted); font-size: .82rem; }
 /* File input ("choose file"): the native button is unstyled/light, so match it
