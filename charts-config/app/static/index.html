@@ -87,6 +87,51 @@
       </div>
     </div>
   </section>
+
+  <!-- Manual tag editor: search the library, pick a song, edit its tags/cover
+       in place. The only read-write section (saving clears the stack markers).
+       Inert without the /music/Music mount (search returns nothing). -->
+  <section>
+    <h2 data-i18n="section.tageditor">🏷️ Manual tag editor</h2>
+    <div class="finder-hint" data-i18n="tageditor.hint"></div>
+    <div class="finder finder-full">
+      <div class="finder-box">
+        <input id="te-search" autocomplete="off" data-i18n-ph="tageditor.ph.search"
+               placeholder="Search artist or title…">
+        <div id="te-results" class="te-results"></div>
+        <div id="te-hint" class="muted-txt" data-i18n="tageditor.select_hint"></div>
+
+        <form id="te-form" class="te-form" hidden>
+          <input type="hidden" id="te-path">
+          <div id="te-mp3only" class="s-err" data-i18n="tageditor.mp3_only" hidden></div>
+          <div class="te-grid">
+            <label data-i18n="tageditor.label.artist">Artist</label>
+            <input id="te-artist" autocomplete="off">
+            <label data-i18n="tageditor.label.title">Title</label>
+            <input id="te-title" autocomplete="off">
+            <label data-i18n="tageditor.label.album">Album</label>
+            <input id="te-album" autocomplete="off">
+            <label data-i18n="tageditor.label.year">Year</label>
+            <input id="te-year" autocomplete="off" inputmode="numeric">
+            <label data-i18n="tageditor.label.track">Track</label>
+            <input id="te-track" autocomplete="off" inputmode="numeric">
+          </div>
+          <div class="te-cover">
+            <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
+            <img id="te-cover-img" class="te-cover-img" alt="" hidden>
+            <label class="te-file" data-i18n="tageditor.cover.upload">Upload image</label>
+            <input id="te-cover-file" type="file" accept="image/jpeg,image/png">
+            <input id="te-cover-url" autocomplete="off" data-i18n-ph="tageditor.cover.url"
+                   placeholder="…or image URL">
+          </div>
+          <div class="te-actions">
+            <button type="submit" data-i18n="tageditor.btn.save">Save</button>
+            <span id="te-msg" class="te-msg"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
 </main>
 {{DONATE}}
 <script>
@@ -474,7 +519,167 @@ function initFinder(lastfm) {
   }
 }
 
+// --- Manual tag editor ------------------------------------------------------
+// Live autocomplete search over the library + manifest, per-field edit with a
+// colored border on changed fields, and cover replace via upload or URL. Save
+// posts the whole multipart form; the server re-verifies which fields changed
+// and clears the stack provenance markers. Wired up once from the bootstrap.
+let _teDone = false;
+const TE_FIELDS = ["artist", "title", "album", "year", "track"];
+
+function initTagEditor() {
+  if (_teDone) return;
+  _teDone = true;
+  const input = document.getElementById("te-search");
+  const results = document.getElementById("te-results");
+  const hint = document.getElementById("te-hint");
+  const form = document.getElementById("te-form");
+  if (!input || !results || !form) return;
+
+  let debounce = null;
+  let ctrl = null;          // AbortController for the in-flight search
+
+  async function doSearch(q) {
+    if (ctrl) ctrl.abort();
+    ctrl = new AbortController();
+    results.innerHTML = `<div class="muted-txt">${t("tageditor.searching")}</div>`;
+    try {
+      const r = await fetch("/api/tageditor/search?q=" + encodeURIComponent(q),
+        {cache: "no-store", signal: ctrl.signal});
+      const d = await r.json();
+      if (!d || !d.ok) { results.innerHTML = ""; return; }
+      if (!d.results.length) {
+        results.innerHTML = `<div class="muted-txt">${t("tageditor.no_hits")}</div>`;
+        return;
+      }
+      results.innerHTML = d.results.map(s => {
+        const badgeCls = s.origin === "stack" ? "badge-stack" : "badge-curated";
+        const badgeTxt = t("tageditor.origin." + (s.origin === "stack" ? "stack" : "curated"));
+        return `<div class="te-row" data-path="${esc(s.path)}">` +
+          `<span class="te-row-main">${esc(s.artist)} — ${esc(s.title)}</span>` +
+          `<span class="te-row-album">${esc(s.album)}</span>` +
+          `<span class="badge ${badgeCls}">${esc(badgeTxt)}</span></div>`;
+      }).join("");
+    } catch (e) {
+      if (e.name === "AbortError") return;    // superseded keystroke
+      results.innerHTML = `<div class="s-err">${t("tageditor.unreachable")}</div>`;
+    }
+  }
+
+  input.addEventListener("input", () => {
+    const q = (input.value || "").trim();
+    if (debounce) clearTimeout(debounce);
+    if (q.length < 2) { results.innerHTML = ""; return; }
+    debounce = setTimeout(() => doSearch(q), 250);
+  });
+
+  results.addEventListener("click", (e) => {
+    const row = e.target.closest(".te-row");
+    if (!row) return;
+    loadSong(row.getAttribute("data-path"));
+  });
+
+  async function loadSong(path) {
+    try {
+      const r = await fetch("/api/tageditor/song?path=" + encodeURIComponent(path),
+        {cache: "no-store"});
+      const d = await r.json();
+      if (!d || !d.ok) {
+        setMsg(esc((d && d.error) || t("tageditor.unreachable")), true);
+        return;
+      }
+      prefill(d.song);
+    } catch (e) {
+      setMsg(t("tageditor.unreachable"), true);
+    }
+  }
+
+  function prefill(song) {
+    document.getElementById("te-path").value = song.path;
+    TE_FIELDS.forEach(f => {
+      const el = document.getElementById("te-" + f);
+      el.value = song[f] == null ? "" : String(song[f]);
+      el.dataset.orig = el.value;
+      el.classList.remove("changed");
+    });
+    // Cover preview + reset the cover inputs.
+    const img = document.getElementById("te-cover-img");
+    if (song.cover && song.cover.present && song.cover.data_url) {
+      img.src = song.cover.data_url; img.hidden = false;
+    } else {
+      img.removeAttribute("src"); img.hidden = true;
+    }
+    const fileEl = document.getElementById("te-cover-file");
+    const urlEl = document.getElementById("te-cover-url");
+    fileEl.value = ""; urlEl.value = "";
+    fileEl.classList.remove("changed"); urlEl.classList.remove("changed");
+    // Non-MP3 files are read-only: disable every control + show the note.
+    const readOnly = song.is_mp3 === false;
+    const note = document.getElementById("te-mp3only");
+    note.hidden = !readOnly;
+    [...TE_FIELDS.map(f => "te-" + f), "te-cover-file", "te-cover-url"].forEach(id => {
+      document.getElementById(id).disabled = readOnly;
+    });
+    form.querySelector("button[type=submit]").disabled = readOnly;
+    setMsg("", false);
+    form.hidden = false;
+    if (hint) hint.hidden = true;
+  }
+
+  function setMsg(text, isErr) {
+    const msg = document.getElementById("te-msg");
+    msg.textContent = text;
+    msg.className = "te-msg" + (isErr ? " err" : " ok");
+  }
+
+  // Changed-field highlight (advisory; the server re-verifies).
+  TE_FIELDS.forEach(f => {
+    const el = document.getElementById("te-" + f);
+    el.addEventListener("input", () => {
+      el.classList.toggle("changed", el.value !== el.dataset.orig);
+    });
+  });
+  const fileEl = document.getElementById("te-cover-file");
+  const urlEl = document.getElementById("te-cover-url");
+  fileEl.addEventListener("change", () => {
+    const img = document.getElementById("te-cover-img");
+    if (fileEl.files && fileEl.files[0]) {
+      fileEl.classList.add("changed");
+      img.src = URL.createObjectURL(fileEl.files[0]); img.hidden = false;
+    } else {
+      fileEl.classList.remove("changed");
+    }
+  });
+  urlEl.addEventListener("input", () => {
+    urlEl.classList.toggle("changed", (urlEl.value || "").trim() !== "");
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData();
+    fd.append("path", document.getElementById("te-path").value);
+    TE_FIELDS.forEach(f => fd.append(f, document.getElementById("te-" + f).value));
+    const url = (urlEl.value || "").trim();
+    if (url) fd.append("cover_url", url);
+    if (fileEl.files && fileEl.files[0]) fd.append("cover_file", fileEl.files[0]);
+    setMsg(t("tageditor.searching"), false);
+    try {
+      const r = await fetch("/api/tageditor/save", {method: "POST", body: fd, cache: "no-store"});
+      const d = await r.json();
+      if (r.ok && d && d.ok) {
+        prefill(d.song);
+        setMsg(t("tageditor.saved"), false);
+      } else {
+        setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+      }
+    } catch (e2) {
+      setMsg(t("tageditor.unreachable"), true);
+    }
+  });
+}
+
 applyStaticI18n();   // populate the static head/body markup once on load
+initTagEditor();     // wire the manual tag editor (independent of the finder)
 // charts-config has no /api/status; probe the Last.fm endpoint once (empty
 // query) to learn whether a key is configured, then init the finder. The
 // backend returns `configured` even without an API key.

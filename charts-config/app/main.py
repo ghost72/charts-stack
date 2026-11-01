@@ -22,11 +22,11 @@ import logging
 import os
 import secrets
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import collector, config, i18n
+from . import collector, config, editor, i18n
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -196,6 +196,70 @@ async def api_sources_energy_channels(request: Request):
     if not _current_user(request):
         return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
     return JSONResponse(collector.energy_channels())
+
+
+# --- Manual Tag Editor (auth-protected; in-place library tag/cover edits) ---
+# The engine lives in editor.py; these routes only enforce auth, read the
+# request, and map an EditorError's bare code + status onto a localized JSON
+# error. An EditorError.code "foo" maps to the message key
+# "config.tageditor.foo"; 401 reuses the shared config.api.not_authed key.
+
+
+def _editor_error(err: "editor.EditorError") -> JSONResponse:
+    return JSONResponse(status_code=err.status,
+                        content={"error": i18n.t(f"config.tageditor.{err.code}")})
+
+
+@app.get("/api/tageditor/search")
+async def api_tageditor_search(request: Request, q: str = "", limit: int = 20):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    return JSONResponse({"ok": True, "results": editor.search(q, limit)})
+
+
+@app.get("/api/tageditor/song")
+async def api_tageditor_song(request: Request, path: str = ""):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({"ok": True, "song": editor.load_song(path)})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
+@app.post("/api/tageditor/save")
+async def api_tageditor_save(
+    request: Request,
+    path: str = Form(""),
+    artist: str | None = Form(None),
+    title: str | None = Form(None),
+    album: str | None = Form(None),
+    year: str | None = Form(None),
+    track: str | None = Form(None),
+    cover_url: str = Form(""),
+    cover_file: UploadFile | None = None,
+):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    # The UI submits every tag field (prefilled); the engine decides per field
+    # what actually changed. A field absent from the form is not in the dict and
+    # is left untouched; a present (even empty) field is passed through so the
+    # engine can apply its "empty = leave unchanged" rule.
+    submitted: dict = {}
+    for name, value in (("artist", artist), ("title", title), ("album", album),
+                        ("year", year), ("track", track)):
+        if value is not None:
+            submitted[name] = value
+    data: bytes | None = None
+    if cover_file is not None and cover_file.filename:
+        # Bounded read: cap at the cover size limit + 1 so an oversize upload is
+        # detected (the engine rejects anything over the cap).
+        data = await cover_file.read(config.TAGEDITOR_COVER_MAX_BYTES + 1)
+    try:
+        song = editor.save_song(path, submitted, cover_url=cover_url, cover_file=data)
+        return JSONResponse({"ok": True, "song": song})
+    except editor.EditorError as err:
+        return _editor_error(err)
 
 
 @app.get("/health")

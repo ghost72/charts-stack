@@ -66,6 +66,36 @@ Je Standard-Modus ist eine zusätzliche Verdrahtung nötig:
 
 Details zu den Modi: [`charts-energy/README.md`](../charts-energy/README.md).
 
+### Manueller Tag-Editor (Schreibzugriff)
+
+Das einzige **Schreib**-Werkzeug auf der Seite. Durchsuche die Musik-Library,
+wähle einen Song und bearbeite seine Tags (Künstler, Titel, Album, Jahr, Track)
+und/oder ersetze das eingebettete Cover (Upload oder Bild-URL), dann
+**Speichern**. Änderungen werden **an Ort und Stelle** in die vorhandene `.mp3`
+geschrieben (kein Verschieben, kein Umbenennen), die Änderungszeit der Datei
+bleibt **erhalten** (so wird eine „kürzlich hinzugefügt"-Flut vermieden), und es
+werden nur die tatsächlich geänderten Felder geschrieben.
+
+Bei jedem erfolgreichen Speichern werden die beiden Stack-Herkunftsmarker
+(`TXXX:CHARTS_SOURCE` und `TXXX:CHARTS_ALBUM_SRC`) **entfernt**, damit der
+automatische Backfill / die Album-Neukorrektur den Song als handgepflegt
+behandelt und die Änderung nie wieder überschreibt. Der Editor **leert nie ein
+Feld** – ein leeres Jahr- oder Track-Feld behält den vorhandenen Wert (ein
+geleertes Feld auf einem Manifest-Song würde vom Backfill wieder gefüllt). Ein
+kleines Badge markiert jeden Treffer als **Stack** (vom Stack geladen, über den
+Marker oder das Manifest) oder **kuratiert** (eigene Datei).
+
+Hinweise und Grenzen:
+
+- **Nur MP3.** Nicht-MP3-Dateien lassen sich auswählen und ansehen, werden aber
+  schreibgeschützt angezeigt (Speichern nur für `.mp3`).
+- **Nur Cover-Ersatz** (kein Entfernen); eine Cover-URL muss `http`/`https` sein
+  (Redirects werden nicht verfolgt – kleiner SSRF-Schutz).
+- Dieser Bereich braucht die Library **read-write** unter `/music/Music` (siehe
+  Installation). Ohne diesen Mount ist der Editor inaktiv: die Suche liefert
+  nichts und nichts ist schreibbar. **`/charts` bleibt read-only** – das
+  Manifest wird dort nur gelesen.
+
 ## Woher die Daten kommen
 
 - **Deezer / Last.fm:** direkte Abfrage der öffentlichen HTTP-APIs (WAN). Ohne
@@ -122,6 +152,35 @@ sondern über das gemeinsame Stack-Projekt (eine `compose.yml` + eine zentrale
 `.env` im `charts-stack`-Ordner). Siehe das Haupt-README für die vollständige
 Installation. Nur diesen Dienst neu bauen/starten:
 `docker compose up -d --build charts-config` aus dem `charts-stack`-Ordner.
+
+### Manueller Tag-Editor – Mount und Rebuild
+
+Der Tag-Editor braucht die Musik-Library **read-write** gemountet. Die Stack-
+`compose.yml` ergänzt das beim `charts-config`-Dienst bereits:
+
+```yaml
+    volumes:
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro          # Status + Manifest, read-only
+      - ./lang:/lang:ro                                          # Sprachdateien
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music         # read-write für den Tag-Editor
+```
+
+`/charts` bleibt **read-only** (das Manifest wird dort nur gelesen); nur
+`/music/Music` ist read-write. Nach dem Einspielen des neuen Codes das Image neu
+bauen, damit die neuen Abhängigkeiten (`mutagen`, `Pillow`) installiert werden:
+
+```bash
+docker compose build --no-cache charts-config
+docker compose up -d charts-config
+```
+
+**Neue Sprach-Keys brauchen einen Restart.** Die `lang/{en,de,fr}.json` sind
+read-only unter `/lang` gemountet; ein `--no-cache`-Rebuild allein zieht
+geänderte Sprachdateien **nicht**. Nach dem Kopieren der aktualisierten `lang/`-
+Dateien in den NAS-Mount `docker restart charts-config` ausführen, damit der
+Loader die Tabelle neu einliest – sonst erscheinen die neuen Tag-Editor-Labels
+als rohe Keys. Auf Synology notfalls den Container neu erstellen
+(`docker compose up -d --force-recreate charts-config`).
 
 ## Sprache
 

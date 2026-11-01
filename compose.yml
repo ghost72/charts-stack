@@ -835,6 +835,16 @@ services:
       - CHARTS_LANG=${CHARTS_LANG:-}
       # Dezenter Spenden-Footer (PayPal/Revolut). Default an; mit 0 abschaltbar.
       - CONFIG_DONATE=${CONFIG_DONATE:-1}
+      # Manual tag editor: the library root (read-write mount below), the shared
+      # manifest file (read over the :ro /charts mount), the mtime-preserve gate,
+      # and the search-index/cover limits. No TAGEDITOR_ENABLED flag - the real
+      # off-switch is simply not mounting /music/Music.
+      - MUSIC_DIR=/music/Music
+      - MANIFEST_FILE=/charts/.charts-manifest.json
+      - PRESERVE_MTIME=${PRESERVE_MTIME:-1}
+      - TAGEDITOR_INDEX_TTL=${TAGEDITOR_INDEX_TTL:-300}
+      - TAGEDITOR_COVER_MAX_BYTES=${TAGEDITOR_COVER_MAX_BYTES:-8388608}
+      - TAGEDITOR_COVER_FETCH_TIMEOUT=${TAGEDITOR_COVER_FETCH_TIMEOUT:-15}
       - TZ=${TZ:-Europe/Zurich}
     ports:
       - "${CONFIG_PORT:-5058}:5058"
@@ -843,5 +853,7 @@ services:
       - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro
       # Zentrale Sprachdateien (en/de/fr), geteilt wie die .env.
       - ./lang:/lang:ro
+      # Musik-Library read-write fuer den manuellen Tag-Editor (In-place-Edits).
+      - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music   # NEW: read-write for the tag editor
     env_file:
       - .env
