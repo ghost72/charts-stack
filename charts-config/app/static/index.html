@@ -119,18 +119,26 @@
           <div class="te-cover">
             <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
             <!-- Rounded placeholder box: stays as a tidy empty card when no
-                 cover is loaded; the img (overflow-clipped by the box) inherits
+                 cover is loaded; the music-note placeholder SVG (same logo as
+                 charts-songrequest, copied per-service into this app's static)
+                 is centered while the box is empty and hidden once a real cover
+                 img is loaded. The img (overflow-clipped by the box) inherits
                  the rounded corners when present. -->
             <div class="te-cover-box">
+              <img class="te-cover-placeholder" src="/static/cover-placeholder.svg" alt="" aria-hidden="true">
               <img id="te-cover-img" class="te-cover-img" alt="" hidden>
             </div>
-            <label class="te-file" data-i18n="tageditor.cover.upload">Upload image</label>
-            <input id="te-cover-file" class="te-file-input" type="file" accept="image/jpeg,image/png">
-            <input id="te-cover-url" autocomplete="off" data-i18n-ph="tageditor.cover.url"
-                   placeholder="…or image URL">
+            <!-- Upload controls on one responsive row; the primary Save button
+                 sits immediately to the right of the image-URL field. -->
+            <div class="te-cover-controls">
+              <label class="te-file" data-i18n="tageditor.cover.upload">Upload image</label>
+              <input id="te-cover-file" class="te-file-input" type="file" accept="image/jpeg,image/png">
+              <input id="te-cover-url" autocomplete="off" data-i18n-ph="tageditor.cover.url"
+                     placeholder="…or image URL">
+              <button type="submit" class="te-save" data-i18n="tageditor.btn.save">Save</button>
+            </div>
           </div>
           <div class="te-actions">
-            <button type="submit" data-i18n="tageditor.btn.save">Save</button>
             <span id="te-msg" class="te-msg"></span>
           </div>
         </form>
