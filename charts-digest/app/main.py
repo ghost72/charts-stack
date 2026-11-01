@@ -40,9 +40,28 @@ def _next_run_dt(now: datetime) -> datetime:
     return target
 
 
-def run_once(force_notify: bool = False) -> None:
+def _notify_run_failed(reason: str) -> None:
+    """Pushover alert when a scheduled digest run failed.
+
+    The watchdog only sees container state (running/exited/unhealthy), so a
+    running container whose daily digest failed internally (e.g. a Pushover
+    HTTP/network error) is otherwise silent and that day's digest is lost.
+    This sends one honest failure message. Best-effort: never raises.
     """
-    Run one summary pass.
+    try:
+        notify.send(t("digest.notify.run_failed_title"),
+                    t("digest.notify.run_failed", error=reason))
+    except Exception as e:  # pragma: no cover - notification must never break a run
+        logger.debug("run-failed notification could not be sent: %s", e)
+
+
+def run_once(force_notify: bool = False) -> bool:
+    """
+    Run one summary pass. Returns True on success, False on failure.
+
+    The caller stamps the once-per-day run-gate ONLY on a True return, so a
+    failed run (e.g. notify.send raising on a Pushover/network error) does not
+    burn the day's slot - the next poll the same day retries it.
 
     force_notify: if True, a message is sent even with 0 new songs (for the
     MANUAL trigger via `--now` - then you want feedback that it ran, even if
@@ -65,7 +84,7 @@ def run_once(force_notify: bool = False) -> None:
                 counters={"digests": 1, "new_songs": 0},
                 next_run=_next_run_dt(datetime.now()).strftime("%Y-%m-%dT%H:%M:%S%z"),
             )
-            return
+            return True  # a silent "nothing new" run is still a success
 
         if unique == 0:
             # Manually triggered (or NOTIFY_WHEN_EMPTY=1): honest "nothing new"
@@ -81,6 +100,7 @@ def run_once(force_notify: bool = False) -> None:
             counters={"digests": 1, "new_songs": unique},
             next_run=_next_run_dt(datetime.now()).strftime("%Y-%m-%dT%H:%M:%S%z"),
         )
+        return True
     except Exception as e:
         logger.exception(t("digest.run.error", error=e))
         status.finish(
@@ -88,6 +108,8 @@ def run_once(force_notify: bool = False) -> None:
             message=t("digest.status.error", error=e),
             next_run=_next_run_dt(datetime.now()).strftime("%Y-%m-%dT%H:%M:%S%z"),
         )
+        _notify_run_failed(str(e))
+        return False
 
 
 def main() -> None:
@@ -118,9 +140,11 @@ def main() -> None:
 
     if config.RUN_ON_START:
         logger.info(t("digest.scheduler.run_on_start"))
-        run_once()
-        last_fired = _now().date().isoformat()
-        status.set_last_fired(last_fired)
+        # Stamp the day's gate only on success, so a failed start-up run does
+        # not burn today's slot (it is retried at the next poll).
+        if run_once():
+            last_fired = _now().date().isoformat()
+            status.set_last_fired(last_fired)
 
     # Short-poll loop: never hold a single wall-clock-derived sleep across the
     # DST fold. Poll at DIGEST_POLL_SECONDS (clamped 60..300) and fire at the
@@ -137,9 +161,13 @@ def main() -> None:
         if due:
             logger.info(t("digest.scheduler.due",
                           hour=config.DIGEST_HOUR, minute=config.DIGEST_MINUTE))
-            run_once()
-            last_fired = today
-            status.set_last_fired(last_fired)
+            # Stamp the gate only on success. A failed run leaves last_fired
+            # unchanged, so the next poll (within DIGEST_POLL_SECONDS) retries
+            # the digest the same day instead of silently losing it until
+            # tomorrow.
+            if run_once():
+                last_fired = today
+                status.set_last_fired(last_fired)
 
         # Keep the dashboard next_run fresh AFTER the fire decision so a firing
         # poll still shows today's run rather than flipping to tomorrow early
