@@ -397,10 +397,20 @@ def _resolve_move(real: str, write_fields: dict, current: dict) -> dict:
             and os.path.basename(src_artist_dir.rstrip(os.sep)) != new_folder):
         ext = os.path.splitext(real)[1].lower()
         album_base = os.path.basename(os.path.dirname(real))
+        file_base = os.path.basename(real)
+        # _rename_artist_folder renames ONLY the artist dir, so the album folder
+        # and filename are carried over UNCHANGED. "landed" is the file's real
+        # path right after that rename; "target" is where it should ultimately
+        # live. They differ only when the same save also changed the title (for
+        # a stack single album == title, so the inner album folder and filename
+        # both follow the new title). _finalize_save reconciles the two with a
+        # follow-up inner move so the returned path always exists on disk.
+        landed = os.path.join(new_dir, album_base, file_base)
+        safe_album = library._clean_component(cur_album, "Unknown Album")
         track_name = library._clean_component(cur_title, "track") + ext
-        target = os.path.join(new_dir, album_base, track_name)
+        target = os.path.join(new_dir, safe_album, track_name)
         return {"action": "rename", "old_dir": src_artist_dir,
-                "new_name": new_folder, "target": target}
+                "new_name": new_folder, "landed": landed, "target": target}
 
     # Rule 6: truly new artist, no match, old folder not emptied -> AUTO create
     # the new folder and move. A collision here is still refused (never (2)).
@@ -450,12 +460,31 @@ def _finalize_save(real: str, resolved: dict) -> dict:
         except OSError as e:
             reason = "cross_device" if e.errno == errno.EXDEV else "move_failed"
     elif action == "rename":
+        landed = resolved["landed"]
+        target = resolved["target"]
         try:
             library._rename_artist_folder(resolved["old_dir"], resolved["new_name"])
             moved = True
-            real_after = resolved["target"]
             moved_to = resolved["new_name"]
+            # The artist-folder rename alone leaves the file at `landed` under
+            # its ORIGINAL album folder/filename. If the save also changed the
+            # title/album the on-disk name must still follow: move the file from
+            # `landed` to `target` (os.rename, mtime preserved) and clean up the
+            # now-empty old inner album folder. If nothing else changed the two
+            # paths are equal and this is a no-op, so the returned path is always
+            # the real on-disk path.
+            if os.path.normpath(landed) != os.path.normpath(target):
+                library._move_file(landed, target)
+                library._cleanup_empty_dirs(os.path.dirname(landed))
+                real_after = target
+            else:
+                real_after = landed
         except OSError as e:
+            # Fail-open: if the follow-up inner move raised AFTER the folder
+            # rename succeeded, the file is at `landed` (a real path) - report
+            # that so the index/UI point at an existing file, not `target`.
+            if moved:
+                real_after = landed
             reason = "cross_device" if e.errno == errno.EXDEV else "move_failed"
 
     song = _reload(real_after)

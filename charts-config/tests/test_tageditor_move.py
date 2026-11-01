@@ -166,6 +166,38 @@ def test_rule3_rename_old_folder_when_empty(music):
     assert res["moved_to_artist"] == "P!nk"
 
 
+def test_rule3_rename_old_folder_artist_and_title_change(music):
+    # Lone 'Pink/' folder; the save changes BOTH the artist ('P!nk') and the
+    # title ('Smart Girls'). Rule 3 renames the artist folder, and because the
+    # title also changed the inner album folder + filename must follow too. The
+    # returned path must EXIST on disk and be findable (regression: the folder
+    # rename alone used to leave the file under its old name while the response
+    # pointed at the new-title path that was not on disk).
+    src = _make_single(music, "Pink", "Stupid Girls")
+    library.build_search_index(str(music))
+
+    res = editor.save_song(src, {"artist": "P!nk", "title": "Smart Girls",
+                                 "album": "Smart Girls"})
+
+    assert res.get("decision") is None
+    assert res["moved"] is True
+    assert res["moved_to_artist"] == "P!nk"
+    # Old artist folder gone, new-title path present on disk.
+    assert not os.path.isdir(os.path.join(str(music), "Pink"))
+    new_path = os.path.join(str(music), "P!nk", "Smart Girls", "Smart Girls.mp3")
+    assert res["path"] == new_path
+    assert os.path.isfile(new_path)
+    # No stale old-title folder/file left behind inside the renamed folder.
+    assert not os.path.isdir(os.path.join(str(music), "P!nk", "Stupid Girls"))
+    # The saved tags live at the returned path and it is findable by search.
+    assert _read_easy(new_path, "artist") == "P!nk"
+    assert _read_easy(new_path, "title") == "Smart Girls"
+    hits = library.search("smart girls", 20)
+    paths = [h["path"] for h in hits]
+    assert new_path in paths
+    assert src not in paths
+
+
 # --- rule 4: loose match to folder with OTHER songs -> dialog, no move -------
 
 def test_rule4_loose_match_with_other_songs_dialog(music):
