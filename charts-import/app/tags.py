@@ -469,6 +469,30 @@ def clear_charts_source(path: str) -> None:
         logger.debug(t("import.tags.marker_clear_failed", path=path, error=e))
 
 
+def clear_charts_album_src(path: str) -> None:
+    """
+    Remove the TXXX:CHARTS_ALBUM_SRC marker from a file, mtime-preserving.
+    Mirrors clear_charts_source exactly. Used by the Manual Tag Editor's save
+    path to drop the stack-written album provenance marker when a user takes
+    over the album by hand, so it is no longer eligible for re-correction.
+    Fail-open; no-op when absent.
+    """
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError
+        with preserve_mtime(path):
+            try:
+                id3 = ID3(path)
+            except ID3NoHeaderError:
+                return
+            key = f"TXXX:{CHARTS_ALBUM_SRC_DESC}"
+            if id3.get(key) is None:
+                return
+            id3.delall(key)
+            id3.save(path)
+    except Exception as e:
+        logger.debug(t("import.tags.marker_clear_failed", path=path, error=e))
+
+
 def read_charts_album_src(path: str) -> str:
     """
     Read the durable TXXX:CHARTS_ALBUM_SRC provenance marker from a file (e.g.
