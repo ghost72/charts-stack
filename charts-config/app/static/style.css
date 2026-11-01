@@ -357,19 +357,72 @@ body.login {
 .te-cover-label {
   display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
 }
-/* Constrain the cover preview so it never grows past the fields column: a
-   square box capped at the stacked Artist/Title/Album/Year/Track height.
-   object-fit keeps the aspect ratio without distortion, and max-width keeps it
-   inside the card on narrow / mobile viewports. */
-.te-cover-img {
+/* Cover placeholder box: a rounded, themed square that holds the preview image.
+   When no cover is loaded (img hidden) it reads as a tidy empty card matching
+   the other inputs/tiles; the border-radius + overflow:hidden clip the img so
+   it inherits the rounded corners. Square box capped at the stacked
+   Artist/Title/Album/Year/Track height; max-width keeps it inside the card on
+   narrow / mobile viewports. */
+.te-cover-box {
+  position: relative;
   display: block;
   width: 100%; max-width: 220px;
   aspect-ratio: 1 / 1; max-height: 220px;
-  object-fit: contain;
   border-radius: 10px; border: 1px solid #3a3048; background: #1b1626;
+  overflow: hidden;                 /* clips the img to the rounded corners */
   margin-bottom: 8px;
 }
+/* Faint centered "no cover" glyph, visible only while the box is empty (the img
+   inside carries the [hidden] attribute). Pure CSS, no markup/i18n text. */
+.te-cover-box:has(> .te-cover-img[hidden])::after {
+  content: "🖼";
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; color: var(--muted); opacity: .35;
+}
+/* The preview fills the rounded box; object-fit keeps the aspect ratio without
+   distortion. Border/background now come from the box, not the img itself. */
+.te-cover-img {
+  display: block;
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
 .te-file { color: var(--muted); font-size: .82rem; }
+/* File input ("choose file"): the native button is unstyled/light, so match it
+   to the finder's dark inputs/buttons. The field itself gets the themed input
+   frame; its ::file-selector-button reuses the secondary-button look (.btn-sm
+   style) with a hover. Still a fully functional file input. */
+.te-file-input {
+  width: 100%; max-width: 220px;
+  padding: 6px 8px; margin-bottom: 8px;
+  border: 1px solid #3a3048; border-radius: 8px;
+  background: var(--bg); color: var(--fg); font-size: .82rem;
+  cursor: pointer;
+}
+.te-file-input::file-selector-button {
+  border: 1px solid #3a3350; border-radius: 6px;
+  background: #332b45; color: var(--fg);
+  padding: 4px 10px; margin-right: 10px;
+  font-size: .78rem; cursor: pointer;
+}
+.te-file-input::file-selector-button:hover { filter: brightness(1.15); }
+.te-file-input:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(30,95,168,.4);
+}
+/* Search input ("search artist or title"): a native light input otherwise.
+   Style it like the other charts-config text inputs (dark bg, themed border,
+   radius, padding, placeholder color, accent focus ring). */
+#te-search {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid #3a3350; border-radius: 9px;
+  background: var(--bg); color: var(--fg); font-size: .9rem;
+}
+#te-search::placeholder { color: var(--muted); }
+#te-search:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(30,95,168,.4);
+}
 .te-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
 .te-msg { font-size: .85rem; }
 .te-msg.ok { color: var(--ok); }
