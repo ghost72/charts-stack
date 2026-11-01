@@ -71,10 +71,11 @@ Mode details: [`charts-energy/README.en.md`](../charts-energy/README.en.md).
 
 The one **write** tool on the page. Search the music library, pick a song and
 edit its tags (artist, title, album, year, track) and/or replace the embedded
-cover (upload or image URL), then **Save**. Edits are written **in place** in the
-existing `.mp3` (no re-filing, no renaming), the file's modification time is
-**preserved** (so Navidrome/audiobookshelf-style "recently added" floods are
-avoided), and only the fields you actually changed are written.
+cover (upload or image URL), then **Save**. The tag edit is always written
+**in place first** in the existing `.mp3` (fail-open: the edit is never lost even
+if the move below fails), the file's modification time is **preserved** (so
+Navidrome/audiobookshelf-style "recently added" floods are avoided), and only the
+fields you actually changed are written.
 
 On every successful save the two stack provenance markers (`TXXX:CHARTS_SOURCE`
 and `TXXX:CHARTS_ALBUM_SRC`) are **cleared**, so the automatic
@@ -83,6 +84,37 @@ your edit again. The editor **never empties a field** – leaving the year or tr
 box blank keeps the existing value (an emptied field on a manifest song would be
 refilled by the backfill). A small badge marks each hit as **stack** (downloaded
 by the stack, via the marker or the manifest) or **curated** (your own file).
+
+**Folder follows the artist tag (automatic move).** When a save *changes the
+artist*, the file is moved on disk so its folder matches the corrected artist —
+with a strict **one-folder guarantee**:
+
+- An existing artist folder with the **same name** or the **same folded key**
+  (casing, hyphen, apostrophe or accent variants like `Motörhead`/`Motorhead`,
+  `rod stewart`/`Rod Stewart`, `DJ.ILHAM`/`DJ ILHAM`) → the file is **merged
+  into** that one folder automatically, no second folder is ever created.
+- If the old artist folder **empties out** after the file leaves and there is no
+  matching folder → the old folder is **renamed** to the new artist name (one
+  folder, carrying everything with it).
+- A **truly new** artist with no match → a new folder is created automatically.
+- A **decision dialog** appears only for two genuinely ambiguous cases, and
+  **nothing is moved until you choose**:
+  - a *stylized near-spelling* (e.g. `P!nk`) that matches an existing `Pink/`
+    folder which still holds **other songs** → *file into `Pink/`* /
+    *create new `P!nk/`* / *cancel*;
+  - a **song collision** — the destination already has this song (exact file or
+    the same title under a Lidarr `NN - Title` name) → *keep existing, don't move
+    mine* / *cancel*. The editor **never overwrites** and never writes a `(2)`.
+- Cancelling a dialog keeps the **saved tags at the old path** — the tag edit is
+  already committed, only the move is skipped.
+
+Moves are **stack-singles only** (`<Artist>/<Title>/<Title>.mp3`); Lidarr
+`<Album> (Year)/NN - Title` albums and curated/`Various Artists` compilations are
+left **in place**. The move is a pure `os.rename` (mtime preserved, no copy
+fallback: a cross-device layout is hard-refused and the file stays put with its
+saved tags). The one-folder durability **depends on Lidarr "Rename Tracks" being
+OFF** — otherwise a later Lidarr scan can rename the moved single into an
+`<Album> (Year)/` folder and reintroduce a duplicate.
 
 Notes and limits:
 

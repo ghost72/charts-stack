@@ -137,6 +137,41 @@ def test_authed_search_and_song(app_and_song):
     assert song["is_mp3"] is True
 
 
+# --- move endpoint (second step of the artist-move dialog) ------------------
+
+def test_move_route_requires_auth(app_and_song):
+    main_mod, path = app_and_song
+    anon = TestClient(main_mod.app)
+    r = anon.post("/api/tageditor/move",
+                  data={"path": path, "choice": "cancel"})
+    assert r.status_code == 401
+    assert r.json()["error"] == i18n.t("config.api.not_authed")
+
+
+def test_move_route_cancel_keeps_file(app_and_song):
+    main_mod, path = app_and_song
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/move",
+                    data={"path": path, "choice": "cancel",
+                          "artist": "Old Artist", "title": "Old Title",
+                          "album": "Old Album"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["song"]["moved"] is False
+    assert body["song"]["move_reason"] == "kept_in_place"
+    assert body["song"]["path"] == path  # not moved
+
+
+def test_move_route_path_outside_maps_400(app_and_song):
+    main_mod, _ = app_and_song
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/move",
+                    data={"path": "/etc/passwd", "choice": "cancel"})
+    assert r.status_code == 400
+    assert r.json()["error"] == i18n.t("config.tageditor.path_outside")
+
+
 # --- route error mapping -----------------------------------------------------
 
 def test_song_path_outside_maps_400(app_and_song):

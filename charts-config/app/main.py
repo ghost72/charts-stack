@@ -262,6 +262,28 @@ async def api_tageditor_save(
         return _editor_error(err)
 
 
+@app.post("/api/tageditor/move")
+async def api_tageditor_move(
+    request: Request,
+    path: str = Form(""),
+    choice: str = Form("cancel"),
+    artist: str = Form(""),
+    title: str = Form(""),
+    album: str = Form(""),
+):
+    # Second step of the "folder follows the artist tag" dialog (rules 4/5). The
+    # tag write was already committed by /api/tageditor/save; this only performs
+    # the user's chosen move (into_existing / create_new) or nothing (cancel).
+    # The engine never overwrites and degrades a failed move to "not moved".
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    try:
+        song = editor.move_after_decision(path, choice, artist, title, album)
+        return JSONResponse({"ok": True, "song": song})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
