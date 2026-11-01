@@ -232,8 +232,21 @@ Lidarr-Anbindung werden nur geloggt und beeinträchtigen den Import nicht.
 
 Da der eine `Music`-Ordner die Single Source of Truth fürs Matching ist und
 Lidarr die Chart-Singles nicht verwaltet, erscheinen diese Chart-Songs in Lidarr
-als „Unmapped Files". Das ist gewollt und harmlos – Lidarr listet sie nur, fasst
-sie aber nie an (kein Verschieben, kein Umbenennen).
+als „Unmapped Files". Das ist gewollt und harmlos – Lidarr listet sie nur.
+
+> **⚠️ Wichtig, wenn Lidarr denselben `Music`-Root teilt – Lidarrs Umbenennen
+> AUSSCHALTEN.** charts-import legt eine Single als
+> `Music/<Künstler>/<Titel>/<Titel>.mp3` ab. Ist in Lidarr **Settings → Media
+> Management → Rename Tracks** AN, benennt ein Lidarr-Scan denselben Track in
+> einen eigenen `<Album> (Jahr)/<NN - Titel>`-Albumordner um und lässt den
+> ursprünglichen charts-import-Ordner stehen – es entstehen **zwei Ordner für
+> einen Song**. „Unmonitored" verhindert das NICHT (Monitoring steuert nur das
+> *Herunterladen*, nicht Lidarrs Dateiverwaltung). Gegen doppelte
+> `(Jahr)`-Ordner: in Lidarr **Rename Tracks → AUS** und **Rescan Artist Folder
+> after Refresh → Never/Manual** setzen („Show Advanced" aktivieren, um sie zu
+> sehen), oder Lidarr einen eigenen Root-Ordner getrennt vom `Music`-Ordner des
+> charts-stacks geben. Mit ausgeschaltetem Umbenennen kennt und taggt Lidarr die
+> Songs weiterhin, hört nur auf, die Ordner umzubauen.
 
 Wurden neue Songs importiert, folgt optional eine **Pushover-Meldung** (mit der
 Liste der einsortierten Titel sowie einer Aufschlüsselung nach Playlist, z. B.
@@ -390,6 +403,24 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    `scripts/fix_youtube_years.py` korrigiert das Jahr **historischer**
    YouTube-Songs (importiert bevor es den Marker gab), ausgewählt über das
    dauerhafte Manifest-Feld `source="youtube"` — nur das Jahr, nichts anderes.
+
+   **Album-Neukorrektur (Opt-in, `scripts/backfill_metadata.py
+   --recorrect-albums`):** Standardmäßig *füllt* der Nachlauf nur ein fehlendes
+   Album und ändert ein bereits gesetztes nie. Das Flag `--recorrect-albums`
+   schaltet einen zusätzlichen Modus ein (standardmäßig **aus**), der ein
+   vorhandenes Album neu auflöst und **überschreibt** — aber **nur** für
+   Dateien, die den Herkunftsmarker `TXXX:CHARTS_ALBUM_SRC=resolver` tragen.
+   Dieser Marker wird gesetzt, sobald der Stack selbst ein Album vergibt (und
+   ist gegen das Provenance-Stripping whitelistet, wie `CHARTS_SOURCE`), sodass
+   ein **handkuratiertes Album des Users nie überschrieben** wird — es hat
+   keinen `resolver`-Marker und wird komplett übersprungen. Der Modus ist bewusst
+   **konservativ:** Er ersetzt das gespeicherte Album nur durch ein klar
+   **nicht-Kompilation-, nicht-Live-, nicht-Best-of-, nicht-Soundtrack-
+   Studioalbum** derselben Aufnahme; findet der Resolver kein solches Album,
+   bleibt das vorhandene unangetastet. Der **periodische Durchlauf** und
+   `fix_youtube_years.py` **korrigieren Alben nie stillschweigend** — eine
+   Album-Neukorrektur passiert nur, wenn du dem Einmal-Skript explizit
+   `--recorrect-albums` übergibst.
 2. **Datei-Tags** (`mutagen`, `albumartist` bevorzugt).
 3. **Fallback** auf den Dateinamen bzw. `Unknown Artist` / `Unknown Album`.
 
@@ -432,11 +463,16 @@ Herkunfts-Spuren aus den Tags (`strip_provenance_tags`): den Kommentar-Frame
 Signaturen wie „eXenz", „PMEDIA", `www.t.me/…` oder den fre:ac-Werbetext),
 `TENC`/`TSSE` (Encoder/Rip-Tool), die URL-Frames `WXXX`/`WCOM`/`WOAF`/`WPUB`,
 `TOWN` (File-Owner) sowie benutzerdefinierte `TXXX`-Freitext-Frames (z. B.
-`TXXX:LOG`). So landet keine Quellen-Spur in der Library.
+`TXXX:LOG`). Das Stripping entfernt jetzt **zusätzlich** `TMED` (Medientyp),
+`WOAR` (Künstler-URL), `TOAL` (Original-Album — nur wenn der Wert `(CD-Rip)`
+enthält) und `UFID` (nur wenn der Owner **nicht** die MusicBrainz-URL ist; die
+MusicBrainz-Recording-ID bleibt erhalten). So landet keine Quellen-Spur in der
+Library.
 **Geschützt (nie angefasst):** `TXXX:MusicBrainz*` und `TXXX:*replaygain*`
-(Metadaten-IDs + Lautstärke-Normalisierung) sowie alle Standard-Tags
-(Titel/Album/Artist/Datum/Track/Cover). Verlustfrei (nur Metadaten, kein
-Re-Encoding).
+(Metadaten-IDs + Lautstärke-Normalisierung), die whitelisteten Stack-Marker
+`TXXX:CHARTS_SOURCE` und `TXXX:CHARTS_ALBUM_SRC` (werden nie gestrippt) sowie
+alle Standard-Tags (Titel/Album/Artist/Datum/Track/Cover). Verlustfrei (nur
+Metadaten, kein Re-Encoding).
 
 ### `importer.py`
 

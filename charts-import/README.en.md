@@ -231,8 +231,20 @@ logged and do not affect the import.
 
 Because the single `Music` folder is the single source of truth for matching and
 Lidarr does not manage the chart singles, those chart songs show up in Lidarr as
-"Unmapped Files". This is expected and harmless — Lidarr lists them but never
-touches, moves, or renames them.
+"Unmapped Files". This is expected and harmless — Lidarr lists them.
+
+> **⚠️ Important if Lidarr shares the same `Music` root — turn OFF Lidarr's
+> track renaming.** charts-import files a single as `Music/<Artist>/<Title>/<Title>.mp3`.
+> If Lidarr's **Settings → Media Management → Rename Tracks** is ON, a Lidarr
+> library scan renames the same track into its own `<Album> (Year)/<NN - Title>`
+> album folder and leaves charts-import's original folder behind — you end up
+> with **two folders for one song**. "Unmonitored" does NOT prevent this
+> (monitoring only governs *downloading*, not Lidarr's file management). To
+> avoid duplicate `(Year)` folders: in Lidarr set **Rename Tracks → OFF** and
+> **Rescan Artist Folder after Refresh → Never/Manual** (enable "Show Advanced"
+> to see them), or give Lidarr its own root folder separate from the charts
+> stack's `Music`. With renaming off, Lidarr still knows and tags the songs; it
+> just stops reorganizing the folders.
 
 If new songs were imported, an optional **Pushover notification** follows (with
 the list of sorted-in titles plus a breakdown by playlist, e.g.
@@ -381,6 +393,23 @@ Determines artist/album/title in this order:
    `scripts/fix_youtube_years.py` fixes the year of **historical** YouTube songs
    (imported before the marker existed) selected via the durable manifest
    `source="youtube"` field — year-only, nothing else.
+
+   **Album re-correction (opt-in, `scripts/backfill_metadata.py
+   --recorrect-albums`):** by default the backfill only ever *fills* a missing
+   album and never changes one that is already set. The `--recorrect-albums`
+   flag turns on an extra mode (default **off**) that re-resolves and
+   **overwrites** an existing album — but **only** for files that carry the
+   `TXXX:CHARTS_ALBUM_SRC=resolver` provenance marker. That marker is stamped
+   whenever the stack itself sets an album (and is whitelisted against the
+   provenance strip, like `CHARTS_SOURCE`), so a user's **hand-curated album is
+   never overwritten** — it has no `resolver` marker and is skipped outright.
+   The mode is deliberately **conservative:** it only replaces the stored album
+   with a clearly **non-compilation, non-live, non-best-of, non-soundtrack
+   studio album** of the same recording; if the resolver cannot find such an
+   album, the existing one is kept untouched. The **periodic pass** and
+   `fix_youtube_years.py` **never re-correct albums silently** — album
+   re-correction only happens when you explicitly pass `--recorrect-albums` to
+   the one-shot script.
 2. **File tags** (`mutagen`, `albumartist` preferred).
 3. **Fallback** to the filename or `Unknown Artist` / `Unknown Album`.
 
@@ -420,12 +449,16 @@ provenance traces from the tags (`strip_provenance_tags`): the comment frame
 signatures like "eXenz", "PMEDIA", `www.t.me/…` or the fre:ac ad text),
 `TENC`/`TSSE` (encoder/rip tool), the URL frames `WXXX`/`WCOM`/`WOAF`/`WPUB`,
 `TOWN` (file owner), and user-defined `TXXX` free-text frames (e.g. `TXXX:LOG`).
-This keeps any source trace out of the library.
+The strip now **also** removes `TMED` (media type), `WOAR` (artist URL), `TOAL`
+(original album — only when its value contains `(CD-Rip)`) and `UFID` (only when
+the owner is **not** the MusicBrainz URL; the MusicBrainz Recording ID is
+preserved). This keeps any source trace out of the library.
 **Protected (never touched):** `TXXX:MusicBrainz*` and `TXXX:*replaygain*`
-(metadata IDs + loudness normalization) and all standard tags
-(title/album/artist/date/track/cover). Lossless (metadata only, no re-encoding).
-Applies to **all** services that use charts-import (songrequest, sync, download,
-flashback).
+(metadata IDs + loudness normalization), the whitelisted stack markers
+`TXXX:CHARTS_SOURCE` and `TXXX:CHARTS_ALBUM_SRC` (never stripped), and all
+standard tags (title/album/artist/date/track/cover). Lossless (metadata only, no
+re-encoding). Applies to **all** services that use charts-import (songrequest,
+sync, download, flashback).
 
 ### `importer.py`
 
