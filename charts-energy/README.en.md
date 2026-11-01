@@ -42,6 +42,12 @@ clone never polls Icecast unexpectedly.
   right decade via the **Navidrome Smart Playlists (NSP)**. The **decade** is
   reliable (from the slug `energy80s` → 1980s + clamp); the exact year is best
   effort via MusicBrainz.
+  - **Library match tolerates a trailing `(subtitle)`** (match-key only): the
+    on-disk title may carry a descriptive parenthetical the radio stream drops,
+    so a short stream title still matches an owned file whose canonical title
+    has a subtitle – e.g. the stream's *"Against All Odds"* matches the owned
+    *"Against All Odds (Take a Look at Me Now)"*. Numeric/part tails like
+    `(Part 2)` stay distinct and are **not** folded.
 
 ## How the data is fetched (no headless browser, no API)
 

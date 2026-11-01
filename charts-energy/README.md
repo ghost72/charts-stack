@@ -42,8 +42,13 @@ Kanalliste), damit ein frischer Clone nicht ungefragt Icecast anzapft.
   **Navidrome Smart Playlists (NSP)** in der richtigen Dekade. Die **Dekade**
   ist zuverlässig (über den Slug `energy80s` → 1980er + Clamp), das exakte Jahr
   ist best effort über MusicBrainz.
-
-## Wie die Daten geholt werden (kein Headless-Browser, keine API)
+  - **Library-Match toleriert einen abschließenden `(Untertitel)`** (nur im
+    Match-Key): der Titel auf der Platte darf einen beschreibenden Klammer-Zusatz
+    tragen, den der Radio-Stream weglässt, sodass ein kurzer Stream-Titel
+    trotzdem auf eine vorhandene Datei mit Untertitel matcht – z. B. matcht das
+    *„Against All Odds"* aus dem Stream die vorhandene Datei *„Against All Odds
+    (Take a Look at Me Now)"*. Numerische/Teil-Zusätze wie `(Part 2)` bleiben
+    eigenständig und werden **nicht** zusammengeführt.
 
 Pro Kanal wird der Infomaniak-Stream mit dem Header `Icy-MetaData: 1` geöffnet,
 **ein** Metadatenblock gelesen und die Verbindung sofort geschlossen. Der
