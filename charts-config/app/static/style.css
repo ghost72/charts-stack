@@ -449,6 +449,14 @@ body.login {
   object-fit: contain;
   border-radius: 13px;              /* box radius (14px) minus the box's 1px border */
 }
+/* When the song has no embedded cover the img carries [hidden]; the explicit
+   display:block above would otherwise OVERRIDE the hidden attribute's native
+   display:none, leaving the previous song's decoded image visible BEHIND the
+   placeholder. This rule makes [hidden] win so a no-cover song shows the
+   music-note placeholder ONLY, with no stale image behind it. */
+.te-cover-img[hidden] {
+  display: none;
+}
 .te-file { color: var(--muted); font-size: .82rem; }
 /* File input ("choose file"): the native button is unstyled/light, so match it
    to the finder's dark inputs/buttons. The field itself gets the themed input
