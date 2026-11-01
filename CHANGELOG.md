@@ -10,13 +10,14 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
-## [Unreleased]
+## [2.1.0] - 2026-11-01
 
-Working notes for the next release (not yet tagged). charts-import gains a
-uniform, source-independent tagging path and a conservative, manifest-scoped
-metadata backfill so every stack-managed song ends up with a correct release
-year, a real (non-compilation) album and a track number — while the user's
-hand-curated library (compilations, hand-added back catalog) is never touched.
+charts-import gains a uniform, source-independent tagging path and a
+conservative, manifest-scoped metadata backfill so every stack-managed song ends
+up with a correct release year, a real (non-compilation) album and a track
+number — while the user's hand-curated library (compilations, hand-added back
+catalog) is never touched. charts-energy's library matching is made tolerant of
+the longer canonical titles the backfill now writes.
 
 ### Added
 - **charts-import — import-time metadata resolver** (`app/resolve.py`). Every
@@ -94,15 +95,25 @@ hand-curated library (compilations, hand-added back catalog) is never touched.
 - **Umlaut / decoration normalization in the title match key** (transliterate
   ä→a, strip an unbalanced trailing `(…`), so a decorated manual re-request
   folds onto the same dedup key as the clean library title.
+- **charts-energy library matching tolerates a trailing `(subtitle)`.** After
+  the backfill canonicalized on-disk titles to the longer Deezer form
+  (e.g. `Against All Odds (Take a Look at Me Now)`) while the ICY radio stream
+  feeds the short title (`Against All Odds`), energy stopped recognizing owned
+  songs as present and re-queued them every run. The title comparison now
+  matches on a subtitle-stripped core key (match-key only; numeric/part tails
+  like `(Part 2)` stay distinct), so owned songs register as present again.
 
 ### Upgrade notes
 - **mtime is preserved on every tag write** (new year/album/track writes, the
   upgrade re-correction, and the backfill), so Navidrome's "date added" stays
   stable and corrected songs do not flood "recently added".
-- Rebuild **charts-import** with `docker compose build --no-cache charts-import`;
-  rebuild **charts-songrequest** only if its `youtube.py` changed. New i18n keys
-  were added, so refresh the mounted `lang/{en,de,fr}.json` and
-  `docker restart charts-import` so the table reloads.
+- Rebuild **charts-import** with `docker compose build --no-cache charts-import`
+  and **charts-energy** with `docker compose build --no-cache charts-energy`
+  (the energy library-match fix). New i18n keys were added, so refresh the
+  mounted `lang/{en,de,fr}.json` and `docker restart` the affected services so
+  the table reloads (if a container shows raw i18n keys after the lang refresh,
+  recreate it with `docker compose up -d --force-recreate <service>` — a
+  Synology bind-mount can go stale on a plain restart).
 - New optional switches in `.env.example`: `IMPORT_RESOLVE_ENABLED`,
   `IMPORT_DEEZER_RESOLVE_LIMIT`, `IMPORT_MB_RESOLVE_LIMIT`,
   `METADATA_BACKFILL_ENABLED`, `METADATA_BACKFILL_LIMIT`,
