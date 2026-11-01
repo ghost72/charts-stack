@@ -358,17 +358,28 @@ body.login {
   align-items: stretch;
   gap: 0;
 }
-/* Editable fields column: label + input pairs stacked one per row. This is the
-   left-hand column whose height the cover preview is matched against. */
+/* Top row: the editable fields on the LEFT and the cover preview on the RIGHT,
+   side by side. The fields column flexes to fill the remaining width; the cover
+   keeps its intrinsic (square) width on the right. Wraps to stacked on narrow
+   viewports. Scoped to .te-top so the generic finder `form { display:flex }`
+   never crushes the field inputs again. */
+.te-top {
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: 20px;
+}
+/* Editable fields column: label + input pairs stacked one per row. Flexes to
+   take the width left of the cover; min-width 0 lets it shrink and wrap cleanly
+   on narrow viewports instead of overflowing. */
 .te-grid {
+  flex: 1 1 260px; min-width: 0;
   display: grid; gap: 8px 12px;
   grid-template-columns: max-content 1fr;
   align-items: center;
 }
 .te-grid label { color: var(--muted); font-size: .85rem; }
-/* Cover block sits under the fields; the preview is a bounded square thumbnail
-   (album-art size), not the image's native full-bleed dimensions. */
-.te-cover { margin-top: 12px; }
+/* Cover block on the right of the top row; the preview is a bounded square
+   thumbnail (album-art size), not the image's native full-bleed dimensions. */
+.te-cover { flex: 0 0 auto; }
 .te-cover-label {
   display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
 }
@@ -407,14 +418,18 @@ body.login {
   display: block;
 }
 /* The preview fills the rounded box; object-fit keeps the aspect ratio without
-   distortion. Border/background come from the box, but the img also carries the
-   matching radius directly so Safari rounds the real cover even when it skips
-   the parent's overflow clip. */
+   distortion. Border/background come from the box, but the img ALSO carries the
+   rounded corners itself so the cover is clipped round even in Safari/WebKit,
+   which ignores a parent's border-radius when clipping a composited/replaced
+   child (an <img>). This child-radius is the element that actually paints the
+   rounded cover — do not rely on the parent's overflow:hidden alone. The radius
+   is the box radius (10px) minus the box's 1px border so the img's rounded
+   corner nests exactly inside the border with no square sliver. */
 .te-cover-img {
   display: block;
   width: 100%; height: 100%;
   object-fit: contain;
-  border-radius: 10px;
+  border-radius: 9px;
 }
 .te-file { color: var(--muted); font-size: .82rem; }
 /* File input ("choose file"): the native button is unstyled/light, so match it
@@ -458,18 +473,19 @@ body.login {
    the Save button sits immediately to its right. */
 .te-cover-controls {
   display: flex; flex-wrap: wrap; align-items: center;
-  gap: 8px; margin-top: 2px;
+  gap: 8px; margin-top: 14px;
 }
-/* Row layout overrides for the file input that previously stacked on its own
-   line: drop the block max-width/bottom margin so it fits inline with the rest. */
+/* File chooser and image-URL field share the row width equally (flex: 1 1 0),
+   so they end up the same width; the Save button stays intrinsic-width at the
+   right end. The "Upload image" label keeps its intrinsic width on the left. */
 .te-cover-controls .te-file-input {
-  width: auto; max-width: none; margin-bottom: 0; flex: 0 1 auto;
+  width: auto; max-width: none; margin-bottom: 0; flex: 1 1 0; min-width: 140px;
 }
 .te-cover-controls .te-file { flex: 0 0 auto; }
 /* Image-URL field: themed to match the other charts-config text inputs (was a
    bare native input before); grows to fill the row before the Save button. */
 #te-cover-url {
-  flex: 1 1 160px; min-width: 140px;
+  flex: 1 1 0; min-width: 140px;
   padding: 7px 10px;
   border: 1px solid #3a3350; border-radius: 8px;
   background: var(--bg); color: var(--fg); font-size: .85rem;
