@@ -265,4 +265,11 @@ def save_song(path: str, submitted_fields: dict, cover_url: str = "",
         raise EditorError("write_failed", 500)
 
     # Step 9: return the fresh reloaded state.
-    return _reload(real)
+    song = _reload(real)
+
+    # Refresh the cached search index for this one file so a search right after
+    # the save reflects the new tags (otherwise the path-derived index keeps
+    # surfacing the OLD name until its TTL expires). In-place, TTL untouched.
+    library.update_index_entry(real, song["artist"], song["title"])
+
+    return song
