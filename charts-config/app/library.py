@@ -157,6 +157,35 @@ def build_search_index(music_dir: str) -> list[dict]:
         return _index
 
 
+def update_index_entry(path: str, artist: str, title: str) -> None:
+    """
+    Refresh the cached index record for one file after a successful save so a
+    subsequent search reflects the just-written tags immediately.
+
+    The index display + match keys are path-derived (see module docstring), so a
+    tag-only edit would otherwise keep surfacing the file under its OLD name
+    until the TTL expires and a full re-walk picks up any folder rename. This
+    overlays the authoritative saved artist/title onto the matching record (and
+    its folded keys) in place. It does NOT touch the TTL / rebuild schedule, so
+    the normal lazy-cache behavior for every other file is unchanged.
+
+    No-op when there is no built index yet (the next search builds a fresh one
+    anyway) or the path is not present in it. Thread-safe.
+    """
+    with _INDEX_LOCK:
+        if _index is None:
+            return
+        for rec in _index:
+            if rec["path"] == path:
+                if artist:
+                    rec["artist"] = artist
+                    rec["artist_key"] = _artist_key(artist)
+                if title:
+                    rec["title"] = title
+                    rec["title_key"] = _title_key(title)
+                break
+
+
 def search(query: str, limit: int = 20) -> list[dict]:
     """
     Case-insensitive, accent-folded SUBSTRING search over the index.

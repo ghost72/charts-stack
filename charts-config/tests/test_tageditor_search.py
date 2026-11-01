@@ -153,3 +153,57 @@ def test_limit_clamped_high(music_tree):
     # files so this just proves no crash and a bounded return.
     out = library.search("0", limit=10_000)
     assert len(out) <= 50
+
+
+# --- search index refreshes on save (stale-after-save fix) ------------------
+
+def test_search_after_save_reflects_new_artist(tmp_path, monkeypatch):
+    """A save must refresh the cached index so the next search finds the file
+    under its NEW artist/title, not the old path-derived name (the TTL cache
+    otherwise keeps surfacing the old name until it expires)."""
+    root = tmp_path / "Music"
+    root.mkdir()
+    # Folder is named after the OLD artist ('Pink'); the index is path-derived.
+    p = _mk_song(str(root), "Pink", "Album", "So What.mp3")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"entries": {}}), encoding="utf-8")
+    monkeypatch.setattr(config, "MUSIC_DIR", str(root))
+    monkeypatch.setattr(config, "MANIFEST_FILE", str(manifest_path))
+    monkeypatch.setattr(config, "TAGEDITOR_INDEX_TTL", 300)
+    monkeypatch.setattr(config, "PRESERVE_MTIME", True)
+
+    # Build the index under the OLD name: 'pink' matches, 'pnk' (P!nk) does not.
+    before = {r["path"] for r in editor.search("pink", limit=20)}
+    assert p in before
+    assert editor.search("pnk", limit=20) == []
+
+    # Save a new artist tag (Pink -> P!nk). TTL has NOT expired, so without the
+    # on-save index refresh the stale cache would still only match 'pink'.
+    editor.save_song(p, {"artist": "P!nk", "title": "So What"})
+
+    # The same cached index now reflects the saved tag: 'pnk' finds it.
+    after = {r["path"] for r in editor.search("pnk", limit=20)}
+    assert p in after
+    # And the refreshed record carries the new display artist.
+    rec = next(r for r in editor.search("pnk", limit=20) if r["path"] == p)
+    assert rec["artist"] == "P!nk"
+
+
+def test_save_does_not_reset_index_ttl(tmp_path, monkeypatch):
+    """The on-save refresh updates ONE record in place; it must not rebuild the
+    whole index or reset the TTL timestamp (normal lazy-cache behavior intact)."""
+    root = tmp_path / "Music"
+    root.mkdir()
+    p = _mk_song(str(root), "Pink", "Album", "So What.mp3")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"entries": {}}), encoding="utf-8")
+    monkeypatch.setattr(config, "MUSIC_DIR", str(root))
+    monkeypatch.setattr(config, "MANIFEST_FILE", str(manifest_path))
+    monkeypatch.setattr(config, "TAGEDITOR_INDEX_TTL", 300)
+    monkeypatch.setattr(config, "PRESERVE_MTIME", True)
+
+    editor.search("pink", limit=20)           # build the index
+    ts_before = library._index_ts
+    editor.save_song(p, {"artist": "P!nk"})
+    # The TTL anchor is unchanged -> no full rebuild was forced by the save.
+    assert library._index_ts == ts_before
