@@ -71,6 +71,9 @@ def similarity(a: str, b: str) -> int:
 # Markers in the path or album tag that indicate a compilation / sampler. Used
 # to optionally ignore such tracks during matching so charts-download can
 # backfill a clean single/album version.
+# NOTE: intentionally DIFFERENT from the matching.py _COMPILATION_MARKERS family
+# (download/songrequest/upgrade). That one matches raw slskd folder paths; THIS
+# one matches on-disk album tags/paths - do not unify them.
 _COMPILATION_MARKERS = [
     "va -", "va-", "various artists", "various", "verschiedene interpreten",
     "compilation", "sampler",

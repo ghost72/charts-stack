@@ -78,4 +78,22 @@ erneut versucht, statt eine ganze Woche zu warten.
 `.env` stehen, damit charts-download die fehlenden Songs nachlädt (in
 `.env.example` bereits vorausgefüllt).
 
+## Presence-Guard (kein Nachladen von Songs, die nur in Compilations überleben)
+
+Bevor ein Song in `missing-hitparade.txt` geschrieben wird, prüft ein
+**Presence-Guard** (`presence.py`, byte-identisch über sync / energy /
+flashback / recommend / hitparade), ob der Song bereits irgendwo unter
+`Music/<Artist>/` existiert – unabhängig vom Album-Ordner und **ohne** den
+Compilation-Filter. Falls ja, landet der Song weiterhin in der Playlist (über
+den bestehenden Pfad), wird aber nicht erneut geladen. Zusätzlich liefert
+`_looks_like_compilation` jetzt für jeden Lidarr `(JJJJ)`-Album-Ordner einen
+**Kurzschluss auf `False`**, sodass ein Song, dessen einzige verbliebene Kopie
+in einem kuratierten `Greatest Hits (2008)/`-Album liegt, nicht mehr für einen
+Sampler gehalten und als Single nachgeladen wird.
+
+> Ein Repo-Root-Paritätstest (`tests/test_shared_helper_parity.py`) erzwingt nun,
+> dass diese duplizierten Helfer (`presence.py`, `_title_key`, `_artist_key`,
+> `_looks_like_compilation`, …) über alle Dienste hinweg verhaltensgleich
+> bleiben – driftet eine Kopie künftig weg, schlägt der Test fehl.
+
 > 🇬🇧 English version: [README.en.md](README.en.md)

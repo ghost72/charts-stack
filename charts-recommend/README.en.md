@@ -208,6 +208,24 @@ containers.
 | `/volume2/music/Music` | library – only a **scanned** source (read-only), no playlists are written anymore |
 | `/volume2/music/Charts` | shared folder: `missing-recommend.txt` |
 
+## Presence guard (no re-download of songs that only survive in compilations)
+
+Before a song is written to `missing-recommend.txt`, a **presence guard**
+(`presence.py`, byte-identical across sync / energy / flashback / recommend /
+hitparade) checks whether the song already exists anywhere under
+`Music/<Artist>/` – regardless of album folder and **ignoring** the compilation
+filter. If it does, the song is treated as present and is not re-downloaded.
+In addition, `_looks_like_compilation` now **short-circuits to `False` for any
+Lidarr `(YYYY)` album folder**, so a song whose only surviving copy lives in a
+curated `Greatest Hits (2008)/` album is no longer mistaken for a sampler and
+re-fetched as a single.
+
+> A repo-root parity test (`tests/test_shared_helper_parity.py`) now enforces
+> that these duplicated helpers (`presence.py`, `_title_key`, `_artist_key`,
+> `_looks_like_compilation`, …) stay behaviourally identical across all
+> services, so a future edit to one copy that drifts from the others fails the
+> test.
+
 ## Operation
 
 ```bash

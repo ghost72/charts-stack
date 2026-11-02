@@ -51,6 +51,9 @@ def similarity(a: str, b: str) -> int:
     return round(SequenceMatcher(None, a, b).ratio() * 100)
 
 
+# NOTE: intentionally DIFFERENT from the matching.py _COMPILATION_MARKERS family
+# (download/songrequest/upgrade). That one matches raw slskd folder paths; THIS
+# one matches on-disk album tags/paths - do not unify them.
 _COMPILATION_MARKERS = [
     "va -", "va-", "various artists", "various", "verschiedene interpreten",
     "compilation", "sampler",

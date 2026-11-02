@@ -53,6 +53,12 @@ def preserve_mtime(path: str):
     exactly that value. A no-op when PRESERVE_MTIME is off or when the file does
     not exist on enter. Nesting is safe (an inner block restores the same
     snapshot the outer took).
+
+    Key semantics: it restores whatever mtime the file had WHEN THE CONTEXT WAS
+    ENTERED. A brand-new write therefore keeps its fresh download/copy mtime
+    (the just-stamped value is snapshotted and restored) - it never invents an
+    older timestamp. A deliberate in-place upgrade that must carry an OLD mtime
+    is handled explicitly by the caller, not here.
     """
     times = None
     if config.PRESERVE_MTIME:
