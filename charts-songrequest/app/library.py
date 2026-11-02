@@ -147,17 +147,21 @@ def _artist_key(artist: str) -> str:
     """
     Normalized artist key for MATCHING only (never for on-disk folder names).
 
-    Mirrors _title_key: lowercase, then strip to [a-z0-9]. This folds the
-    deterministic spelling variants of the SAME artist - dot, underscore and
-    whitespace runs plus case - to one key, so e.g.
-    'DJ.ILHAM' == 'DJ ILHAM' == 'dj  ilham' == 'DJ_ILHAM' -> 'djilham'. It only
-    folds punctuation/whitespace/case; it never collapses genuinely different
+    Mirrors _title_key: lowercase, transliterate accents (NFKD fold), then strip
+    to [a-z0-9]. This folds the deterministic spelling variants of the SAME
+    artist - dot, underscore and whitespace runs plus case - to one key, so e.g.
+    'DJ.ILHAM' == 'DJ ILHAM' == 'dj  ilham' == 'DJ_ILHAM' -> 'djilham', and an
+    accent variant folds too ('Motörhead' == 'Motorhead' -> 'motorhead') so the
+    artist axis agrees with the already-accent-folded title axis. It only folds
+    punctuation/whitespace/case/accents; it never collapses genuinely different
     artists ('DJ ILHAM' != 'DJ ADONI'). No fuzzy/typo matching.
 
     Do NOT use this to build folder names - _clean_component stays the literal
     on-disk vehicle so existing folders are never renamed.
     """
-    return re.sub(r"[^a-z0-9]+", "", (artist or "").lower())
+    a = unicodedata.normalize("NFKD", (artist or "").lower())
+    a = "".join(c for c in a if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", a)
 
 
 def _extract_title_from_filename(filename: str) -> str:

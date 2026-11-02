@@ -64,11 +64,13 @@ def _title_key(title: str) -> str:
 
 
 def _artist_key(artist: str) -> str:
-    """Normalized artist key for matching (identical to charts-songrequest).
+    """Normalized artist key for matching (behaviourally identical to the
+    charts-songrequest / presence.py copies).
 
     Folds dot/underscore/whitespace/case to one key (e.g. 'DJ.ILHAM' ==
-    'DJ ILHAM' -> 'djilham'). Accent-folds like _title_key so the two axes
-    agree. MATCH key only - never used for on-disk folder names.
+    'DJ ILHAM' -> 'djilham') AND transliterates accents (NFKD fold), so
+    'Motörhead' == 'Motorhead' -> 'motorhead'. Accent-folds like _title_key so
+    the two axes agree. MATCH key only - never used for on-disk folder names.
     """
     a = unicodedata.normalize("NFKD", (artist or "").lower())
     a = "".join(c for c in a if not unicodedata.combining(c))
