@@ -124,10 +124,14 @@ def _title_key(title: str) -> str:
 def _artist_key(artist: str) -> str:
     """
     Normalized artist key for MATCHING only (never for on-disk folder names).
-    Folds dot/underscore/whitespace runs plus case, identical to
-    charts-songrequest, so 'DJ.ILHAM' == 'DJ ILHAM' -> 'djilham'.
+    Folds dot/underscore/whitespace runs plus case AND transliterates accents
+    (NFKD fold), identical to charts-songrequest, so 'DJ.ILHAM' == 'DJ ILHAM' ->
+    'djilham' and 'Motörhead' == 'Motorhead' -> 'motorhead'. Accent-folds like
+    _title_key so the two axes agree.
     """
-    return re.sub(r"[^a-z0-9]+", "", (artist or "").lower())
+    a = unicodedata.normalize("NFKD", (artist or "").lower())
+    a = "".join(c for c in a if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", a)
 
 
 def _extract_title_from_filename(filename: str) -> str:
