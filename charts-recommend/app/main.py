@@ -28,7 +28,8 @@ data (the "stats" source has data immediately).
 import logging
 import time
 
-from . import config, lastfm, library, listenbrainz, notify, playlist, status
+from . import (config, lastfm, library, listenbrainz, notify, playlist,
+               presence, status)
 from .errors import FetchError
 from .i18n import t
 
@@ -52,8 +53,17 @@ def _match_all(lib, tracks: list[tuple[int, str, str]]):
         track, score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
         if track:
             matched.append((pos, artist, title, track.path))
-        else:
-            missing.append((pos, artist, title))
+            continue
+        # Presence guard: an existing library copy (incl. a compilation-named or
+        # Lidarr "(YYYY)" album folder that find_match skipped under
+        # IGNORE_COMPILATIONS) counts as present, so the song is NOT re-queued
+        # for download. Mirrors charts-songrequest's find_existing; runs only on
+        # the missing path, find_match is untouched.
+        existing = presence.find_existing(config.MUSIC_DIR, artist, title)
+        if existing is not None:
+            matched.append((pos, artist, title, existing))
+            continue
+        missing.append((pos, artist, title))
     return matched, missing
 
 

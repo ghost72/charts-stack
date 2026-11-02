@@ -30,7 +30,8 @@ import os
 import time
 from datetime import datetime
 
-from . import config, deezer, flashback, library, notify, status, year as year_mod
+from . import (config, deezer, flashback, library, notify, presence, status,
+               year as year_mod)
 from .errors import FetchError
 from .i18n import t
 
@@ -207,7 +208,18 @@ def run_once() -> tuple[dict, list[str], int, int]:
                 new_count += 1
                 yr = year_mod.resolve_year(artist, title, title_year)
                 track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
-                if track:
+                # Presence guard: an existing library copy (incl. a
+                # compilation-named or Lidarr "(YYYY)" album folder that
+                # find_match skipped under IGNORE_COMPILATIONS) counts as
+                # present, so the song is NOT re-queued for download and gets NO
+                # year-map entry. A present hit mirrors a find_match hit exactly
+                # (present.append + matched_count, no pos/missing/year-map).
+                # Mirrors charts-songrequest's find_existing / charts-energy;
+                # runs only on the missing path, find_match is untouched.
+                present_hit = track is not None or (
+                    presence.find_existing(config.MUSIC_DIR, artist, title)
+                    is not None)
+                if present_hit:
                     matched_count += 1
                     present.append((artist, title, yr))
                 else:
