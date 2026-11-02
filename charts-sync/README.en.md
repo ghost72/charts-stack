@@ -338,6 +338,17 @@ as a clean single/album version. During index building the log records how many
 tracks are detected as compilations and ignored. With `IGNORE_COMPILATIONS=0`
 the compilation version counts as present too.
 
+**Re-download guard (presence check):** before a song is reported missing,
+charts-sync additionally checks – regardless of the compilation filter – whether
+a file for it already exists under `<Artist>/` (same logic as charts-songrequest:
+resolve the artist folder, recurse every album subfolder including Lidarr CD
+folders, compare normalized titles). If the guard finds an existing copy – even
+inside a compilation-named folder like `Greatest Hits` or a Lidarr `(YYYY)`
+album – the song is **not** re-downloaded. In addition, a Lidarr `(YYYY)` album
+is no longer treated as a compilation even when its name contains a marker word;
+genuine non-year samplers (Bravo Hits etc.) stay filtered via
+`IGNORE_COMPILATIONS`.
+
 ---
 
 ## Installation on the Synology NAS
@@ -854,10 +865,13 @@ mainly helps to raise `ARTIST_MIN_SCORE` (e.g. `75`); then the artist has to
 match more strongly.
 
 **A song I only have on a compilation gets re-downloaded anyway.**
-That is intentional: with `IGNORE_COMPILATIONS=1` (default), compilation tracks
-are ignored during matching, so `charts-download` fetches the clean
-single/album version. If you don't want that and the compilation version should
-count as present, set `IGNORE_COMPILATIONS=0`.
+With `IGNORE_COMPILATIONS=1` (default), compilation tracks are ignored during
+matching so `charts-download` fetches the clean single/album version. Since the
+presence guard, though: if any file for the song already exists under
+`<Artist>/` – even inside a compilation-named folder (`Greatest Hits`) or a
+Lidarr `(YYYY)` album – it is **no longer** re-downloaded. A re-download now
+only happens when **no** copy exists at all. Lidarr `(YYYY)` albums are also not
+classified as compilations in the first place.
 
 **A regular song is wrongly detected as a compilation.**
 The detection is a heuristic over path/tag markers. If that happens with an
