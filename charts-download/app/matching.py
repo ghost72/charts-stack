@@ -45,6 +45,9 @@ def similarity(a: str, b: str) -> int:
 # Markers in the path that hint at a compilation / sampler / chart collection
 # (rather than a single or regular album). slskd only delivers paths, no real
 # metadata - so this is a heuristic, not a reliable signal.
+# NOTE: intentionally DIFFERENT from the library.py _COMPILATION_MARKERS family
+# (sync/energy/flashback/recommend/hitparade). That one matches on-disk album
+# tags/paths; THIS one matches raw slskd folder paths - do not unify them.
 _COMPILATION_MARKERS = [
     "va -", "va-", "various", "verschiedene",
     "varios", "varias",                  # Spanish/Italian "Various"

@@ -76,3 +76,26 @@ def test_open_tail_does_not_over_strip_part():
 
 def test_open_tail_keeps_trailing_number():
     assert importer._title_key("Area 51") == "area51"
+
+
+# --- P3: full _strip_title_decoration (balanced bitrate/version groups) -----
+
+def test_bitrate_decoration_folds_to_base():
+    # A decorated title ("... (320 Kbps)", "... - 320k") now folds onto the
+    # clean library key, matching songrequest / presence.py.
+    base = importer._title_key("Inside My Soul")
+    assert importer._title_key("Inside My Soul (320 Kbps)") == base
+    assert importer._title_key("Inside My Soul - 320k") == base
+    assert importer._title_key("Inside My Soul [320]") == base
+
+
+def test_version_decoration_folds_to_base():
+    base = importer._title_key("Song")
+    assert importer._title_key("Song (Extended Mix)") == base
+    assert importer._title_key("Song (Original Mix)") == base
+
+
+def test_chained_decoration_collapses():
+    base = importer._title_key("Das Isch Mini Schwiiz")
+    assert (importer._title_key(
+        "Das Isch Mini Schwiiz (Melodic Techno Version) - (320 Kbps)") == base)

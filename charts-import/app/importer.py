@@ -316,14 +316,38 @@ def _song_already_present(target: str) -> bool:
     return False
 
 
+# Keywords (case-insensitive) that mark a trailing (...)/[...] group as mere
+# bitrate/format/version decoration rather than part of the real song title.
+# Only groups matching one of these are stripped from the END of the title, so
+# a meaningful parenthetical like "(Part 2)" survives and stays distinct.
+#   - bitrate/format: "320 Kbps", "[320]", "320kbps", "320k", "flac", "wav"
+#   - version/mix:    "Extended Mix", "Original Mix", "Radio Edit", "Remix",
+#                     "... Mix", "... Version", "... Edit", "remaster(ed)"
+#   - channel noise:  "Official ...", "Lyric(s) ...", "Audio", "Video",
+#                     "Visualizer", "feat ...", "ft ...", "with ..."
+# NOTE: stripping "(Remix)"/"(... Mix)" is a DELIBERATE behaviour change for the
+# MATCH key only: a true remix upload of an existing base title now folds to the
+# base key and is reported "already present". This does NOT change how the title
+# is written to disk or tagged - callers keep the real submitted title.
+_TITLE_DECORATION = re.compile(
+    r"^\s*\d{2,4}\s*$"                                 # bare number group, e.g. [320]
+    r"|\d{2,4}\s*k(?:bps|bit|b)?"                      # 320kbps / 320k
+    r"|flac|wav|m4a|aac|ogg|opus"                      # bare format tags
+    r"|extended|original|radio|remix|mix|version|edit"  # version/mix words
+    r"|remaster(?:ed)?|official|audio|video|visual[sz]er|lyric[s]?"
+    r"|feat|ft|with",
+    re.IGNORECASE,
+)
+
 # Trailing UNBALANCED/open opener-tail: a "(word..." or "[word..." at the very
 # end of the title with NO closing bracket, whose first word is a known
-# decoration keyword (e.g. "... (original", "... (live", "... (radio edit").
-# Mirrors charts-songrequest's _OPEN_TAIL_DECORATION so both services fold a
-# decorated re-request (e.g. "ewigi liäbi (original") onto the same dedup key as
-# the clean library title ("ewigi liäbi"). CONSERVATIVE: "part"/"pt"/digits are
-# deliberately absent, so a genuine open tail like "Song (Part 2" stays distinct
-# from "Song". MATCH key only - never touches what is written to disk or tags.
+# decoration keyword (e.g. "... (original", "... (live", "... (feat. X",
+# "... (radio edit", "... (extended mix", "... (official video"). This closes
+# the gap left by _TITLE_DECORATION, which only matches a BALANCED "(...)"/"[...]"
+# group. CONSERVATIVE: "part"/"pt"/digits are deliberately absent from the
+# allowlist, so a genuine open tail like "Song (Part 2" stays distinct from
+# "Song"; only a trailing open tail whose first word is a decoration keyword is
+# removed. MATCH key only - never touches on-disk names or tags.
 _OPEN_TAIL_DECORATION = re.compile(
     r"\s*[\(\[]\s*"
     r"(?:extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|"
@@ -334,22 +358,65 @@ _OPEN_TAIL_DECORATION = re.compile(
 )
 
 
+def _strip_title_decoration(title: str) -> str:
+    """
+    Strip a trailing RUN of bitrate/format/version decoration from a title,
+    for the MATCH key only (never for on-disk names or tags).
+
+    Repeatedly removes, from the END of the string:
+      - a trailing dash-suffixed bitrate tail ("- 320 Kbps", "- 320k"), and
+      - a trailing parenthetical/bracketed group "(...)"/"[...]" whose content
+        matches a known decoration keyword (_TITLE_DECORATION).
+    Chained tails collapse, e.g.
+      "Das Isch mini Schwiiz (Melodic Techno Version) - (320 Kbps)" -> base.
+    Mid-title decoration is left alone - only a trailing run is removed. A
+    non-decoration group like "(Part 2)" is kept, so "Song (Part 2)" stays
+    distinct from "Song".
+    """
+    t = title or ""
+    changed = True
+    while changed:
+        changed = False
+        # Trailing "- <bitrate>" tail (no brackets needed).
+        new = re.sub(r"\s*[-\u2013]\s*\d{2,4}\s*k(?:bps|bit|b)?\s*$", "", t,
+                     flags=re.IGNORECASE)
+        if new != t:
+            t, changed = new.rstrip(), True
+            continue
+        # Trailing BARE bitrate token "320kbps"/"320k" (no brackets, no dash).
+        # Requires the explicit "k" suffix so a plain trailing number that is
+        # part of the title (e.g. "Area 51") is NOT stripped.
+        new = re.sub(r"\s+\d{2,4}\s*k(?:bps|bit|b)?\s*$", "", t, flags=re.IGNORECASE)
+        if new != t:
+            t, changed = new.rstrip(), True
+            continue
+        # Trailing (...) / [...] group - strip only if it reads as decoration.
+        m = re.search(r"\s*[\(\[]([^\(\)\[\]]*)[\)\]]\s*$", t)
+        if m and _TITLE_DECORATION.search(m.group(1)):
+            t, changed = t[:m.start()].rstrip(), True
+            continue
+        # Trailing UNBALANCED opener-tail (open "(" / "[" with no closing
+        # bracket). Only strip when the tail's first word is a decoration
+        # keyword so a genuine open tail like "Song (Part 2" (numeric/part, not
+        # in the allowlist) is kept distinct from "Song".
+        if re.search(r"[\(\[][^\(\)\[\]]*$", t):   # there IS an unclosed opener
+            new = _OPEN_TAIL_DECORATION.sub("", t).rstrip()
+            if new and new != t:
+                t, changed = new, True
+    return t.strip()
+
+
 def _title_key(title: str) -> str:
-    """
-    Normalizes a SONG TITLE for the cross-album comparison: lowercase,
-    (feat.../remaster/version/edit) additions removed, letters/digits only.
-    So 'Into You' matches 'Into You (Remastered)'.
-    """
+    """Normalized song title for the comparison (identical to charts-songrequest)."""
     t = (title or "").lower()
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
     t = re.sub(r"\[(?:feat|ft|with)\.?[^\]]*\]", " ", t)
     t = re.sub(r"\((?:remaster|remastered|.*version|.*edit|official|audio|video|lyric[s]?)[^)]*\)", " ", t)
-    # Strip a trailing UNBALANCED opener-tail (open "(" / "[" with no closing
-    # bracket) whose first word is a decoration keyword. Mirrors songrequest's
-    # open-tail strip; MATCH key only. Guarded so a numeric/part tail like
-    # "Song (Part 2" stays distinct from "Song".
-    if re.search(r"[\(\[][^\(\)\[\]]*$", t):
-        t = _OPEN_TAIL_DECORATION.sub("", t).rstrip()
+    # Strip a trailing run of bitrate/format/version decoration so a decorated
+    # title ("Into You (320 Kbps)") and the clean library title ("Into You")
+    # fold to the SAME match key. MATCH key only - the real title is still used
+    # for disk/tag writes.
+    t = _strip_title_decoration(t)
     # Transliterate accents (ä -> a, é -> e) BEFORE the [a-z0-9] fold so an
     # umlaut is folded, not dropped. Mirrors the charts-sync side
     # (library.normalize / deezer._normalize) so both subsystems agree on the
@@ -378,6 +445,48 @@ def _extract_title_from_filename(filename: str) -> str:
     return base.strip()
 
 
+def _artist_key(artist: str) -> str:
+    """
+    Normalized artist key for MATCHING only (never for on-disk folder names).
+    Folds dot/underscore/whitespace runs plus case AND transliterates accents
+    (NFKD fold), identical to charts-songrequest / presence.py, so 'DJ.ILHAM' ==
+    'DJ ILHAM' -> 'djilham' and 'Motörhead' == 'Motorhead' -> 'motorhead'.
+    Accent-folds like _title_key so the two axes agree. MATCH key only.
+    """
+    a = unicodedata.normalize("NFKD", (artist or "").lower())
+    a = "".join(c for c in a if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", a)
+
+
+def _find_artist_dir(music_dir: str, artist: str) -> str | None:
+    """
+    Finds the artist folder under music_dir - folding dot/underscore/whitespace
+    and case via _artist_key (identical to charts-songrequest / presence.py). On
+    ext4 folder names are case-sensitive, so we compare on the normalized match
+    key. An empty artist resolves to None (no "Unknown Artist" bucket probe),
+    matching the presence-side empty fallback. Fail-open: OSError -> None.
+    """
+    from .tags import _clean_component  # local, to avoid a circular import
+    safe_artist = _clean_component(artist, "")
+    if not safe_artist:
+        return None
+    # 1. Fast path: the exact (filesystem-literal) folder exists.
+    exact = os.path.join(music_dir, safe_artist)
+    if os.path.isdir(exact):
+        return exact
+    # 2. Match-key comparison across all artist folders (folds dot/space/case).
+    target = _artist_key(artist)
+    if not target:
+        return None
+    try:
+        for name in os.listdir(music_dir):
+            if _artist_key(name) == target and os.path.isdir(os.path.join(music_dir, name)):
+                return os.path.join(music_dir, name)
+    except OSError:
+        pass
+    return None
+
+
 def _song_present_for_artist(music_dir: str, artist: str, title: str) -> str | None:
     """
     True (as a path) if the same song already sits SOMEWHERE under
@@ -388,14 +497,15 @@ def _song_present_for_artist(music_dir: str, artist: str, title: str) -> str | N
     arise.
 
     Compares via the normalized SONG TITLE (_title_key) so the different
-    file/album namings do not matter. The artist folder is determined via the
-    cleaned artist name.
+    file/album namings do not matter. The artist folder is resolved via
+    _find_artist_dir (exact, else _artist_key fold), so a folder that differs
+    only by case/punctuation/accent (e.g. 'DJ ILHAM' vs 'DJ.ILHAM',
+    'Motorhead' vs 'Motörhead') is still recognized - identical to the
+    charts-songrequest / presence.py artist resolution.
     Returns: path of the already-present file, otherwise None.
     """
-    from .tags import _clean_component  # local, to avoid a circular import
-    safe_artist = _clean_component(artist, "Unknown Artist")
-    artist_dir = os.path.join(music_dir, safe_artist)
-    if not os.path.isdir(artist_dir):
+    artist_dir = _find_artist_dir(music_dir, artist)
+    if not artist_dir:
         return None
     want = _title_key(title)
     if not want:

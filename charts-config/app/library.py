@@ -48,16 +48,112 @@ def _clean_component(value: str, fallback: str) -> str:
     return value or fallback
 
 
+# Keywords (case-insensitive) that mark a trailing (...)/[...] group as mere
+# bitrate/format/version decoration rather than part of the real song title.
+# Only groups matching one of these are stripped from the END of the title, so
+# a meaningful parenthetical like "(Part 2)" survives and stays distinct.
+#   - bitrate/format: "320 Kbps", "[320]", "320kbps", "320k", "flac", "wav"
+#   - version/mix:    "Extended Mix", "Original Mix", "Radio Edit", "Remix",
+#                     "... Mix", "... Version", "... Edit", "remaster(ed)"
+#   - channel noise:  "Official ...", "Lyric(s) ...", "Audio", "Video",
+#                     "Visualizer", "feat ...", "ft ...", "with ..."
+# NOTE: stripping "(Remix)"/"(... Mix)" is a DELIBERATE behaviour change for the
+# MATCH key only: a true remix upload of an existing base title now folds to the
+# base key and is reported "already present". This does NOT change how the title
+# is written to disk or tagged - callers keep the real submitted title.
+_TITLE_DECORATION = re.compile(
+    r"^\s*\d{2,4}\s*$"                                 # bare number group, e.g. [320]
+    r"|\d{2,4}\s*k(?:bps|bit|b)?"                      # 320kbps / 320k
+    r"|flac|wav|m4a|aac|ogg|opus"                      # bare format tags
+    r"|extended|original|radio|remix|mix|version|edit"  # version/mix words
+    r"|remaster(?:ed)?|official|audio|video|visual[sz]er|lyric[s]?"
+    r"|feat|ft|with",
+    re.IGNORECASE,
+)
+
+# Trailing UNBALANCED/open opener-tail: a "(word..." or "[word..." at the very
+# end of the title with NO closing bracket, whose first word is a known
+# decoration keyword (e.g. "... (original", "... (live", "... (feat. X",
+# "... (radio edit", "... (extended mix", "... (official video"). This closes
+# the gap left by _TITLE_DECORATION, which only matches a BALANCED "(...)"/"[...]"
+# group. CONSERVATIVE: "part"/"pt"/digits are deliberately absent from the
+# allowlist, so a genuine open tail like "Song (Part 2" stays distinct from
+# "Song"; only a trailing open tail whose first word is a decoration keyword is
+# removed. MATCH key only - never touches on-disk names or tags.
+_OPEN_TAIL_DECORATION = re.compile(
+    r"\s*[\(\[]\s*"
+    r"(?:extended|original|radio|remix|mix|version|edit|remaster(?:ed)?|"
+    r"official|audio|video|visuali[sz]er|lyric[s]?|feat\.?|ft\.?|with|live|"
+    r"acoustic|instrumental|demo|bonus|single)"
+    r"[^\(\)\[\]]*$",   # rest of the open tail up to end, no closing bracket
+    re.IGNORECASE,
+)
+
+
+def _strip_title_decoration(title: str) -> str:
+    """
+    Strip a trailing RUN of bitrate/format/version decoration from a title,
+    for the MATCH key only (never for on-disk names or tags).
+
+    Repeatedly removes, from the END of the string:
+      - a trailing dash-suffixed bitrate tail ("- 320 Kbps", "- 320k"), and
+      - a trailing parenthetical/bracketed group "(...)"/"[...]" whose content
+        matches a known decoration keyword (_TITLE_DECORATION).
+    Chained tails collapse, e.g.
+      "Das Isch mini Schwiiz (Melodic Techno Version) - (320 Kbps)" -> base.
+    Mid-title decoration is left alone - only a trailing run is removed. A
+    non-decoration group like "(Part 2)" is kept, so "Song (Part 2)" stays
+    distinct from "Song".
+    """
+    t = title or ""
+    changed = True
+    while changed:
+        changed = False
+        # Trailing "- <bitrate>" tail (no brackets needed).
+        new = re.sub(r"\s*[-\u2013]\s*\d{2,4}\s*k(?:bps|bit|b)?\s*$", "", t,
+                     flags=re.IGNORECASE)
+        if new != t:
+            t, changed = new.rstrip(), True
+            continue
+        # Trailing BARE bitrate token "320kbps"/"320k" (no brackets, no dash).
+        # Requires the explicit "k" suffix so a plain trailing number that is
+        # part of the title (e.g. "Area 51") is NOT stripped.
+        new = re.sub(r"\s+\d{2,4}\s*k(?:bps|bit|b)?\s*$", "", t, flags=re.IGNORECASE)
+        if new != t:
+            t, changed = new.rstrip(), True
+            continue
+        # Trailing (...) / [...] group - strip only if it reads as decoration.
+        m = re.search(r"\s*[\(\[]([^\(\)\[\]]*)[\)\]]\s*$", t)
+        if m and _TITLE_DECORATION.search(m.group(1)):
+            t, changed = t[:m.start()].rstrip(), True
+            continue
+        # Trailing UNBALANCED opener-tail (open "(" / "[" with no closing
+        # bracket). Only strip when the tail's first word is a decoration
+        # keyword so a genuine open tail like "Song (Part 2" (numeric/part, not
+        # in the allowlist) is kept distinct from "Song".
+        if re.search(r"[\(\[][^\(\)\[\]]*$", t):   # there IS an unclosed opener
+            new = _OPEN_TAIL_DECORATION.sub("", t).rstrip()
+            if new and new != t:
+                t, changed = new, True
+    return t.strip()
+
+
 def _title_key(title: str) -> str:
     """Normalized song title for the comparison (identical to charts-songrequest).
 
-    Lowercase, strip (feat/ft/with) and version parentheticals, transliterate
-    accents (NFKD fold), then keep only [a-z0-9]. MATCH key only.
+    Lowercase, strip (feat/ft/with) and version parentheticals, strip a trailing
+    run of bitrate/format/version decoration (_strip_title_decoration),
+    transliterate accents (NFKD fold), then keep only [a-z0-9]. MATCH key only.
     """
     t = (title or "").lower()
     t = re.sub(r"\((?:feat|ft|with)\.?[^)]*\)", " ", t)
     t = re.sub(r"\[(?:feat|ft|with)\.?[^\]]*\]", " ", t)
     t = re.sub(r"\((?:remaster|remastered|.*version|.*edit|official|audio|video|lyric[s]?)[^)]*\)", " ", t)
+    # Strip a trailing run of bitrate/format/version decoration so a decorated
+    # title ("Into You (320 Kbps)") and the clean library title ("Into You")
+    # fold to the SAME match key. MATCH key only - on-disk names/tags use the
+    # raw title via _clean_component.
+    t = _strip_title_decoration(t)
     t = unicodedata.normalize("NFKD", t)
     t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", "", t)

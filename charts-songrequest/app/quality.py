@@ -2,9 +2,9 @@
 Audio quality analysis: detects upsampled / faked MP3s via the actual frequency
 cutoff, measured by FFT (ffmpeg PCM decode + numpy).
 
-Copied verbatim from charts-import/app/quality.py (no runtime dependency; each
-service is its own container). charts-upgrade holds a third copy. Reconcile
-changes in charts-import/app/quality.py, the canonical source.
+Taken over by charts-upgrade AND charts-songrequest as copies (no runtime
+dependency; each service is its own container). Reconcile changes here with
+charts-upgrade and charts-songrequest.
 
 BACKGROUND
 ----------
