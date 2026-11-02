@@ -32,7 +32,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from . import (config, discover, feed, health, icy, library, notify, playlist,
-               playlist_library, state, status)
+               playlist_library, presence, state, status)
 from . import year as year_mod
 from .i18n import t
 
@@ -104,7 +104,14 @@ def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
         title = entry.get("title", "")
         yr, is_fallback = year_mod.resolve_year(artist, title, channel.decade)
         track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
-        if track:
+        # Presence guard: an existing library copy (incl. a compilation-named or
+        # Lidarr "(YYYY)" album folder that find_match skipped under
+        # IGNORE_COMPILATIONS) counts as present, so the song is NOT re-queued
+        # for download and gets NO year-map entry. Mirrors charts-songrequest's
+        # find_existing; runs only on the missing path, find_match is untouched.
+        present = track is not None or (
+            presence.find_existing(config.MUSIC_DIR, artist, title) is not None)
+        if present:
             out_present.append((artist, title, yr))
             matched += 1
         else:
@@ -181,6 +188,17 @@ def run_match() -> dict:
             track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
             if track:
                 matched.append((pos, artist, title, track.path))
+                continue
+            # Presence guard (mirrors charts-songrequest's find_existing, no
+            # compilation filter): an existing library copy - even in a
+            # compilation-named or Lidarr "(YYYY)" album folder find_match
+            # skipped - is a valid playlist entry, so route it into `matched`
+            # instead of the missing list. Suppresses a re-download only;
+            # find_match's return value (and its in_year_album tie-break) is
+            # untouched.
+            existing = presence.find_existing(config.MUSIC_DIR, artist, title)
+            if existing is not None:
+                matched.append((pos, artist, title, existing))
             else:
                 missing.append((pos, artist, title))
 

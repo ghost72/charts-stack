@@ -341,6 +341,17 @@ Index-Aufbau protokolliert das Log, wie viele Tracks als Compilation erkannt
 und ignoriert werden. Mit `IGNORE_COMPILATIONS=0` zählt auch die
 Compilation-Version als vorhanden.
 
+**Schutz vor erneutem Download (Präsenz-Guard):** Bevor ein Song als fehlend
+gemeldet wird, prüft charts-sync zusätzlich – unabhängig vom Compilation-Filter
+– ob unter `<Künstler>/` überhaupt schon eine Datei des Songs existiert (gleiche
+Logik wie charts-songrequest: Künstlerordner auflösen, alle Album-Unterordner
+inkl. Lidarr-CD-Ordner durchsuchen, normalisierte Titel vergleichen). Findet der
+Guard eine vorhandene Kopie – **auch** in einem Compilation-benannten Ordner wie
+`Greatest Hits` oder einem Lidarr-`(YYYY)`-Album –, wird der Song **nicht** neu
+geladen. Zusätzlich gilt ein Lidarr-`(YYYY)`-Album nicht mehr als Compilation,
+auch wenn sein Name ein Marker-Wort enthält; echte Nicht-Jahr-Sampler (Bravo
+Hits usw.) bleiben über `IGNORE_COMPILATIONS` gefiltert.
+
 ---
 
 ## Installation auf dem Synology NAS
@@ -858,10 +869,13 @@ Titel eines anderen Künstlers** handelt (z. B. „Van Halen - Jump" statt
 dann muss der Künstler stärker übereinstimmen.
 
 **Ein Song, den ich nur in einer Compilation habe, wird trotzdem neu geladen.**
-Das ist so gewollt: Bei `IGNORE_COMPILATIONS=1` (Standard) werden
-Compilation-Tracks beim Abgleich ignoriert, damit `charts-download` die saubere
-Single-/Album-Version holt. Wenn du das nicht willst und die Compilation-Version
-als vorhanden gelten soll, setze `IGNORE_COMPILATIONS=0`.
+Bei `IGNORE_COMPILATIONS=1` (Standard) werden Compilation-Tracks beim Abgleich
+ignoriert, damit `charts-download` die saubere Single-/Album-Version holt. Seit
+dem Präsenz-Guard gilt aber: existiert unter `<Künstler>/` bereits irgendeine
+Datei des Songs – auch in einem Compilation-benannten Ordner (`Greatest Hits`)
+oder einem Lidarr-`(YYYY)`-Album –, wird er **nicht mehr** neu geladen. Ein
+erneuter Download passiert nur noch, wenn wirklich **keine** Kopie existiert.
+Lidarr-`(YYYY)`-Alben werden zudem gar nicht erst als Compilation eingestuft.
 
 **Ein regulärer Song wird fälschlich als Compilation erkannt.**
 Die Erkennung ist eine Heuristik über Pfad-/Tag-Marker. Passiert das bei einem

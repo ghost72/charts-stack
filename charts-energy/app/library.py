@@ -150,7 +150,16 @@ def _looks_like_compilation(path: str, album: str, albumartist: str) -> bool:
     Heuristic: True if the path, album or albumartist tag hints at a
     compilation. The most reliable signal is the albumartist "Various Artists"
     (standard tag for samplers).
+
+    Option B hardening: a Lidarr "(YYYY)" album folder is a curated
+    single-artist album even when its name contains a marker word like
+    "Greatest Hits", so it is never a Various-Artists sampler - short-circuit to
+    False for such paths. This keeps IGNORE_COMPILATIONS filtering genuine
+    non-year sampler folders (Bravo Hits etc.) while no longer hiding a song
+    that only survives as a Lidarr album track (the re-download bug).
     """
+    if _in_year_album(path):
+        return False
     haystack = normalize(f"{path} {album} {albumartist}".replace("\\", "/"))
     return any(marker in haystack for marker in _COMPILATION_MARKERS)
 

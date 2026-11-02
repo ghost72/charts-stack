@@ -95,7 +95,7 @@ prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
 | `ENERGY_MAX_TRACKS_PER_CHANNEL` | `500` | Obergrenze pro Kanal (neueste behalten). |
 | `MATCH_THRESHOLD` | `87` | Match-Schwelle (wie charts-sync). |
 | `ARTIST_MIN_SCORE` | `60` | Künstler-Mindest-Score. |
-| `IGNORE_COMPILATIONS` | `1` | Compilation-Tracks beim Match ignorieren. |
+| `IGNORE_COMPILATIONS` | `1` | Compilation-Tracks beim Match ignorieren. Ein Präsenz-Guard verhindert aber (library- UND own-Modus) einen erneuten Download, sobald unter `<Künstler>/` bereits eine Kopie des Songs existiert – auch in einem Compilation-benannten Ordner (`Greatest Hits`) oder einem Lidarr-`(YYYY)`-Album; Lidarr-`(YYYY)`-Alben gelten gar nicht erst als Compilation. Echte Nicht-Jahr-Sampler (Bravo Hits usw.) bleiben gefiltert. |
 | `MB_ENABLED` | `1` | **library-Modus:** MusicBrainz-Jahresauflösung an/aus (für die Dekaden-NSPs). |
 | `MB_USER_AGENT_ENERGY` | `charts-energy/1.0 (self-hosted)` | User-Agent für die MusicBrainz-Abfrage (MB verlangt einen aussagekräftigen UA). |
 | `MB_RATE_SLEEP` | `1.1` | Pause (s) vor jeder MB-Abfrage (~1 req/s, höflich zu MusicBrainz). |

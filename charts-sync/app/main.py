@@ -23,7 +23,7 @@ import os
 import time
 from datetime import datetime
 
-from . import config, deezer, health, library, notify, playlist, status
+from . import config, deezer, health, library, notify, playlist, presence, status
 from .i18n import t
 
 logging.basicConfig(
@@ -87,8 +87,20 @@ def _sync_source(chart_source, lib, state: dict) -> str:
         track, score = lib.find_match(ct.artist, ct.title, config.MATCH_THRESHOLD)
         if track is not None:
             matched.append((ct.position, ct.artist, ct.title, track.path))
-        else:
-            missing.append((ct.position, ct.artist, ct.title))
+            continue
+        # Presence guard (mirrors charts-songrequest's find_existing, no
+        # compilation filter): if a real library copy exists under <Artist>/ -
+        # even inside a compilation-named or Lidarr "(YYYY)" album folder that
+        # find_match skipped under IGNORE_COMPILATIONS - do NOT re-queue it.
+        # The existing file IS a valid playlist entry, so route it into
+        # `matched` (the subsequent path-keyed dedup handles duplicates). This
+        # only suppresses a missing write; find_match's return value is never
+        # altered, so the in_year_album tie-break is untouched.
+        existing = presence.find_existing(config.MUSIC_DIR, ct.artist, ct.title)
+        if existing is not None:
+            matched.append((ct.position, ct.artist, ct.title, existing))
+            continue
+        missing.append((ct.position, ct.artist, ct.title))
 
     matched.sort(key=lambda x: x[0])
     missing.sort(key=lambda x: x[0])

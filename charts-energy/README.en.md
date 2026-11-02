@@ -95,7 +95,7 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 | `ENERGY_MAX_TRACKS_PER_CHANNEL` | `500` | Per-channel cap (keep the newest). |
 | `MATCH_THRESHOLD` | `87` | match threshold (like charts-sync). |
 | `ARTIST_MIN_SCORE` | `60` | artist minimum score. |
-| `IGNORE_COMPILATIONS` | `1` | ignore compilation tracks when matching. |
+| `IGNORE_COMPILATIONS` | `1` | ignore compilation tracks when matching. A presence guard still suppresses a re-download (library AND own mode) whenever a copy of the song already exists under `<Artist>/` – even inside a compilation-named folder (`Greatest Hits`) or a Lidarr `(YYYY)` album; Lidarr `(YYYY)` albums are not classified as compilations in the first place. Genuine non-year samplers (Bravo Hits etc.) stay filtered. |
 | `MB_ENABLED` | `1` | **library mode:** MusicBrainz year resolution on/off (for the decade NSPs). |
 | `MB_USER_AGENT_ENERGY` | `charts-energy/1.0 (self-hosted)` | User-Agent for the MusicBrainz lookup (MB requires a meaningful UA). |
 | `MB_RATE_SLEEP` | `1.1` | Sleep (s) before each MB request (~1 req/s, polite to MusicBrainz). |

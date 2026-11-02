@@ -101,3 +101,52 @@ def test_two_library_channels_share_missing_file(monkeypatch, tmp_charts):
 
 def test_library_counter_is_wired_into_dashboard_labels():
     assert "library_missing" in main._COUNTER_LABEL_KEYS
+
+
+def test_presence_guard_suppresses_missing_in_library_mode(monkeypatch, tmp_charts):
+    """
+    AC-2: a song find_match does NOT match (e.g. it only survives inside a
+    compilation-named folder find_match skipped) but presence.find_existing
+    DOES find on disk must be treated as present: NOT written to the missing
+    file, NOT added to the year map, NOT counted in library_missing.
+    """
+    ch = config.Channel(slug="energy80s", mode="library")
+    _wire(monkeypatch, [ch],
+          {"energy80s": [_track("Sandra", "Everlasting Love")]},
+          present=[])  # find_match returns nothing for anyone
+    # But the presence guard finds a real library copy.
+    monkeypatch.setattr(
+        main.presence, "find_existing",
+        lambda music_dir, artist, title: "/music/Music/Sandra/Greatest Hits "
+        "(2008)/CD 01/Sandra - Greatest Hits - 05 - Everlasting Love.mp3")
+
+    result = main.run_match()
+
+    # Nothing written to the missing file (guard caught it).
+    assert not (tmp_charts / "missing-energy-library.txt").exists() or \
+        [ln for ln in (tmp_charts / "missing-energy-library.txt")
+         .read_text("utf-8").splitlines() if ln and not ln.startswith("#")] == []
+    # No year-map entry for the suppressed song.
+    year_map_path = tmp_charts / ".charts-flashback-years.json"
+    if year_map_path.exists():
+        year_map = json.loads(year_map_path.read_text("utf-8"))
+        assert "sandra|everlasting love" not in year_map
+    # Counted as present, not missing.
+    assert result["library_missing"] == 0
+
+
+def test_presence_guard_absent_song_still_missing(monkeypatch, tmp_charts):
+    """AC-3 (library mode): no library copy anywhere -> song IS written."""
+    ch = config.Channel(slug="energy80s", mode="library")
+    _wire(monkeypatch, [ch],
+          {"energy80s": [_track("Nobody", "Unknown Song")]},
+          present=[])
+    monkeypatch.setattr(main.presence, "find_existing",
+                        lambda music_dir, artist, title: None)
+
+    result = main.run_match()
+
+    missing = (tmp_charts / "missing-energy-library.txt").read_text("utf-8")
+    body = [ln for ln in missing.splitlines() if ln and not ln.startswith("#")]
+    assert body == ["  1. Nobody - Unknown Song"]
+    assert result["library_missing"] == 1
