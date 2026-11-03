@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config1">
+<link rel="stylesheet" href="/static/style.css?v=config2">
 </head>
 <body>
 <header>
@@ -844,8 +844,15 @@ function initTagEditor() {
     // with the TAGEDITOR_AUDIO_ENABLED flag OFF (the convert route is
     // auth-gated, not flag-gated). Independent of the audio_enabled branch
     // above; the two code paths never touch each other.
+    // Prefer the explicit server flag; fall back to the extension so a payload
+    // that omits is_mp3 (older server build) still reveals Convert for non-MP3
+    // files. is_mp3 === true OR (is_mp3 absent AND ext is .mp3) => not
+    // convertible; everything else (a non-MP3 file) shows the button.
+    const convertExt = (song.ext || "").toLowerCase();
+    const convertIsMp3 = (song.is_mp3 === true) ||
+                         (song.is_mp3 === undefined && convertExt === ".mp3");
     const convertBtn = document.getElementById("te-convert");
-    if (convertBtn) convertBtn.hidden = (song.is_mp3 !== false);
+    if (convertBtn) convertBtn.hidden = convertIsMp3;
     [...TE_FIELDS.map(f => "te-" + f), "te-cover-file", "te-cover-url"].forEach(id => {
       document.getElementById(id).disabled = readOnly;
     });
