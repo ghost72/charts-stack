@@ -375,7 +375,7 @@ body.login {
    down together, so the cover box stays top-aligned with the first input row.
    Scoped to #te-form (specificity 1,1,0) so it beats the generic `.finder-box
    form` (0,2,0) margin reset that would otherwise zero this out. */
-#te-form.te-form { margin-top: 26px; }
+#te-form.te-form { margin-top: 48px; }
 /* Top row: the editable fields on the LEFT and the cover preview on the RIGHT,
    side by side. The fields column flexes to fill the remaining width; the cover
    keeps its intrinsic (square) width on the right. Wraps to stacked on narrow
