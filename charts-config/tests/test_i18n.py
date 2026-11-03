@@ -108,6 +108,11 @@ def test_config_ui_keys_present():
         # Convert-to-MP3 + non-MP3 list frontend-critical keys (Feature A/B).
         "config.ui.tageditor.convert.btn",
         "config.ui.tageditor.nonmp3.heading",
+        # Trash (Papierkorb) manager frontend-critical keys.
+        "config.ui.section.trash",
+        "config.ui.tageditor.trash.hint",
+        "config.ui.tageditor.trash.delete.btn",
+        "config.ui.tageditor.trash.empty.btn",
     }
     for c in _SHIPPED:
         keys = set(_load_shipped(c))

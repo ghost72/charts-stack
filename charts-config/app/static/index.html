@@ -240,6 +240,60 @@
           <div class="muted-txt te-nonmp3-hint" data-i18n="tageditor.nonmp3.hint"></div>
           <div id="te-nonmp3-list" class="te-nonmp3-list"></div>
         </div>
+
+        <!-- Trash (Papierkorb) manager: read-only listing of the entire
+             MUSIC_DIR/.charts-trash tree (per-file + total size), with a
+             per-file permanent delete and an empty-whole-trash action. The
+             delete/empty are the MOST destructive operations in the stack
+             (hard delete of files already at the last reversible stage), so the
+             server confines them strictly to .charts-trash and requires an
+             explicit confirm to empty. Fetched from /api/tageditor/trash. -->
+        <div class="te-trash" id="te-trash">
+          <h3 class="te-trash-heading" data-i18n="section.trash"></h3>
+          <div class="muted-txt te-trash-hint" data-i18n="tageditor.trash.hint"></div>
+          <div class="te-trash-bar">
+            <span class="te-trash-total" id="te-trash-total"></span>
+            <button type="button" id="te-trash-refresh" class="btn-sm"
+                    data-i18n="tageditor.trash.refresh"></button>
+            <button type="button" id="te-trash-empty" class="te-trash-empty-btn"
+                    data-i18n="tageditor.trash.empty.btn"></button>
+          </div>
+          <div id="te-trash-list" class="te-trash-list"></div>
+        </div>
+
+        <!-- Per-file delete confirm (reuses the .te-modal markup). The file's
+             rel_path + an honest "permanent, cannot be undone" warning; only the
+             confirming click POSTs to /api/tageditor/trash/delete. -->
+        <div id="te-trash-delete-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-trash-delete-title">
+            <h3 id="te-trash-delete-title" data-i18n="tageditor.trash.delete.title"></h3>
+            <p id="te-trash-delete-warn" class="te-modal-q te-danger-text"></p>
+            <div class="te-modal-buttons">
+              <button type="button" id="te-trash-delete-confirm" class="te-modal-btn danger"
+                      data-i18n="tageditor.trash.delete.confirm"></button>
+              <button type="button" id="te-trash-delete-cancel" class="te-modal-btn"
+                      data-i18n="tageditor.trash.delete.cancel"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty-whole-trash confirm: a PROMINENT dialog whose wording makes
+             the finality unmistakable (the trash IS the last reversible stage).
+             The confirming click POSTs confirm=empty to the empty route. -->
+        <div id="te-trash-empty-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-trash-empty-title">
+            <h3 id="te-trash-empty-title" data-i18n="tageditor.trash.empty.title"></h3>
+            <p class="te-modal-q te-danger-text" data-i18n="tageditor.trash.empty.warn"></p>
+            <div class="te-modal-buttons">
+              <button type="button" id="te-trash-empty-confirm" class="te-modal-btn danger"
+                      data-i18n="tageditor.trash.empty.confirm"></button>
+              <button type="button" id="te-trash-empty-cancel" class="te-modal-btn"
+                      data-i18n="tageditor.trash.empty.cancel"></button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -901,6 +955,9 @@ function initTagEditor() {
           prefill(d.song);
           setMsg(t("tageditor.convert.ok", {trash: d.song.trashed_to || ""}), false);
           loadNonMp3();
+          // A convert moves the original into the trash, so refresh the trash
+          // list too (it now has one more file).
+          loadTrash();
         } else {
           setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
         }
@@ -955,6 +1012,139 @@ function initTagEditor() {
     });
     loadNonMp3();   // initial fetch on page load
   }
+
+  // --- Trash (Papierkorb) manager -------------------------------------------
+  // Read-only listing of the entire .charts-trash tree (per-file + total size),
+  // a per-file permanent delete and an empty-whole-trash action. Both delete
+  // paths are confirmed by a modal; the server additionally enforces the
+  // trash-root scoping and (for empty) an explicit confirm sentinel. Fail-open.
+  let _trashPendingPath = null;   // absolute path queued for a per-file delete
+
+  async function loadTrash() {
+    const listEl = document.getElementById("te-trash-list");
+    const totalEl = document.getElementById("te-trash-total");
+    if (!listEl) return;
+    try {
+      const r = await fetch("/api/tageditor/trash", {cache: "no-store"});
+      const d = await r.json();
+      if (!r.ok || !d || !d.ok) {
+        listEl.innerHTML = `<div class="s-err">${t("tageditor.trash.error")}</div>`;
+        if (totalEl) totalEl.textContent = "";
+        return;
+      }
+      if (totalEl) {
+        totalEl.textContent = t("tageditor.trash.total",
+          {size: d.total_human, count: d.count});
+      }
+      if (!d.entries.length) {
+        listEl.innerHTML = `<div class="muted-txt">${t("tageditor.trash.empty_state")}</div>`;
+        return;
+      }
+      let html = d.entries.map(e =>
+        `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.rel_path)}">` +
+        `<span class="te-trash-path">${esc(e.rel_path)}</span>` +
+        `<span class="badge te-trash-fmt">${esc(e.format)}</span>` +
+        `<span class="te-trash-size">${esc(e.size_human)}</span>` +
+        `<button type="button" class="btn-sm te-trash-del">${esc(t("tageditor.trash.delete.btn"))}</button>` +
+        `</div>`).join("");
+      if (d.truncated) {
+        html += `<div class="muted-txt te-trash-trunc">` +
+          `${esc(t("tageditor.trash.truncated", {n: d.entries.length}))}</div>`;
+      }
+      listEl.innerHTML = html;
+    } catch (e6) {
+      listEl.innerHTML = `<div class="s-err">${t("tageditor.trash.error")}</div>`;
+      if (totalEl) totalEl.textContent = "";
+    }
+  }
+
+  const trashList = document.getElementById("te-trash-list");
+  const trashDelDialog = document.getElementById("te-trash-delete-dialog");
+  const trashDelWarn = document.getElementById("te-trash-delete-warn");
+  const trashDelConfirm = document.getElementById("te-trash-delete-confirm");
+  const trashDelCancel = document.getElementById("te-trash-delete-cancel");
+
+  if (trashList && trashDelDialog) {
+    // A click on a row's Delete button opens the per-file confirm modal showing
+    // the file's rel_path; only the confirming click POSTs the absolute path.
+    trashList.addEventListener("click", (e) => {
+      const btn = e.target.closest(".te-trash-del");
+      if (!btn) return;
+      const row = e.target.closest(".te-trash-row");
+      if (!row) return;
+      _trashPendingPath = row.getAttribute("data-path");
+      const rel = row.getAttribute("data-rel") || "";
+      if (trashDelWarn) {
+        trashDelWarn.textContent = t("tageditor.trash.delete.warn", {path: rel});
+      }
+      trashDelDialog.hidden = false;
+    });
+    if (trashDelCancel) trashDelCancel.addEventListener("click", () => {
+      trashDelDialog.hidden = true;
+      _trashPendingPath = null;
+    });
+    if (trashDelConfirm) trashDelConfirm.addEventListener("click", async () => {
+      trashDelDialog.hidden = true;
+      const path = _trashPendingPath;
+      _trashPendingPath = null;
+      if (!path) return;
+      const fd = new FormData();
+      fd.append("path", path);
+      try {
+        const r = await fetch("/api/tageditor/trash/delete",
+          {method: "POST", body: fd, cache: "no-store"});
+        const d = await r.json();
+        if (r.ok && d && d.ok) {
+          setMsg(t("tageditor.trash.delete.ok", {path: d.deleted || ""}), false);
+        } else {
+          setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+        }
+      } catch (e7) {
+        setMsg(t("tageditor.unreachable"), true);
+      }
+      loadTrash();   // refresh list + total regardless of outcome
+    });
+  }
+
+  const trashRefresh = document.getElementById("te-trash-refresh");
+  if (trashRefresh) trashRefresh.addEventListener("click", () => loadTrash());
+
+  const trashEmptyBtn = document.getElementById("te-trash-empty");
+  const trashEmptyDialog = document.getElementById("te-trash-empty-dialog");
+  const trashEmptyConfirm = document.getElementById("te-trash-empty-confirm");
+  const trashEmptyCancel = document.getElementById("te-trash-empty-cancel");
+  if (trashEmptyBtn && trashEmptyDialog) {
+    trashEmptyBtn.addEventListener("click", () => { trashEmptyDialog.hidden = false; });
+    if (trashEmptyCancel) trashEmptyCancel.addEventListener("click", () => {
+      trashEmptyDialog.hidden = true;
+    });
+    if (trashEmptyConfirm) trashEmptyConfirm.addEventListener("click", async () => {
+      trashEmptyDialog.hidden = true;
+      const fd = new FormData();
+      // The server requires this exact sentinel; a stray submit cannot empty.
+      fd.append("confirm", "empty");
+      try {
+        const r = await fetch("/api/tageditor/trash/empty",
+          {method: "POST", body: fd, cache: "no-store"});
+        const d = await r.json();
+        if (r.ok && d && d.ok) {
+          if (d.failed) {
+            setMsg(t("tageditor.trash.empty.partial",
+              {removed: d.removed, failed: d.failed}), false);
+          } else {
+            setMsg(t("tageditor.trash.empty.ok", {removed: d.removed}), false);
+          }
+        } else {
+          setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+        }
+      } catch (e8) {
+        setMsg(t("tageditor.unreachable"), true);
+      }
+      loadTrash();
+    });
+  }
+
+  if (trashList) loadTrash();   // initial fetch on page load
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

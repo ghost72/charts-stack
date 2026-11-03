@@ -26,7 +26,7 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, collector, config, convert, editor, i18n, library
+from . import audio, collector, config, convert, editor, i18n, library, trash
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -324,6 +324,68 @@ async def api_tageditor_nonmp3(request: Request):
     # Stable, scannable order: sort by the display rel_path, case-insensitive.
     out.sort(key=lambda r: r["rel_path"].lower())
     return JSONResponse({"ok": True, "files": out, "truncated": truncated})
+
+
+# --- Trash (Papierkorb) manager routes (list / delete / empty) --------------
+# All three behind the SAME _current_user auth gate (401 anon) as every other
+# /api/tageditor/* route; NOT behind TAGEDITOR_AUDIO_ENABLED (that flag gates
+# only the audio stream/download endpoint). The destructive routes resolve the
+# path through trash._guarded_trash_realpath, which requires the realpath to sit
+# strictly inside MUSIC_DIR/.charts-trash (on top of the UNCHANGED MUSIC_DIR
+# guard), so no library file outside the trash can be deleted here.
+
+@app.get("/api/tageditor/trash")
+async def api_tageditor_trash(request: Request):
+    # Read-only list of the entire MUSIC_DIR/.charts-trash tree with per-file +
+    # total size. Fail-open: an absent/unreadable trash yields an empty list.
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    scan = trash.scan_trash()
+    # Strip the internal absolute 'path' off each entry for the client (the UI
+    # only displays rel_path; the absolute path rides in a data-attribute built
+    # client-side from the delete route's echo, never leaked in the list body).
+    entries = [{"rel_path": e["rel_path"], "ext": e["ext"], "format": e["format"],
+                "bytes": e["bytes"], "size_human": e["size_human"],
+                "path": e["path"]}
+               for e in scan["entries"]]
+    return JSONResponse({
+        "ok": True,
+        "entries": entries,
+        "total_bytes": scan["total_bytes"],
+        "total_human": trash._human_size(scan["total_bytes"]),
+        "count": scan["count"],
+        "truncated": scan["truncated"],
+    })
+
+
+@app.post("/api/tageditor/trash/delete")
+async def api_tageditor_trash_delete(request: Request, path: str = Form("")):
+    # Permanently delete ONE trashed file. The trash-root guard + existence check
+    # live in trash.delete_file (unit-testable without HTTP); a path outside the
+    # trash is refused (path_outside / trash_path_outside) and NEVER deleted.
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({"ok": True, **trash.delete_file(path)})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
+@app.post("/api/tageditor/trash/empty")
+async def api_tageditor_trash_empty(request: Request, confirm: str = Form("")):
+    # Permanently empty the whole trash. The explicit confirm sentinel ("empty")
+    # is enforced server-side in trash.empty_trash (the UI's prominent confirm is
+    # defense in depth, not the only gate); without it nothing is removed. Scope
+    # is confined to the trash root and symlinks are never followed out.
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({"ok": True, **trash.empty_trash(confirm)})
+    except editor.EditorError as err:
+        return _editor_error(err)
 
 
 # Known audio content types for the stream (extension -> MIME). Only these

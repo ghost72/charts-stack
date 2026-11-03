@@ -185,6 +185,39 @@ werden übersprungen (gleiche Index-Filterung wie die Suche). Jeder Eintrag zeig
 den Library-relativen Pfad + das Format und bietet **Im Tag-Editor öffnen**, um
 den Song oben zu laden (z. B. um ihn in MP3 umzuwandeln).
 
+**Papierkorb-Verwaltung (unterhalb der Nicht-MP3-Liste).** Der ganze Baum unter
+`/music/Music/.charts-trash/` wird aufgelistet – mit **Pfad** (relativ zum
+Papierkorb, inkl. Quell-Unterordner `dedup-<Datum>/…` oder `flac2mp3-<Datum>/…`),
+**Format** und **Grösse pro Datei** sowie – ganz oben – der **Gesamtgrösse** und
+der **Dateianzahl** des Papierkorbs. Aufgelistet werden **alle** Dateien (auch
+Nicht-Audio wie `cover.jpg`, die beim Verschieben mitwandern). Die Liste ist
+read-only und TTL-gecacht. Zwei Aktionen:
+
+- **Einzelne Datei endgültig löschen** (harter Löschvorgang) – mit Bestätigung
+  pro Datei.
+- **Ganzen Papierkorb leeren** – mit einer deutlichen Bestätigung. Das ist
+  **unwiderruflich**: der Papierkorb IST die letzte reversible Stufe, was hier
+  gelöscht wird, ist endgültig weg.
+
+**Sicherheit:** Liste **und** Löschen/Leeren liegen hinter demselben Auth-Gate
+wie jede andere `/api/tageditor/*`-Route (401 anonym). Das Löschen ist **streng
+auf `.charts-trash` beschränkt**: über die bestehende MUSIC_DIR-Prüfung hinaus
+verlangt eine zusätzliche Realpath-Containment-Prüfung, dass der aufgelöste Pfad
+**innerhalb** des Papierkorbs liegt – so kann **keine** Library-Datei ausserhalb
+des Papierkorbs über diesen Endpoint gelöscht werden (Schutz gegen Traversal UND
+gegen einen Bug, der einen Nicht-Papierkorb-Pfad durchreicht). **Symlinks werden
+nie aus dem Papierkorb heraus verfolgt**, und das Leeren verlangt serverseitig
+ein **ausdrückliches Confirm-Flag** (kein Ein-Klick).
+
+> **Warum diese manuelle Sicht/Steuerung?** Die automatische Aufbewahrung
+> (`TRASH_RETENTION_DAYS`, Default 30, in **charts-import**) löscht nach
+> **Datei-mtime**, und Dateien wandern per `os.rename` in den Papierkorb, was
+> ihre **ursprüngliche (oft alte) mtime** behält. Eine Datei, die beim Verschieben
+> schon alt war, kann also bereits „>30 Tage" sein und beim **nächsten**
+> charts-import-Cleanup weggeräumt werden – nicht erst 30 Tage nach dem
+> Verschieben. Darum zeigt die Verwaltung die Grössen und lässt gezielt
+> prüfen/löschen, statt sich auf den altersbasierten Sweep zu verlassen.
+
 > **ffmpeg** ist seit diesem Feature **Teil des charts-config-Images** (für die
 > MP3-320-CBR-Umwandlung), via `apt-get` installiert. Ohne den Audio-/Download-
 > Endpoint hat es keine weitere Funktion.

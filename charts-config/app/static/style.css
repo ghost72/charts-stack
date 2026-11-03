@@ -702,3 +702,40 @@ body.login {
 .te-nonmp3-fmt { margin-left: 0; }
 .te-nonmp3-open { flex: 0 0 auto; }
 .te-nonmp3-trunc { margin-top: 4px; }
+
+/* Trash (Papierkorb) manager, below the non-MP3 list. The delete/empty actions
+   are the most destructive in the stack, so their buttons get a distinct danger
+   (red) treatment to signal irreversibility. */
+.te-trash { margin-top: 24px; }
+.te-trash-heading { margin: 0 0 .3rem; font-size: 1rem; }
+.te-trash-hint { margin-bottom: .6rem; }
+.te-trash-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-bottom: .6rem;
+}
+.te-trash-total { font-size: .85rem; font-weight: 600; margin-right: auto; }
+.te-trash-list { display: flex; flex-direction: column; gap: 5px; }
+.te-trash-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid #3a3048; background: var(--tile);
+}
+.te-trash-path { flex: 1 1 200px; min-width: 0; word-break: break-all; font-size: .85rem; }
+.te-trash-fmt { margin-left: 0; }
+.te-trash-size { flex: 0 0 auto; font-size: .82rem; color: var(--muted); min-width: 70px; text-align: right; }
+.te-trash-trunc { margin-top: 4px; }
+/* Danger buttons (empty-trash + the modal delete/empty confirms). Red to make
+   the permanent, irreversible nature unmistakable. */
+.te-trash-empty-btn {
+  flex: 0 0 auto;
+  border: 1px solid #7a2a2a; border-radius: 8px;
+  background: #3a1616; color: #ffb4b4;
+  padding: 6px 12px; font-size: .8rem; cursor: pointer; white-space: nowrap;
+}
+.te-trash-empty-btn:hover { filter: brightness(1.2); border-color: #c04545; }
+.te-del-btn { color: #ffb4b4; border-color: #7a2a2a; }
+.te-modal-btn.danger {
+  background: #c0392b; border-color: transparent; color: #fff;
+}
+.te-modal-btn.danger:hover { filter: brightness(1.1); }
+.te-danger-text { color: #ffb4b4; }
