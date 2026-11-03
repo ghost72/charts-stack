@@ -65,6 +65,25 @@ def _guarded_realpath(path: str) -> str:
     return real
 
 
+def _rel_to_music(path: str) -> str:
+    """
+    Display-only library-relative path for the read-only file-info field.
+
+    Fail-closed for the DISPLAY string: realpath-resolve the input and run the
+    SAME inside-MUSIC_DIR check _guarded_realpath uses. When the real path is
+    inside MUSIC_DIR it returns os.path.relpath(real, MUSIC_DIR); when it is NOT
+    (which should never happen on the normal post-guard call graph) it returns
+    ONLY os.path.basename(path) - never a leading path - so this security-
+    sensitive screen can never leak a non-library location. It is NOT a guard
+    (it never raises); it is the display formatter for an already-guarded path.
+    """
+    base = os.path.realpath(config.MUSIC_DIR)
+    real = os.path.realpath(path or "")
+    if real == base or real.startswith(base + os.sep):
+        return os.path.relpath(real, base)
+    return os.path.basename(path or "")
+
+
 # --- normalization (the single comparison/verify basis) ---------------------
 
 def _norm_field(name: str, value: str) -> str:
@@ -109,8 +128,15 @@ def search(q: str, limit: int = 20) -> list[dict]:
 def _reload(path: str) -> dict:
     """
     Read the authoritative current state of one file for the UI: editable tags,
-    is_mp3, origin, and a size-bounded cover data: URL (omitted + oversize flag
-    when the embedded image exceeds TAGEDITOR_COVER_MAX_BYTES).
+    is_mp3, origin, a size-bounded cover data: URL (omitted + oversize flag when
+    the embedded image exceeds TAGEDITOR_COVER_MAX_BYTES), plus the read-only
+    file/bitrate info and the audio play/download availability flags.
+
+    Precondition: `path` MUST already be a _guarded_realpath-validated path
+    inside MUSIC_DIR. Every caller (load_song, save_song via _finalize_save /
+    the in-place paths, move_after_decision) guards before calling _reload; the
+    rel_path display field relies on this (and _rel_to_music fails closed to a
+    bare basename as a belt-and-braces backstop if a future caller forgets).
     """
     fields = tags.read_editable_tags(path)
     entries = manifest.load_entries(config.MANIFEST_FILE)
@@ -126,6 +152,18 @@ def _reload(path: str) -> dict:
         "is_mp3": fields["is_mp3"],
     }
     song["cover"] = _cover_preview(path)
+    # Read-only file/bitrate info for the field under Track (always on).
+    info = library.read_audio_info(path)
+    song["rel_path"] = _rel_to_music(path)
+    song["bitrate_kbps"] = info["bitrate_kbps"]
+    song["ext"] = info["ext"]
+    song["is_lossless"] = info["is_lossless"]
+    # Audio play/download availability. 'audio_enabled' is the server opt-in
+    # flag (controls whether ANY play/download control renders); 'playable' is
+    # whether the browser can play it (MP3 only) AND the flag is on. When the
+    # flag is off the UI renders NO play/download controls at all.
+    song["audio_enabled"] = config.TAGEDITOR_AUDIO_ENABLED
+    song["playable"] = info["playable"] and config.TAGEDITOR_AUDIO_ENABLED
     return song
 
 

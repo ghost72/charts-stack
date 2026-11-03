@@ -127,6 +127,31 @@ Notes and limits:
   nothing and nothing is writable. **`/charts` stays read-only** – the manifest
   is only read there.
 
+**File + bitrate (read-only).** Below the Track field a read-only row shows the
+song's **library-relative path** and its **bitrate/format** (`320 kbps`, or
+`FLAC (lossless)` for lossless formats). Helps spot leftover non-MP3 (FLAC)
+files. Purely informational – never saved.
+
+**In-browser play + download (optional, default OFF).** When the
+`TAGEDITOR_AUDIO_ENABLED` flag is on, the loaded song's cover shows a **play
+overlay** (plays the file through an HTML5 `<audio>` element, with Range/seek
+support) and, below it, a **download button**. Play works for **MP3 only** – for
+FLAC/lossless the play button is disabled (hint "Only MP3 can be played here")
+because browsers (especially Safari) often cannot decode them; **download works
+for all formats** (including FLAC).
+
+> **Security note (important).** The audio/download endpoint
+> (`GET /api/tageditor/audio`) is triple-gated: **flag-gated**
+> (`TAGEDITOR_AUDIO_ENABLED`, **default OFF** – a fresh clone has no audio egress
+> at all, fail-closed), **auth-gated** (the same login session as every other
+> `/api/tageditor/*` route – `401` when unauthenticated) **and** **path-guarded**
+> (the same `MUSIC_DIR` path guard as save – a traversal/outside path is refused,
+> no arbitrary file read). The flag is an **additional** gate, not a replacement
+> for the login or the path guard. Turn it on **only for private/authenticated**
+> use. If charts-config is exposed to the internet, use a **strong password** and
+> ideally put it behind a **VPN/reverse-proxy auth**. This is a private tool for
+> your own library, **not a public music server**.
+
 ## Where the data comes from
 
 - **Deezer / Last.fm:** direct query of the public HTTP APIs (WAN). Without
@@ -164,6 +189,7 @@ exposed.
 | `TAGEDITOR_INDEX_TTL` | `300` | tag-editor search-index rebuild cadence (seconds); supplied by compose |
 | `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max cover upload/fetch size (8 MiB); supplied by compose |
 | `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | cover URL fetch timeout (seconds); supplied by compose |
+| `TAGEDITOR_AUDIO_ENABLED` | `0` | in-browser play + download of a loaded song (**default OFF**, fail-closed). When on, the audio endpoint is additionally behind the login **and** the path guard; turn on only for private/authenticated use (see the security note) |
 
 ## Access
 

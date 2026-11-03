@@ -184,6 +184,54 @@ def _extract_title_from_filename(filename: str) -> str:
     return base.strip()
 
 
+# --- Audio info reader (read-only file/bitrate field + play/download gating) --
+# Lossless formats a browser's <audio> generally cannot (reliably) decode and
+# for which a "kbps" number is meaningless. FLAC is the one that matters for this
+# library (leftover non-MP3 files); the rest are listed for correctness.
+_LOSSLESS_EXTS = {".flac", ".wav", ".ape", ".aiff", ".aif"}
+
+
+def read_audio_info(path: str) -> dict:
+    """
+    Read display-only audio info for the tag editor's read-only field and the
+    play/download gating. Pure + fail-open: it NEVER raises; an unreadable file
+    yields a best-effort dict derived from the extension alone (bitrate_kbps 0).
+
+    Returns:
+      {
+        "ext": ".mp3",            # lowercased extension
+        "is_mp3": True,           # only MP3 plays natively in-browser
+        "is_lossless": False,     # FLAC/WAV/... (the frontend shows a marker)
+        "playable": True,         # == is_mp3 (browsers may not decode FLAC)
+        "bitrate_kbps": 320,      # kbps (mutagen bit/s -> kbps); 0 if unknown
+      }
+
+    The human-readable label (e.g. "320 kbps" / "FLAC (lossless)") is composed
+    on the frontend via i18n so no German/English is baked into a Python string;
+    this reader only returns structured, language-neutral fields.
+    """
+    ext = os.path.splitext(path or "")[1].lower()
+    is_mp3 = ext == ".mp3"
+    is_lossless = ext in _LOSSLESS_EXTS
+    bitrate_kbps = 0
+    try:
+        from mutagen import File as MutagenFile
+        audio = MutagenFile(path)
+        if audio is not None and audio.info is not None:
+            br = getattr(audio.info, "bitrate", 0) or 0
+            bitrate_kbps = int(br / 1000)  # mutagen returns bit/s -> kbps
+    except Exception:
+        # Fail-open: keep the extension-derived fields, leave bitrate at 0.
+        pass
+    return {
+        "ext": ext,
+        "is_mp3": is_mp3,
+        "is_lossless": is_lossless,
+        "playable": is_mp3,
+        "bitrate_kbps": bitrate_kbps,
+    }
+
+
 # --- "Folder follows the artist tag" move primitives ------------------------
 # When a tag-editor save changes the Artist, the edited file is moved on disk
 # into the resolved artist folder so a path-derived search no longer surfaces
