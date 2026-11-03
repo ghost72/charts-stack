@@ -570,6 +570,22 @@ def _folded_query(query: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", q)
 
 
+def _stripped_folded_query(query: str) -> str:
+    """Fold a query the SAME way _title_key folds a title: run it through the
+    shared _strip_title_decoration pipeline (strip trailing version/mix/bitrate
+    decoration) BEFORE the [a-z0-9] fold.
+
+    This makes the query side SYMMETRIC with the index title_key side. The index
+    stores _title_key(title), which already strips a decoration tail, so a
+    search for the full/real title ("Diamonds (remix)") must strip the same tail
+    to fold to the same key ("diamonds"). Reuses _strip_title_decoration
+    unchanged (the pinned shared helper) - this only folds the QUERY the way the
+    key is folded, it does NOT alter that helper's behavior.
+    """
+    q = _strip_title_decoration((query or "").lower())
+    return _folded_query(q)
+
+
 def _build_records(music_dir: str) -> list[dict]:
     """
     One bounded os.walk over music_dir collecting a record per audio file. NO
@@ -719,19 +735,67 @@ def search(query: str, limit: int = 20) -> list[dict]:
     if len(q) < 2:
         return []
     limit = max(1, min(50, limit))
-    folded = _folded_query(q[:200])
+    q = q[:200]
+    # Two folded forms of the query:
+    #   folded  - raw accent-fold (matches an artist key and a verbatim title
+    #             substring exactly as before);
+    #   sfolded - decoration-stripped fold, SYMMETRIC with the index title_key
+    #             (which _title_key already stripped). This is what fixes the
+    #             index/query asymmetry: the user types the full title
+    #             "Diamonds (remix)" but the index key is "diamonds", so the
+    #             query must strip the same "(remix)" tail to fold to "diamonds".
+    folded = _folded_query(q)
+    sfolded = _stripped_folded_query(q)
     if not folded:
         return []
     index = build_search_index(config.MUSIC_DIR)
     out: list[dict] = []
     for rec in index:
-        combined = rec["artist_key"] + rec["title_key"]
-        if (folded in rec["artist_key"] or folded in rec["title_key"]
-                or folded in combined):
+        if _matches(rec, folded, sfolded):
             out.append(rec)
             if len(out) >= limit:
                 break
     return out
+
+
+# Minimum title_key length for the REVERSE containment test below. A key must
+# carry at least this many folded chars before "key is a substring of the query"
+# is allowed, so a very short/degenerate key (e.g. a one-letter folder) cannot
+# match an unrelated longer query.
+_REVERSE_MATCH_MIN_KEY = 3
+
+
+def _matches(rec: dict, folded: str, sfolded: str) -> bool:
+    """
+    Decide whether a record matches the folded query forms.
+
+    - Artist axis (unchanged): the raw folded query is a substring of the
+      artist key.
+    - Title axis (symmetric fix): a match when EITHER folded form is a substring
+      of the title key (so "Diamonds (remix)" / "diamonds" both fold into
+      "diamonds"), OR the title key is a substring of the decoration-stripped
+      query (REVERSE direction - the query carries extra decoration words the
+      index already stripped, e.g. bare "diamonds remix" whose stripped fold is
+      "diamondsremix" still contains the key "diamonds"). The reverse test needs
+      a non-trivial key (>= _REVERSE_MATCH_MIN_KEY) so a short key cannot latch
+      onto an unrelated query. A genuinely distinct tail like "Song (Part 3)"
+      folds to "songpart3", which neither contains nor is contained by
+      "songpart2", so it stays distinct - no over-collapse.
+    - Combined axis (unchanged): the raw folded query is a substring of
+      'artist_key + title_key' (a query that spans the boundary contiguously).
+    """
+    artist_key = rec["artist_key"]
+    title_key = rec["title_key"]
+    if folded in artist_key:
+        return True
+    if folded in title_key or (sfolded and sfolded in title_key):
+        return True
+    if (len(title_key) >= _REVERSE_MATCH_MIN_KEY and sfolded
+            and title_key in sfolded):
+        return True
+    if folded in artist_key + title_key:
+        return True
+    return False
 
 
 def classify(path: str, manifest_entries: dict) -> str:

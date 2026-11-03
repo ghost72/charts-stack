@@ -111,6 +111,63 @@ def test_combined_artist_title_match(music_tree):
     assert music_tree["manifest"] in paths
 
 
+# --- index/query symmetry: full/decorated title finds the stripped key -------
+
+@pytest.fixture
+def remix_tree(tmp_path, monkeypatch):
+    """A Lidarr-style album whose title tail is a version decoration. The index
+    folds the display title via _title_key, which strips '(remix)' to the key
+    'diamonds'; the test proves the QUERY folds symmetrically so the user's full
+    title still finds the file."""
+    root = tmp_path / "Music"
+    root.mkdir()
+    # title_key('Diamonds (remix)') == 'diamonds' (decoration stripped).
+    p_remix = _mk_song(str(root), "Rihanna", "Diamonds (remix) (2012)",
+                       "Rihanna - Diamonds (remix) - 01 - Diamonds (remix).mp3")
+    # A deliberately DISTINCT numeric tail that must stay distinct: title_key
+    # 'songpart2'. A 'Song (Part 3)' query must NOT collapse onto it.
+    p_part2 = _mk_song(str(root), "Some Artist", "Album",
+                       "Song (Part 2).mp3")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"entries": {}}), encoding="utf-8")
+    monkeypatch.setattr(config, "MUSIC_DIR", str(root))
+    monkeypatch.setattr(config, "MANIFEST_FILE", str(manifest_path))
+    monkeypatch.setattr(config, "TAGEDITOR_INDEX_TTL", 300)
+    return {"root": str(root), "remix": p_remix, "part2": p_part2}
+
+
+@pytest.mark.parametrize("query", [
+    "diamonds",            # plain base title (worked before)
+    "diamonds (remix)",    # full title with the version parenthetical
+    "diamonds remix",      # full title typed without parentheses
+    "rihanna",             # artist path still works
+])
+def test_decorated_title_is_findable(remix_tree, query):
+    """The file indexed under the stripped key 'diamonds' is found whether the
+    user types the base title, the full parenthetical title, or the full title
+    without parentheses - and the artist query still finds it."""
+    out = editor.search(query, limit=20)
+    paths = {r["path"] for r in out}
+    assert remix_tree["remix"] in paths
+
+
+def test_distinct_numeric_tail_not_overcollapsed(remix_tree):
+    """A genuinely distinct tail must stay distinct: querying 'Song (Part 3)'
+    must NOT return the 'Song (Part 2)' file (no over-stripping of numeric
+    parentheticals, which _strip_title_decoration keeps)."""
+    out = editor.search("Song (Part 3)", limit=20)
+    paths = {r["path"] for r in out}
+    assert remix_tree["part2"] not in paths
+
+
+def test_matching_part2_query_still_finds_part2(remix_tree):
+    """Sanity counterpart: the matching 'Song (Part 2)' query DOES find it, so
+    the distinctness above is about the differing tail, not a dead code path."""
+    out = editor.search("Song (Part 2)", limit=20)
+    paths = {r["path"] for r in out}
+    assert remix_tree["part2"] in paths
+
+
 # --- origin classification --------------------------------------------------
 
 def _origin_for(out, path):
