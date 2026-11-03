@@ -161,6 +161,34 @@ FLAC).
 > Passwort** und am besten einen **VPN-/Reverse-Proxy-Zugang** davor. Das ist ein
 > privates Werkzeug für die eigene Library, **kein öffentlicher Musik-Server**.
 
+**In MP3 umwandeln (pro Nicht-MP3-Song).** Ist ein Nicht-MP3-Audiofile geladen
+(FLAC/M4A/OGG/…), erscheint in der Aktionszeile ein Button **In MP3 umwandeln**.
+Nach einer Bestätigung (ehrlicher Warnhinweis: **FLAC→MP3 ist eine
+Qualitätsverschlechterung**, verlustfrei → verlustbehaftet, nicht umkehrbar)
+wandelt der Dienst die Datei per ffmpeg in **MP3 320 kbps CBR** um, übernimmt
+Tags + eingebettetes Cover, behält die mtime („date added") und legt das
+Ergebnis als `<name>.mp3` im selben Ordner ab. Das **Original wird NICHT
+gelöscht**, sondern reversibel in den Papierkorb
+`/music/Music/.charts-trash/flac2mp3-<Datum>/` verschoben (gleiche Konvention
+wie das Dedup). Die Herkunftsmarker werden geleert → der Song ist danach
+**handgepflegt** (die Automatik fasst ihn nicht mehr an). Schlägt ffmpeg fehl,
+bleibt das Original unangetastet und nichts wandert in den Papierkorb. Der
+Convert-Button ist **nur auth-geschützt** (wie alle `/api/tageditor/*`-Routen),
+**nicht** hinter `TAGEDITOR_AUDIO_ENABLED` – dieses Flag gilt nur für den
+Abspiel-/Download-Endpoint. Der bewusste Klick pro Song verstößt nicht gegen die
+Regel „die Automatik fasst den handgepflegten Bestand nicht an".
+
+**Nicht-MP3-Liste (unterhalb des Editors).** Eine schreibgeschützte Liste zeigt
+**nur Nicht-MP3-Audiodateien** der Library (FLAC/M4A/OGG/… – keine
+txt/cover.jpg/.m3u/.nfo). Papierkorb-, `@eaDir`-, `#recycle`- und Punkt-Ordner
+werden übersprungen (gleiche Index-Filterung wie die Suche). Jeder Eintrag zeigt
+den Library-relativen Pfad + das Format und bietet **Im Tag-Editor öffnen**, um
+den Song oben zu laden (z. B. um ihn in MP3 umzuwandeln).
+
+> **ffmpeg** ist seit diesem Feature **Teil des charts-config-Images** (für die
+> MP3-320-CBR-Umwandlung), via `apt-get` installiert. Ohne den Audio-/Download-
+> Endpoint hat es keine weitere Funktion.
+
 ## Woher die Daten kommen
 
 - **Deezer / Last.fm:** direkte Abfrage der öffentlichen HTTP-APIs (WAN). Ohne
@@ -199,6 +227,7 @@ kann von außen erreichbar sein.
 | `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max. Cover-Upload/-Download-Größe (8 MiB); von compose gesetzt |
 | `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | Timeout für Cover-URL-Abruf (Sekunden); von compose gesetzt |
 | `TAGEDITOR_AUDIO_ENABLED` | `0` | Im-Browser-Abspielen + Download eines geladenen Songs (**standardmäßig AUS**, fail-closed). An = Audio-Endpoint zusätzlich hinter Login **und** Pfad-Guard; nur für privaten/authentifizierten Zugriff einschalten (siehe Sicherheitshinweis) |
+| `TAGEDITOR_CONVERT_TIMEOUT` | `600` | Timeout (Sekunden) für eine einzelne FLAC→MP3-ffmpeg-Umwandlung; begrenzt ein hängendes ffmpeg |
 
 ## Zugriff
 

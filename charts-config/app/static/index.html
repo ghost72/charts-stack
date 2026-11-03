@@ -129,23 +129,32 @@
               </div>
             </div>
             <div class="te-cover">
-              <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
-              <!-- Rounded placeholder box: stays as a tidy empty card when no
-                   cover is loaded; the music-note placeholder SVG (same logo as
-                   charts-songrequest, copied per-service into this app's static)
-                   is centered while the box is empty and hidden once a real cover
-                   img is loaded. The img (overflow-clipped by the box) inherits
-                   the rounded corners when present. -->
-              <div class="te-cover-box">
-                <img class="te-cover-placeholder" src="/static/cover-placeholder.svg" alt="" aria-hidden="true">
-                <img id="te-cover-img" class="te-cover-img" alt="" hidden>
-                <!-- Play overlay on the cover (only rendered when the
-                     TAGEDITOR_AUDIO_ENABLED server flag is on AND a song is
-                     loaded). Enabled for MP3, disabled with an "MP3 only" hint
-                     for FLAC/lossless. Hidden by default; prefill() reveals it. -->
-                <button type="button" id="te-play" class="te-play-overlay" hidden
-                        data-i18n-title="tageditor.play.title" aria-label="Play">▶</button>
-                <audio id="te-audio" preload="none"></audio>
+              <!-- C1: the label + box are grouped in .te-cover-top so that
+                   .te-cover (justify-content:space-between) pins this group to
+                   the TOP and drops #te-download to the column BOTTOM, flush
+                   with the left .te-fileinfo line. The box keeps its top
+                   alignment with the first input. -->
+              <div class="te-cover-top">
+                <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
+                <!-- Rounded placeholder box: stays as a tidy empty card when no
+                     cover is loaded; the music-note placeholder SVG (same logo as
+                     charts-songrequest, copied per-service into this app's static)
+                     is centered while the box is empty and hidden once a real cover
+                     img is loaded. The img (overflow-clipped by the box) inherits
+                     the rounded corners when present. -->
+                <div class="te-cover-box">
+                  <img class="te-cover-placeholder" src="/static/cover-placeholder.svg" alt="" aria-hidden="true">
+                  <img id="te-cover-img" class="te-cover-img" alt="" hidden>
+                  <!-- Play overlay on the cover (only rendered when the
+                       TAGEDITOR_AUDIO_ENABLED server flag is on AND a song is
+                       loaded). Enabled for MP3, disabled with an "MP3 only" hint
+                       for FLAC/lossless. Hidden by default; prefill() reveals it.
+                       The play triangle lives in an inner span so the C2 sheen
+                       gradient does not fight the glyph. -->
+                  <button type="button" id="te-play" class="te-play-overlay" hidden
+                          data-i18n-title="tageditor.play.title" aria-label="Play"><span class="te-play-glyph">▶</span></button>
+                  <audio id="te-audio" preload="none"></audio>
+                </div>
               </div>
               <!-- Download button under the cover: works for ALL formats
                    (incl. FLAC), unlike play. Flag-gated like the play overlay. -->
@@ -165,6 +174,14 @@
           </div>
           <div class="te-actions">
             <span id="te-msg" class="te-msg"></span>
+            <!-- Convert-to-MP3 trigger: lives in the ALWAYS-ON actions row, NOT
+                 inside .te-cover (whose play/download children are revealed only
+                 when the TAGEDITOR_AUDIO_ENABLED flag is on). Its visibility is
+                 driven SOLELY by song.is_mp3 === false, independent of
+                 song.audio_enabled, so convert is reachable with the audio flag
+                 OFF (default) - the convert route is auth-gated, not flag-gated. -->
+            <button type="button" id="te-convert" class="te-convert" hidden
+                    data-i18n="tageditor.convert.btn">Convert to MP3</button>
           </div>
           <!-- Label legend: explains the two result badges shown on the right
                of each search row. Reuses the exact badge markup/classes
@@ -195,6 +212,33 @@
             <p id="te-move-question" class="te-modal-q"></p>
             <div id="te-move-buttons" class="te-modal-buttons"></div>
           </div>
+        </div>
+
+        <!-- Convert-to-MP3 confirm dialog (Feature A). Mirrors the move dialog
+             markup/classes. Opened by the #te-convert button; the honest
+             quality-downgrade warning is shown and only the confirming click
+             POSTs to /api/tageditor/convert. -->
+        <div id="te-convert-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-convert-title">
+            <h3 id="te-convert-title" data-i18n="tageditor.convert.title"></h3>
+            <p class="te-modal-q" data-i18n="tageditor.convert.warn"></p>
+            <div class="te-modal-buttons">
+              <button type="button" id="te-convert-confirm" class="te-modal-btn primary"
+                      data-i18n="tageditor.convert.confirm"></button>
+              <button type="button" id="te-convert-cancel" class="te-modal-btn"
+                      data-i18n="tageditor.convert.cancel"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Non-MP3 audio file list (Feature B): read-only, below the editor.
+             Lists only non-MP3 AUDIO files in the library (fetched from
+             /api/tageditor/nonmp3). Each row offers "open in tag editor". -->
+        <div class="te-nonmp3" id="te-nonmp3">
+          <h3 class="te-nonmp3-heading" data-i18n="tageditor.nonmp3.heading"></h3>
+          <div class="muted-txt te-nonmp3-hint" data-i18n="tageditor.nonmp3.hint"></div>
+          <div id="te-nonmp3-list" class="te-nonmp3-list"></div>
         </div>
       </div>
     </div>
@@ -716,7 +760,7 @@ function initTagEditor() {
     const audioEl = document.getElementById("te-audio");
     const dlLink = document.getElementById("te-download");
     if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); }
-    if (playBtn) { playBtn.textContent = "▶"; }
+    if (playBtn) setPlayGlyph(playBtn, "▶");
     if (!song.audio_enabled) {
       // Flag off (default): render NO play/download controls at all.
       if (playBtn) playBtn.hidden = true;
@@ -741,6 +785,13 @@ function initTagEditor() {
     const readOnly = song.is_mp3 === false;
     const note = document.getElementById("te-mp3only");
     note.hidden = !readOnly;
+    // Convert button: shown ONLY for a loaded non-MP3 song. Driven purely by
+    // song.is_mp3 === false - NEVER by song.audio_enabled - so it is reachable
+    // with the TAGEDITOR_AUDIO_ENABLED flag OFF (the convert route is
+    // auth-gated, not flag-gated). Independent of the audio_enabled branch
+    // above; the two code paths never touch each other.
+    const convertBtn = document.getElementById("te-convert");
+    if (convertBtn) convertBtn.hidden = (song.is_mp3 !== false);
     [...TE_FIELDS.map(f => "te-" + f), "te-cover-file", "te-cover-url"].forEach(id => {
       document.getElementById(id).disabled = readOnly;
     });
@@ -800,16 +851,109 @@ function initTagEditor() {
         audioEl.pause();
       }
     });
-    audioEl.addEventListener("play", () => { playBtn.textContent = "⏸"; });
-    audioEl.addEventListener("pause", () => { playBtn.textContent = "▶"; });
-    audioEl.addEventListener("ended", () => { playBtn.textContent = "▶"; });
+    audioEl.addEventListener("play", () => { setPlayGlyph(playBtn, "⏸"); });
+    audioEl.addEventListener("pause", () => { setPlayGlyph(playBtn, "▶"); });
+    audioEl.addEventListener("ended", () => { setPlayGlyph(playBtn, "▶"); });
     // Non-fatal play failure (e.g. the file vanished -> endpoint 404, or
     // 403/401): reset the button and surface a hint, never a stuck spinner.
     audioEl.addEventListener("error", () => {
       if (!audioEl.getAttribute("src")) return;   // ignore the reset .load()
-      playBtn.textContent = "▶";
+      setPlayGlyph(playBtn, "▶");
       setMsg(t("tageditor.play.error"), true);
     });
+  }
+
+  // Set the play/pause glyph into the inner .te-play-glyph span (the C2
+  // glassmorphism button keeps the glyph in a span so the ::before sheen does
+  // not fight it). Falls back to the button's own textContent if the span is
+  // somehow absent.
+  function setPlayGlyph(btn, glyph) {
+    const g = btn.querySelector(".te-play-glyph");
+    if (g) g.textContent = glyph; else btn.textContent = glyph;
+  }
+
+  // --- Convert-to-MP3 (Feature A) -------------------------------------------
+  // The #te-convert button (shown only for a loaded non-MP3 song, see prefill)
+  // opens a confirm dialog with the honest quality-downgrade warning. Only the
+  // confirming click POSTs to /api/tageditor/convert.
+  const convertBtn = document.getElementById("te-convert");
+  const convertDialog = document.getElementById("te-convert-dialog");
+  const convertConfirm = document.getElementById("te-convert-confirm");
+  const convertCancel = document.getElementById("te-convert-cancel");
+  if (convertBtn && convertDialog) {
+    convertBtn.addEventListener("click", () => { convertDialog.hidden = false; });
+    if (convertCancel) convertCancel.addEventListener("click", () => {
+      convertDialog.hidden = true;
+    });
+    if (convertConfirm) convertConfirm.addEventListener("click", async () => {
+      convertDialog.hidden = true;
+      const path = document.getElementById("te-path").value;
+      setMsg(t("tageditor.convert.working"), false);
+      const fd = new FormData();
+      fd.append("path", path);
+      try {
+        const r = await fetch("/api/tageditor/convert",
+          {method: "POST", body: fd, cache: "no-store"});
+        const d = await r.json();
+        if (r.ok && d && d.ok) {
+          // Rebind the editor to the now-MP3 song (prefill hides the Convert
+          // button, since it is now an MP3) and refresh the non-MP3 list.
+          prefill(d.song);
+          setMsg(t("tageditor.convert.ok", {trash: d.song.trashed_to || ""}), false);
+          loadNonMp3();
+        } else {
+          setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+        }
+      } catch (e4) {
+        setMsg(t("tageditor.unreachable"), true);
+      }
+    });
+  }
+
+  // --- Non-MP3 audio file list (Feature B) ----------------------------------
+  // Read-only list below the editor; fetched on load and after each convert.
+  // Each row shows the rel_path + a format badge and an "open in tag editor"
+  // button that loads that song into the editor above. Fail-open.
+  async function loadNonMp3() {
+    const listEl = document.getElementById("te-nonmp3-list");
+    if (!listEl) return;
+    try {
+      const r = await fetch("/api/tageditor/nonmp3", {cache: "no-store"});
+      const d = await r.json();
+      if (!r.ok || !d || !d.ok) {
+        listEl.innerHTML = `<div class="s-err">${t("tageditor.nonmp3.error")}</div>`;
+        return;
+      }
+      if (!d.files.length) {
+        listEl.innerHTML = `<div class="muted-txt">${t("tageditor.nonmp3.empty")}</div>`;
+        return;
+      }
+      let html = d.files.map(f =>
+        `<div class="te-nonmp3-row" data-path="${esc(f.path)}">` +
+        `<span class="te-nonmp3-path">${esc(f.rel_path)}</span>` +
+        `<span class="badge te-nonmp3-fmt">${esc(f.format)}</span>` +
+        `<button type="button" class="btn-sm te-nonmp3-open">${esc(t("tageditor.nonmp3.open"))}</button>` +
+        `</div>`).join("");
+      if (d.truncated) {
+        html += `<div class="muted-txt te-nonmp3-trunc">` +
+          `${esc(t("tageditor.nonmp3.truncated", {n: d.files.length}))}</div>`;
+      }
+      listEl.innerHTML = html;
+    } catch (e5) {
+      listEl.innerHTML = `<div class="s-err">${t("tageditor.nonmp3.error")}</div>`;
+    }
+  }
+  const nonMp3List = document.getElementById("te-nonmp3-list");
+  if (nonMp3List) {
+    nonMp3List.addEventListener("click", (e) => {
+      const row = e.target.closest(".te-nonmp3-row");
+      if (!row) return;
+      loadSong(row.getAttribute("data-path"));
+      // Scroll the editor into view so the loaded song is visible above.
+      const formEl = document.getElementById("te-form");
+      if (formEl) formEl.scrollIntoView({behavior: "smooth", block: "start"});
+    });
+    loadNonMp3();   // initial fetch on page load
   }
 
   form.addEventListener("submit", async (e) => {

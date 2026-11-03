@@ -26,7 +26,7 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, collector, config, editor, i18n
+from . import audio, collector, config, convert, editor, i18n, library
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -282,6 +282,48 @@ async def api_tageditor_move(
         return JSONResponse({"ok": True, "song": song})
     except editor.EditorError as err:
         return _editor_error(err)
+
+
+@app.post("/api/tageditor/convert")
+async def api_tageditor_convert(request: Request, path: str = Form("")):
+    # FLAC/non-MP3 -> MP3 320 kbps CBR convert. Behind the SAME _current_user
+    # auth gate as every other /api/tageditor/* route (401 anon). NOT behind
+    # TAGEDITOR_AUDIO_ENABLED: that flag gates only the audio stream/download
+    # endpoint; convert is a different capability, gated by auth alone. The path
+    # guard + extension allowlist + already-MP3 refusal live in
+    # convert.convert_to_mp3 (unit-testable without the HTTP layer).
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        song = convert.convert_to_mp3(path)
+        return JSONResponse({"ok": True, "song": song})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
+@app.get("/api/tageditor/nonmp3")
+async def api_tageditor_nonmp3(request: Request):
+    # Read-only list of the non-MP3 AUDIO files in the library (Feature B).
+    # Same _current_user auth gate (401 anon); NOT behind TAGEDITOR_AUDIO_ENABLED.
+    # Piggybacks on the TTL-cached search index, so it inherits the same pruning
+    # (audio-only, @eaDir/#recycle/.charts-trash/dot-folders skipped).
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    files, truncated = library.list_nonmp3(config.MUSIC_DIR)
+    out = []
+    for f in files:
+        ext = f["ext"]
+        out.append({
+            "path": f["path"],
+            "rel_path": editor._rel_to_music(f["path"]),
+            "ext": ext,
+            "format": ext[1:].upper() if ext else "?",
+        })
+    # Stable, scannable order: sort by the display rel_path, case-insensitive.
+    out.sort(key=lambda r: r["rel_path"].lower())
+    return JSONResponse({"ok": True, "files": out, "truncated": truncated})
 
 
 # Known audio content types for the stream (extension -> MIME). Only these

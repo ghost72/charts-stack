@@ -2,6 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# ffmpeg is required by the tag editor's FLAC->MP3 convert action (libmp3lame
+# for 320 kbps CBR). Installed before the Python deps so the layer caches well.
+# --no-install-recommends + cleaning apt lists keeps the image lean; libmp3lame
+# ships with Debian's ffmpeg build, so no extra codec package is needed.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

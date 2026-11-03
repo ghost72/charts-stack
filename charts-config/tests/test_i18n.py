@@ -105,6 +105,9 @@ def test_config_ui_keys_present():
         "config.ui.tageditor.play.mp3only",
         "config.ui.tageditor.play.error",
         "config.ui.tageditor.download.btn",
+        # Convert-to-MP3 + non-MP3 list frontend-critical keys (Feature A/B).
+        "config.ui.tageditor.convert.btn",
+        "config.ui.tageditor.nonmp3.heading",
     }
     for c in _SHIPPED:
         keys = set(_load_shipped(c))
