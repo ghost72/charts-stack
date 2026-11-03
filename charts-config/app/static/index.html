@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config2">
+<link rel="stylesheet" href="/static/style.css?v=config3">
 </head>
 <body>
 <header>
@@ -126,6 +126,17 @@
               <div class="te-fileinfo" id="te-fileinfo">
                 <span class="te-fileinfo-label" data-i18n="tageditor.label.fileinfo">File</span>
                 <span class="te-fileinfo-val" id="te-fileinfo-val"></span>
+                <!-- Convert-to-MP3 trigger: placed INLINE on the file-info row,
+                     immediately after the "Datei … · FLAC (verlustfrei)" text,
+                     so it reads "this file is FLAC -> convert it". NOT inside
+                     .te-cover (whose play/download children are revealed only
+                     when the TAGEDITOR_AUDIO_ENABLED flag is on). Its visibility
+                     is driven SOLELY by song.is_mp3 === false (song.ext fallback),
+                     independent of song.audio_enabled, so convert is reachable
+                     with the audio flag OFF (default) - the convert route is
+                     auth-gated, not flag-gated. -->
+                <button type="button" id="te-convert" class="te-convert" hidden
+                        data-i18n="tageditor.convert.btn">Convert to MP3</button>
               </div>
             </div>
             <div class="te-cover">
@@ -172,16 +183,11 @@
                    placeholder="…or image URL">
             <button type="submit" class="te-save" data-i18n="tageditor.btn.save">Save</button>
           </div>
+          <!-- Save-status line (the Convert button moved up onto the file-info
+               row). Kept as its own always-on row so a short status never
+               shifts the layout above it. -->
           <div class="te-actions">
             <span id="te-msg" class="te-msg"></span>
-            <!-- Convert-to-MP3 trigger: lives in the ALWAYS-ON actions row, NOT
-                 inside .te-cover (whose play/download children are revealed only
-                 when the TAGEDITOR_AUDIO_ENABLED flag is on). Its visibility is
-                 driven SOLELY by song.is_mp3 === false, independent of
-                 song.audio_enabled, so convert is reachable with the audio flag
-                 OFF (default) - the convert route is auth-gated, not flag-gated. -->
-            <button type="button" id="te-convert" class="te-convert" hidden
-                    data-i18n="tageditor.convert.btn">Convert to MP3</button>
           </div>
           <!-- Label legend: explains the two result badges shown on the right
                of each search row. Reuses the exact badge markup/classes
@@ -232,25 +238,41 @@
           </div>
         </div>
 
-        <!-- Non-MP3 audio file list (Feature B): read-only, below the editor.
-             Lists only non-MP3 AUDIO files in the library (fetched from
-             /api/tageditor/nonmp3). Each row offers "open in tag editor". -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Non-MP3 audio file list (Feature B): its OWN panel, a sibling of the tag
+       editor (not nested inside it), so it reads as a distinct bordered card
+       like the finder/energy sections. Read-only; lists only non-MP3 AUDIO
+       files in the library (fetched from /api/tageditor/nonmp3). Each row
+       offers "open in tag editor". -->
+  <section>
+    <h2 data-i18n="tageditor.nonmp3.heading">🎚️ Non-MP3 audio files</h2>
+    <div class="finder-hint" data-i18n="tageditor.nonmp3.hint"></div>
+    <div class="finder finder-full">
+      <div class="finder-box">
         <div class="te-nonmp3" id="te-nonmp3">
-          <h3 class="te-nonmp3-heading" data-i18n="tageditor.nonmp3.heading"></h3>
-          <div class="muted-txt te-nonmp3-hint" data-i18n="tageditor.nonmp3.hint"></div>
           <div id="te-nonmp3-list" class="te-nonmp3-list"></div>
         </div>
+      </div>
+    </div>
+  </section>
 
-        <!-- Trash (Papierkorb) manager: read-only listing of the entire
-             MUSIC_DIR/.charts-trash tree (per-file + total size), with a
-             per-file permanent delete and an empty-whole-trash action. The
-             delete/empty are the MOST destructive operations in the stack
-             (hard delete of files already at the last reversible stage), so the
-             server confines them strictly to .charts-trash and requires an
-             explicit confirm to empty. Fetched from /api/tageditor/trash. -->
+  <!-- Trash (Papierkorb) manager: its OWN panel, a sibling of the tag editor,
+       so it is clearly delineated from the editor and the non-MP3 list.
+       Read-only listing of the entire MUSIC_DIR/.charts-trash tree (per-file +
+       total size), with a per-file permanent delete and an empty-whole-trash
+       action. The delete/empty are the MOST destructive operations in the stack
+       (hard delete of files already at the last reversible stage), so the
+       server confines them strictly to .charts-trash and requires an explicit
+       confirm to empty. Fetched from /api/tageditor/trash. -->
+  <section>
+    <h2 data-i18n="section.trash">🗑️ Trash</h2>
+    <div class="finder-hint" data-i18n="tageditor.trash.hint"></div>
+    <div class="finder finder-full">
+      <div class="finder-box">
         <div class="te-trash" id="te-trash">
-          <h3 class="te-trash-heading" data-i18n="section.trash"></h3>
-          <div class="muted-txt te-trash-hint" data-i18n="tageditor.trash.hint"></div>
           <div class="te-trash-bar">
             <span class="te-trash-total" id="te-trash-total"></span>
             <button type="button" id="te-trash-refresh" class="btn-sm"
