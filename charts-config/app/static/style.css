@@ -394,13 +394,21 @@ body.login {
    so it reads as part of the field stack. Muted, wraps on narrow screens. */
 .te-fileinfo {
   grid-column: 1 / -1;
-  /* center alignment so the inline Convert button (non-MP3 only) lines up
-     vertically with the file-info text; wraps to its own line on narrow rows. */
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  /* ONE row shared by: "Datei" label + the (possibly very long) path/format
+     text + the fixed-size Convert button pinned to the RIGHT. No wrap on the
+     row itself (nowrap) so the button can never drop to its own line or collide
+     with the text; instead the VALUE column (flex:1, min-width:0) absorbs the
+     remaining width and the path text wraps INSIDE it. align-items:flex-start
+     keeps the label/button aligned to the first text line when the path wraps
+     to several lines. */
+  display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 8px;
   font-size: .8rem; margin-top: 2px;
 }
-.te-fileinfo-label { color: var(--muted); }
-.te-fileinfo-val { color: var(--fg); word-break: break-all; }
+.te-fileinfo-label { color: var(--muted); flex: 0 0 auto; }
+/* Value takes all remaining width and wraps the long path within it; min-width:0
+   lets it shrink below its content so the pinned Convert button always keeps
+   its space (prevents the overflow that pushed the button off the row). */
+.te-fileinfo-val { color: var(--fg); flex: 1 1 auto; min-width: 0; word-break: break-word; }
 /* Cover block on the right of the top row: the "Cover" label stacked over the
    square cover box as a flex column. flex:0 0 auto so it keeps its intrinsic
    (square) width next to the flexible fields column. */
@@ -640,32 +648,61 @@ body.login {
   z-index: 2;
   width: 64px; height: 64px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, .28);
-  /* More see-through "water-drop": the dark base is dropped from .28 to .12 so
-     the cover art shows through the droplet, and the white sheen is softened a
-     touch. The backdrop-blur still frosts what is behind the glyph so it reads
-     as glass and the glyph stays legible over both light and dark covers. */
+  /* Faint light rim so the drop's edge catches a highlight against both light
+     and dark cover art (reads as the refractive edge of a water droplet). */
+  border: 1px solid rgba(255, 255, 255, .35);
+  /* Translucent glass "water-drop": an almost see-through tint (base alpha .06)
+     lets the cover art show through, while a convex top sheen (bright upper-left
+     radial highlight fading to near-nothing) gives the 3D glossy-droplet look.
+     The strong backdrop-blur frosts whatever is behind the glyph so it stays
+     legible over light AND dark covers even at this low opacity. */
   background:
-    radial-gradient(120% 120% at 30% 25%,
-                    rgba(255, 255, 255, .40) 0%,
-                    rgba(255, 255, 255, .08) 40%,
-                    rgba(255, 255, 255, .02) 60%),
-    rgba(40, 40, 60, .12);
-  backdrop-filter: blur(5px) saturate(1.15);
-  -webkit-backdrop-filter: blur(5px) saturate(1.15);   /* Safari/iOS */
+    radial-gradient(130% 130% at 32% 22%,
+                    rgba(255, 255, 255, .55) 0%,
+                    rgba(255, 255, 255, .14) 30%,
+                    rgba(255, 255, 255, .02) 55%,
+                    rgba(255, 255, 255, 0) 70%),
+    rgba(38, 38, 58, .06);
+  backdrop-filter: blur(9px) saturate(1.25);
+  -webkit-backdrop-filter: blur(9px) saturate(1.25);   /* Safari/iOS */
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, .40),                 /* soft drop shadow -> floats */
-    inset 0 1px 1px rgba(255, 255, 255, .5),       /* top sheen highlight */
-    inset 0 -8px 14px rgba(0, 0, 0, .16);          /* bottom inner shade -> volume */
+    0 8px 22px rgba(0, 0, 0, .42),                 /* soft outer drop shadow -> floats */
+    inset 0 2px 2px rgba(255, 255, 255, .65),      /* bright top sheen -> convex */
+    inset 0 -9px 16px rgba(0, 0, 0, .14),          /* bottom inner shade -> volume */
+    inset 0 0 0 1px rgba(255, 255, 255, .12);      /* faint inner light rim */
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .5);        /* glyph legible on light covers */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .6);        /* glyph legible on light covers */
   font-size: 1.5rem; line-height: 1;
   display: grid; place-items: center;
   cursor: pointer;
-  transition: transform .08s ease, box-shadow .12s ease;
+  filter: none;                                    /* no generic brightness filter */
+  transition: transform .08s ease, box-shadow .12s ease,
+              background-color .12s ease, backdrop-filter .12s ease;
 }
 .te-play-glyph { pointer-events: none; }           /* clicks land on the button */
-#te-form .te-play-overlay:hover  { transform: translate(-50%, -50%) scale(1.06); }
+/* HOVER: scoped to #te-form (specificity 1,1,1) so it OUTRANKS the generic
+   `.finder-box form button:hover` rule (0,1,3) that otherwise only slapped a
+   flat `filter:brightness(1.1)` on the droplet (no real color change). We both
+   neutralise that leaked filter (filter:none) and give a clear, on-theme glass
+   change: a touch more opaque fill + brighter top sheen + a slightly stronger
+   rim, alongside the existing scale. */
+#te-form .te-play-overlay:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+  filter: none;
+  border-color: rgba(255, 255, 255, .5);
+  background:
+    radial-gradient(130% 130% at 32% 22%,
+                    rgba(255, 255, 255, .7) 0%,
+                    rgba(255, 255, 255, .2) 30%,
+                    rgba(255, 255, 255, .04) 55%,
+                    rgba(255, 255, 255, 0) 70%),
+    rgba(52, 52, 78, .16);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, .46),
+    inset 0 2px 3px rgba(255, 255, 255, .78),
+    inset 0 -9px 16px rgba(0, 0, 0, .14),
+    inset 0 0 0 1px rgba(255, 255, 255, .2);
+}
 #te-form .te-play-overlay:active { transform: translate(-50%, -50%) scale(.97); }
 #te-form .te-play-overlay[hidden] { display: none; }
 #te-form .te-play-overlay:disabled {
@@ -692,7 +729,12 @@ body.login {
    (prefill toggles [hidden]). Compact secondary look; a small left margin
    separates it from the file text. */
 .te-convert {
-  flex: 0 0 auto; margin-left: 6px;
+  /* Fixed size, never shrinks, pinned to the RIGHT end of the file-info row
+     (margin-left:auto) so it sits cleanly to the right of the "… · FLAC
+     (verlustfrei)" text for BOTH short and very long paths - the nowrap row +
+     the value column's min-width:0 guarantee it keeps its space and never wraps
+     onto its own line or overlaps the text. */
+  flex: 0 0 auto; margin-left: auto;
   padding: 4px 10px; border-radius: 8px; border: 1px solid #5a5172;
   background: var(--bg); color: var(--fg); font-size: .78rem; font-weight: 600;
   cursor: pointer; white-space: nowrap; line-height: 1.3;
