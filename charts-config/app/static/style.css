@@ -365,6 +365,17 @@ body.login {
   align-items: stretch;
   gap: 0;
 }
+/* Clearance above the form so the cover column's -22px lift (see .te-cover)
+   cannot pull the "Cover" head row + download pill UP into the bottom of the
+   search-results dropdown once a song is loaded (loading a song hides #te-hint,
+   removing the spacer that otherwise kept them apart). The 22px matches that
+   lift, so the head row's top lands where the form box starts and the pill never
+   overlaps the last results row; a few px over the lift leaves a small visual
+   gap instead of an edge-to-edge touch. The whole form (fields + cover) shifts
+   down together, so the cover box stays top-aligned with the first input row.
+   Scoped to #te-form (specificity 1,1,0) so it beats the generic `.finder-box
+   form` (0,2,0) margin reset that would otherwise zero this out. */
+#te-form.te-form { margin-top: 26px; }
 /* Top row: the editable fields on the LEFT and the cover preview on the RIGHT,
    side by side. The fields column flexes to fill the remaining width; the cover
    keeps its intrinsic (square) width on the right. Wraps to stacked on narrow
