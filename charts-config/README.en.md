@@ -174,6 +174,37 @@ files** in the library (FLAC/M4A/OGG/… – no txt/cover.jpg/.m3u/.nfo). Trash,
 Each entry shows the library-relative path + the format and offers **Open in tag
 editor** to load the song above (e.g. to convert it to MP3).
 
+**Trash manager (below the non-MP3 list).** The whole
+`/music/Music/.charts-trash/` tree is listed – with each file's **path**
+(relative to the trash, including the source subfolder `dedup-<date>/…` or
+`flac2mp3-<date>/…`), **format** and **size**, plus – at the top – the **total
+size** the trash occupies and the **file count**. **All** files are listed (also
+non-audio sidecars like `cover.jpg` that were moved alongside). The list is
+read-only and TTL-cached. Two actions:
+
+- **Permanently delete a single file** (hard delete) – with a per-file confirm.
+- **Empty the whole trash** – with a prominent confirm. This is
+  **irreversible**: the trash IS the last reversible stage, so deleting here is
+  final.
+
+**Security:** both the list **and** the delete/empty actions sit behind the same
+auth gate as every other `/api/tageditor/*` route (401 anonymous). Deletion is
+**strictly confined to `.charts-trash`**: on top of the existing MUSIC_DIR
+guard, an additional realpath-containment check requires the resolved path to
+sit **inside** the trash, so **no** library file outside the trash can ever be
+deleted through this endpoint (defense against traversal AND against a bug
+passing a non-trash path). **Symlinks are never followed out of the trash**, and
+emptying requires an **explicit confirm flag** server-side (not a single click).
+
+> **Why this manual visibility/control?** The automatic retention cleanup
+> (`TRASH_RETENTION_DAYS`, default 30, in **charts-import**) deletes trashed
+> files **by file mtime**, and files are moved into the trash with `os.rename`,
+> which keeps their **original (often old) mtime**. So a file that was already
+> old when it was trashed can already be ">30 days" and may be purged on the
+> **next** charts-import cleanup run – not 30 days after the move. That is why
+> the manager shows the sizes and lets you review/delete deliberately rather
+> than relying on the age-based sweep.
+
 > **ffmpeg** is now **part of the charts-config image** (required by the MP3
 > 320 CBR convert action), installed via `apt-get`. It has no other role beyond
 > the audio/download endpoint.
