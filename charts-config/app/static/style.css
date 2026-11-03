@@ -394,7 +394,9 @@ body.login {
    so it reads as part of the field stack. Muted, wraps on narrow screens. */
 .te-fileinfo {
   grid-column: 1 / -1;
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  /* center alignment so the inline Convert button (non-MP3 only) lines up
+     vertically with the file-info text; wraps to its own line on narrow rows. */
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   font-size: .8rem; margin-top: 2px;
 }
 .te-fileinfo-label { color: var(--muted); }
@@ -638,19 +640,23 @@ body.login {
   z-index: 2;
   width: 64px; height: 64px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, .35);
+  border: 1px solid rgba(255, 255, 255, .28);
+  /* More see-through "water-drop": the dark base is dropped from .28 to .12 so
+     the cover art shows through the droplet, and the white sheen is softened a
+     touch. The backdrop-blur still frosts what is behind the glyph so it reads
+     as glass and the glyph stays legible over both light and dark covers. */
   background:
     radial-gradient(120% 120% at 30% 25%,
-                    rgba(255, 255, 255, .55) 0%,
-                    rgba(255, 255, 255, .12) 40%,
-                    rgba(255, 255, 255, .04) 60%),
-    rgba(40, 40, 60, .28);
-  backdrop-filter: blur(6px) saturate(1.2);
-  -webkit-backdrop-filter: blur(6px) saturate(1.2);   /* Safari/iOS */
+                    rgba(255, 255, 255, .40) 0%,
+                    rgba(255, 255, 255, .08) 40%,
+                    rgba(255, 255, 255, .02) 60%),
+    rgba(40, 40, 60, .12);
+  backdrop-filter: blur(5px) saturate(1.15);
+  -webkit-backdrop-filter: blur(5px) saturate(1.15);   /* Safari/iOS */
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, .45),                 /* soft drop shadow -> floats */
-    inset 0 1px 1px rgba(255, 255, 255, .6),       /* top sheen highlight */
-    inset 0 -8px 14px rgba(0, 0, 0, .22);          /* bottom inner shade -> volume */
+    0 6px 18px rgba(0, 0, 0, .40),                 /* soft drop shadow -> floats */
+    inset 0 1px 1px rgba(255, 255, 255, .5),       /* top sheen highlight */
+    inset 0 -8px 14px rgba(0, 0, 0, .16);          /* bottom inner shade -> volume */
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .5);        /* glyph legible on light covers */
   font-size: 1.5rem; line-height: 1;
@@ -680,21 +686,22 @@ body.login {
 .te-download:hover { border-color: var(--accent); }
 .te-download[hidden] { display: none; }
 
-/* Convert-to-MP3 button in the always-on .te-actions row (Feature A). Shown
-   only for a loaded non-MP3 song (prefill toggles [hidden]). Secondary look. */
+/* Convert-to-MP3 button (Feature A). Sits INLINE on the read-only file-info
+   row, immediately after the "Datei … · FLAC (verlustfrei)" text, so it reads
+   "this file is FLAC -> convert it". Shown only for a loaded non-MP3 song
+   (prefill toggles [hidden]). Compact secondary look; a small left margin
+   separates it from the file text. */
 .te-convert {
-  flex: 0 0 auto; margin-left: auto;
-  padding: 6px 12px; border-radius: 8px; border: 1px solid #5a5172;
-  background: var(--bg); color: var(--fg); font-size: .82rem; font-weight: 600;
-  cursor: pointer; white-space: nowrap;
+  flex: 0 0 auto; margin-left: 6px;
+  padding: 4px 10px; border-radius: 8px; border: 1px solid #5a5172;
+  background: var(--bg); color: var(--fg); font-size: .78rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; line-height: 1.3;
 }
 .te-convert:hover { border-color: var(--accent); }
 .te-convert[hidden] { display: none; }
 
-/* Non-MP3 audio file list (Feature B), below the editor card. Read-only rows. */
-.te-nonmp3 { margin-top: 20px; }
-.te-nonmp3-heading { margin: 0 0 .3rem; font-size: 1rem; }
-.te-nonmp3-hint { margin-bottom: .6rem; }
+/* Non-MP3 audio file list (Feature B): now in its own sibling panel, so no
+   top margin is needed (the .finder-box padding provides the spacing). */
 .te-nonmp3-list { display: flex; flex-direction: column; gap: 5px; }
 .te-nonmp3-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -706,12 +713,9 @@ body.login {
 .te-nonmp3-open { flex: 0 0 auto; }
 .te-nonmp3-trunc { margin-top: 4px; }
 
-/* Trash (Papierkorb) manager, below the non-MP3 list. The delete/empty actions
-   are the most destructive in the stack, so their buttons get a distinct danger
-   (red) treatment to signal irreversibility. */
-.te-trash { margin-top: 24px; }
-.te-trash-heading { margin: 0 0 .3rem; font-size: 1rem; }
-.te-trash-hint { margin-bottom: .6rem; }
+/* Trash (Papierkorb) manager: now in its own sibling panel. The delete/empty
+   actions are the most destructive in the stack, so their buttons get a
+   distinct danger (red) treatment to signal irreversibility. */
 .te-trash-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
   margin-bottom: .6rem;
