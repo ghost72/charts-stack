@@ -1040,6 +1040,8 @@
   "config.ui.tageditor.label.year": "Year",
   "config.ui.tageditor.label.track": "Track",
   "config.ui.tageditor.label.cover": "Cover",
+  "config.ui.tageditor.cover.download": "Download",
+  "config.ui.tageditor.cover.download_title": "Download the embedded cover in original resolution",
   "config.ui.tageditor.btn.save": "Save",
   "config.ui.tageditor.cover.upload": "Upload image",
   "config.ui.tageditor.cover.url": "…or image URL",

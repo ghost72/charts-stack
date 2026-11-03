@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config4">
+<link rel="stylesheet" href="/static/style.css?v=config5">
 </head>
 <body>
 <header>
@@ -146,7 +146,19 @@
                    with the left .te-fileinfo line. The box keeps its top
                    alignment with the first input. -->
               <div class="te-cover-top">
-                <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
+                <!-- Head row ABOVE the cover box: the "Cover" label on the LEFT
+                     and a discreet grey rounded-pill Cover-Download control on
+                     the RIGHT. The download link fetches the FULL embedded cover
+                     in original resolution via GET /api/tageditor/cover
+                     (independent of the 8 MiB preview cap). prefill() shows it
+                     ONLY when the song HAS an embedded cover (present === true,
+                     including the oversize case) and hides it otherwise. -->
+                <div class="te-cover-head">
+                  <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
+                  <a id="te-cover-dl" class="te-cover-dl" hidden download
+                     data-i18n="tageditor.cover.download"
+                     data-i18n-title="tageditor.cover.download_title">Download</a>
+                </div>
                 <!-- Rounded placeholder box: stays as a tidy empty card when no
                      cover is loaded; the music-note placeholder SVG (same logo as
                      charts-songrequest, copied per-service into this app's static)
@@ -807,6 +819,21 @@ function initTagEditor() {
     img.src = ""; img.removeAttribute("src"); img.hidden = true;
     if (song.cover && song.cover.present && song.cover.data_url) {
       img.src = song.cover.data_url; img.hidden = false;
+    }
+    // Cover-Download control (head row): shown ONLY when the song HAS an
+    // embedded cover (present === true), INCLUDING the oversize case where the
+    // inline preview is suppressed but a full cover exists and is downloadable.
+    // Hidden when there is no embedded cover (present === false). Clicking
+    // fetches the FULL original-resolution cover via GET /api/tageditor/cover
+    // (auth-gated, independent of the preview size cap).
+    const coverDl = document.getElementById("te-cover-dl");
+    if (coverDl) {
+      if (song.cover && song.cover.present) {
+        coverDl.href = "/api/tageditor/cover?path=" + encodeURIComponent(song.path);
+        coverDl.hidden = false;
+      } else {
+        coverDl.hidden = true; coverDl.removeAttribute("href");
+      }
     }
     const fileEl = document.getElementById("te-cover-file");
     const urlEl = document.getElementById("te-cover-url");

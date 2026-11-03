@@ -1040,6 +1040,8 @@
   "config.ui.tageditor.label.year": "Année",
   "config.ui.tageditor.label.track": "Piste",
   "config.ui.tageditor.label.cover": "Pochette",
+  "config.ui.tageditor.cover.download": "Télécharger",
+  "config.ui.tageditor.cover.download_title": "Télécharger la pochette intégrée en résolution d'origine",
   "config.ui.tageditor.btn.save": "Enregistrer",
   "config.ui.tageditor.cover.upload": "Téléverser une image",
   "config.ui.tageditor.cover.url": "…ou URL de l'image",
