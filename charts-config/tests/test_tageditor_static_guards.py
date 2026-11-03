@@ -91,3 +91,38 @@ def test_convert_guard_falls_back_to_ext():
         "fragile `song.is_mp3 !== false` convert guard still present; it hides "
         "Convert when the server omits is_mp3"
     )
+
+
+# --- Cover-Download control (head row above the cover box) --------------------
+
+def test_cover_download_control_in_head_row():
+    """The Cover-Download control must live in the head row (.te-cover-head)
+    alongside the 'Cover' label, above the cover box, and hit the cover
+    endpoint."""
+    html = _read(_HTML)
+    assert 'class="te-cover-head"' in html, (
+        "the Cover label + download control must share the .te-cover-head row"
+    )
+    assert 'id="te-cover-dl"' in html, "missing #te-cover-dl download control"
+    # The head row is a sibling ABOVE the cover box (label row comes first).
+    head_at = html.index('class="te-cover-head"')
+    box_at = html.index('class="te-cover-box"')
+    assert head_at < box_at, "the cover head row must precede the cover box"
+    # Labelled via i18n (no hardcoded user-facing string).
+    assert 'data-i18n="tageditor.cover.download"' in html
+    # Downloads via the dedicated cover endpoint.
+    assert "/api/tageditor/cover?path=" in html
+
+
+def test_cover_download_control_grey_pill_style():
+    """The control must be styled as a GREY rounded pill (999px radius like the
+    legend badges) - not a colored badge background."""
+    css = _read(_CSS)
+    m = re.search(r"\.te-cover-dl\s*\{[^}]*\}", css, re.S)
+    assert m, "missing .te-cover-dl style rule"
+    rule = m.group(0)
+    assert "border-radius: 999px" in rule, "cover-dl must be a rounded pill"
+    # Neutral grey, NOT the colored badge-stack/badge-curated backgrounds.
+    assert "#4a2a12" not in rule and "#1d3350" not in rule, (
+        "cover-dl must be neutral grey, not a colored badge background"
+    )

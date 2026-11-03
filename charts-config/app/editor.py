@@ -194,6 +194,45 @@ def load_song(path: str) -> dict:
     return _reload(real)
 
 
+# --- full-resolution cover download -----------------------------------------
+# Audio extensions whose embedded art the cover-download endpoint may read. This
+# mirrors the song-file reality (the editor only ever loads audio files) and is
+# defence in depth on top of _guarded_realpath, so the endpoint never reads the
+# raw bytes of an arbitrary in-library non-audio file.
+_COVER_AUDIO_EXTS = frozenset({
+    ".mp3", ".flac", ".m4a", ".m4b", ".mp4", ".aac", ".ogg", ".opus",
+    ".wav", ".wma", ".aiff", ".aif",
+})
+
+
+def cover_download(path: str) -> tuple[bytes, str]:
+    """
+    Return (raw_bytes, mime) of the song's FIRST embedded cover in ORIGINAL
+    resolution for the download endpoint.
+
+    Deliberately UNLIKE _cover_preview: there is NO size cap, NO re-encoding and
+    NO Pillow resize - the whole point of the download is to hand back the full
+    original embedded art even when it exceeds TAGEDITOR_COVER_MAX_BYTES (which
+    only governs the inline preview). The mime is sniffed from the image bytes
+    (JPEG/PNG), defaulting to image/jpeg when present but not sniffable.
+
+    Guards identically to the other /api/tageditor/* reads: realpath inside
+    MUSIC_DIR (path_outside), existing regular file (not_found, 404), and an
+    audio-extension allowlist (bad_audio_ext). Raises not_found (404) when the
+    song carries no embedded cover.
+    """
+    real = _guarded_realpath(path)
+    if not os.path.isfile(real):
+        raise EditorError("not_found", 404)
+    if os.path.splitext(real)[1].lower() not in _COVER_AUDIO_EXTS:
+        raise EditorError("bad_audio_ext", 400)
+    read = cover.read_embedded_cover(real)
+    if not read:
+        raise EditorError("not_found", 404)
+    data, mime = read
+    return data, mime
+
+
 # --- save (the 9-step algorithm) --------------------------------------------
 
 def save_song(path: str, submitted_fields: dict, cover_url: str = "",

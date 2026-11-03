@@ -23,7 +23,8 @@ import os
 import secrets
 
 from fastapi import FastAPI, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
+                               Response)
 from fastapi.staticfiles import StaticFiles
 
 from . import audio, collector, config, convert, editor, i18n, library, trash
@@ -426,6 +427,42 @@ async def api_tageditor_audio(request: Request, path: str = "", download: int = 
     if ext not in _AUDIO_MIME:
         return _editor_error(editor.EditorError("bad_audio_ext", 400))
     return audio.stream_file(request, real, _AUDIO_MIME[ext], bool(download))
+
+
+@app.get("/api/tageditor/cover")
+async def api_tageditor_cover(request: Request, path: str = ""):
+    # Full-resolution embedded-cover download. Behind the SAME _current_user auth
+    # gate (401 anon) as every other /api/tageditor/* route and the SAME
+    # editor._guarded_realpath path guard + audio-extension allowlist. It is NOT
+    # behind TAGEDITOR_AUDIO_ENABLED: that flag gates only the audio
+    # stream/download; cover download is a different capability, gated by auth
+    # alone (like convert/list/trash). Unlike the inline preview, this returns
+    # the RAW ORIGINAL bytes with NO size cap and NO re-encoding, so even a cover
+    # larger than TAGEDITOR_COVER_MAX_BYTES (which only suppresses the preview)
+    # downloads in full.
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        data, mime = editor.cover_download(path)
+    except editor.EditorError as err:
+        return _editor_error(err)
+    # Build a sensible download filename from the song tags: "<Artist> - <Title>
+    # cover.<ext>", falling back to "cover.<ext>". The extension follows the
+    # sniffed mime (png vs jpg). The filename is sanitized (CR/LF/quote/backslash
+    # strip + ASCII fallback) via the shared audio helper so the header can never
+    # be injected or malformed for a non-ASCII title.
+    ext = "png" if mime == "image/png" else "jpg"
+    try:
+        song = editor.load_song(path)
+        artist = (song.get("artist") or "").strip()
+        title = (song.get("title") or "").strip()
+    except editor.EditorError:
+        artist = title = ""
+    stem = f"{artist} - {title} cover" if (artist and title) else "cover"
+    fname = audio._sanitize_filename(f"{stem}.{ext}")
+    headers = {"Content-Disposition": f'attachment; filename="{fname}"'}
+    return Response(content=data, media_type=mime, headers=headers)
 
 
 @app.get("/health")

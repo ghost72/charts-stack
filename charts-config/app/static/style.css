@@ -425,12 +425,33 @@ body.login {
      opens up BETWEEN the box and the download button, where it should. */
   justify-content: space-between;
 }
-/* C1: plain wrapper grouping the "Cover" label + the cover box so they move as
-   one and keep the box's top alignment; display:block (no flex needed). */
+/* C1: plain wrapper grouping the "Cover" head row + the cover box so they move
+   as one and keep the box's top alignment; display:block (no flex needed). */
 .te-cover-top { display: block; }
-.te-cover-label {
-  display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
+/* Head row ABOVE the cover box: the "Cover" label pinned LEFT and the discreet
+   Cover-Download control pushed RIGHT (margin-left:auto). Shares the label's
+   former bottom margin so the box keeps its vertical position. */
+.te-cover-head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
 }
+.te-cover-label {
+  color: var(--muted); font-size: .82rem;
+}
+/* Cover-Download control: styled like the legend badge pills (same rounded
+   999px pill shape + 2px 8px padding + small bold uppercase-ish label) but in a
+   NEUTRAL GREY (not the colored badge-stack/badge-curated backgrounds) so it
+   stays discreet. Pushed to the right end of the head row. Shown by prefill()
+   only when the song has an embedded cover (present === true, incl. oversize).
+   Downloads the FULL original-resolution cover via GET /api/tageditor/cover. */
+.te-cover-dl {
+  margin-left: auto;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+  background: #2a2740; color: var(--muted); border: 1px solid #5a5172;
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+}
+.te-cover-dl:hover { border-color: var(--accent); color: var(--fg); }
+.te-cover-dl[hidden] { display: none; }
 /* Cover placeholder box: a rounded, themed square that holds the preview image.
    When no cover is loaded (img hidden) it reads as a tidy empty card matching
    the other inputs/tiles; the border-radius + overflow:hidden clip the img so

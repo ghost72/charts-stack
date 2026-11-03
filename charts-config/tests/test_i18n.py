@@ -105,6 +105,9 @@ def test_config_ui_keys_present():
         "config.ui.tageditor.play.mp3only",
         "config.ui.tageditor.play.error",
         "config.ui.tageditor.download.btn",
+        # Full-resolution cover-download control (head row above the cover box).
+        "config.ui.tageditor.cover.download",
+        "config.ui.tageditor.cover.download_title",
         # Convert-to-MP3 + non-MP3 list frontend-critical keys (Feature A/B).
         "config.ui.tageditor.convert.btn",
         "config.ui.tageditor.nonmp3.heading",
