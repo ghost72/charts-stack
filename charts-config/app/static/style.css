@@ -629,8 +629,11 @@ body.login {
    frosts whatever is behind the glyph so it stays legible over both light and
    dark covers. Browsers without backdrop-filter fall back to the semi-opaque
    base - still a visible, tappable round button. 64px exceeds the ~44px mobile
-   touch-target guideline. The play logic + MP3-only gating are unchanged. */
-.te-play-overlay {
+   touch-target guideline. The play logic + MP3-only gating are unchanged.
+   Scoped to #te-form (specificity 1,1,0) so border/background/border-radius
+   outrank the generic `.finder-box form button` rule (0,1,2) that would
+   otherwise flatten this droplet into a blue rectangle. */
+#te-form .te-play-overlay {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 2;
   width: 64px; height: 64px;
@@ -656,10 +659,10 @@ body.login {
   transition: transform .08s ease, box-shadow .12s ease;
 }
 .te-play-glyph { pointer-events: none; }           /* clicks land on the button */
-.te-play-overlay:hover  { transform: translate(-50%, -50%) scale(1.06); }
-.te-play-overlay:active { transform: translate(-50%, -50%) scale(.97); }
-.te-play-overlay[hidden] { display: none; }
-.te-play-overlay:disabled {
+#te-form .te-play-overlay:hover  { transform: translate(-50%, -50%) scale(1.06); }
+#te-form .te-play-overlay:active { transform: translate(-50%, -50%) scale(.97); }
+#te-form .te-play-overlay[hidden] { display: none; }
+#te-form .te-play-overlay:disabled {
   opacity: .45; cursor: not-allowed;
   backdrop-filter: none; -webkit-backdrop-filter: none;
 }
