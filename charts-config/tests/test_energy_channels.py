@@ -288,8 +288,12 @@ def test_index_renders_energy_section(monkeypatch):
     client.cookies.set("session", "test-token")
 
     html = client.get("/").text
-    assert 'data-i18n="section.energy"' in html
-    assert 'data-i18n-html="energy.hint"' in html
+    # The Energy section is now its own tab/pane: the section title moved to the
+    # tab label (copied into #pane-title at runtime) and the pane wraps the
+    # results container. energy.hint is still injected (the tab switcher writes
+    # it into #pane-desc).
+    assert 'data-i18n="config_tabs.tab.energy"' in html
+    assert 'data-pane="energy"' in html
     assert 'id="energy-channels"' in html
     # Reset i18n import-time state so later tests do not leak the language.
     i18n.setup()

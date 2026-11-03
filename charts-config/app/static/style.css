@@ -53,6 +53,72 @@ section h2 {
   font-size: .95rem; text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted); margin: 0 0 12px;
 }
+
+/* --- Tabbed layout (config) ------------------------------------------------
+   Reorganises the single scrolling page into a login-style hero + a segmented
+   tab bar + one visible pane at a time, mirroring charts-songrequest. The
+   active tab glows in charts-config's OWN blue (--accent), not songrequest's
+   pink/purple. */
+
+/* Login-style hero above the tab bar: the 🧩 logo mark + the page title in
+   white, centered. Mirrors charts-songrequest's .logo + h1. */
+.config-hero { text-align: center; margin: 8px 0 20px; }
+.config-logo { font-size: 44px; line-height: 1; margin-bottom: 6px; }
+.config-hero-title {
+  margin: 0; font-size: 1.5rem; font-weight: 700; color: #fff;
+  letter-spacing: -0.2px;
+}
+
+/* Segmented tab bar. One button per section; wraps to a second row on narrow
+   viewports (five tabs) instead of overflowing. The active tab glows blue. */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+/* The .tab buttons live in .tabs, a SIBLING of the panes, and are NOT inside
+   any form, .finder-box, .card, or #te-form - so the generic primary-button
+   rules (.finder-box form button, .te-save, .card button) never match them.
+   As belt-and-suspenders (and to mirror songrequest's documented approach) the
+   rule still pins every visual property explicitly and uses appearance:none +
+   filter:none, so a .tab keeps its segmented-pill look even if a future generic
+   button rule broadens. */
+.tab {
+  -webkit-appearance: none; appearance: none;
+  flex: 1 1 0; min-width: 0; margin: 0;
+  padding: 10px 14px; font-size: .9rem; font-weight: 600;
+  color: var(--muted);
+  background: var(--tile);
+  border: 1px solid #3a3350; border-radius: 11px;
+  box-shadow: none; cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, background .15s, box-shadow .2s, border-color .15s;
+  filter: none;   /* neutralise any leaked brightness filter */
+}
+.tab:hover { color: var(--fg); }
+/* Active tab: a blue gradient built from --accent with a blue glow, mirroring
+   songrequest's active-tab treatment but in charts-config blue. */
+.tab.active {
+  color: #fff;
+  background: linear-gradient(135deg, #1e5fa8, #2f7fd0);
+  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(30, 95, 168, .45);
+}
+.tabpane[hidden] { display: none; }
+
+/* Per-tab heading block. .pane-title reuses the old section <h2> look (the
+   uppercase muted label); .pane-desc inherits colour/size from the shared
+   .finder-hint class it also carries. */
+.pane-head { margin: 0 0 14px; }
+.pane-title {
+  font-size: .95rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 0 0 8px;
+}
+.pane-desc { margin: 0; }   /* .finder-hint supplies colour/size */
+
+/* Narrow viewports: tighten the tab padding; the flex-wrap above already lets
+   the five pills wrap to a second row. */
+@media (max-width: 560px) {
+  .tab { padding: 9px 10px; font-size: .82rem; }
+  .config-hero-title { font-size: 1.3rem; }
+}
+
 .muted-txt { color: var(--muted); }
 .s-err { color: var(--err); font-weight: 600; }
 .s-run { color: var(--warn); }

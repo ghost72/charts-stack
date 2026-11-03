@@ -162,12 +162,17 @@ def test_index_render_handoff(monkeypatch, lang):
     html = r.text
     assert f'<html lang="{lang}">' in html
     # config.* markers resolved via the config.ui. prefix in static markup.
-    assert 'data-i18n="section.finder"' in html
-    assert 'data-i18n="section.energy"' in html
+    # The section titles now live on the tab bar (the tab switcher copies them
+    # into #pane-title at runtime), so the static canaries are the tab labels.
+    assert 'data-i18n="config_tabs.tab.finder"' in html
+    assert 'data-i18n="config_tabs.tab.energy"' in html
     i18n_obj = _extract_i18n(html)
-    # config.ui.* canaries present in the re-based client table.
+    # config.ui.* canaries present in the re-based client table. section.*/hint
+    # keys are still injected (reused by the tab switcher's header swap).
     assert "finder.generic_error" in i18n_obj
     assert "energy.hint" in i18n_obj
+    assert "section.finder" in i18n_obj
+    assert "section.energy" in i18n_obj
 
 
 def test_login_page_translated(monkeypatch):

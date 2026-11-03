@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config7">
+<link rel="stylesheet" href="/static/style.css?v=config8">
 </head>
 <body>
 <header>
@@ -22,13 +22,46 @@
 </header>
 
 <main>
-  <section>
-    <h2 data-i18n="section.finder">🔎 Quellen-Finder (für charts-sync)</h2>
-    <div class="finder-hint" data-i18n-html="finder.hint">Treffer liefern ein fertiges Snippet. Füge es in die
-      <code>sources</code>-Liste der gewünschten Playlist ein – entweder in die
-      <code>charts.json</code> (falls <code>CHARTS_FILE</code> genutzt wird) oder
-      in die <code>CHARTS</code>-Variable der <code>.env</code>. Details in
-      CHARTS-SOURCES.md.</div>
+  <!-- Login-style hero: the 🧩 logo mark (same glyph as the login heading) +
+       the page title in white. Mirrors charts-songrequest's .logo + h1. -->
+  <div class="config-hero">
+    <div class="config-logo" aria-hidden="true">🧩</div>
+    <h1 class="config-hero-title" data-i18n="config_tabs.app_title">charts-config</h1>
+  </div>
+
+  <!-- Tab bar: one button per section, Quellen-Finder active on load. Mirrors
+       charts-songrequest's .tabs > button.tab[data-tab]. The emoji on each tab
+       is byte-identical to the mirrored section-title glyph (incl. the VS16 on
+       the tag-editor and non-MP3 labels) so a tab and its #pane-title never
+       render different presentations of the same symbol. -->
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="finder"
+            data-i18n="config_tabs.tab.finder">🔎 Quellen-Finder</button>
+    <button type="button" class="tab" data-tab="energy"
+            data-i18n="config_tabs.tab.energy">⚡ Energy-Kanäle</button>
+    <button type="button" class="tab" data-tab="tageditor"
+            data-i18n="config_tabs.tab.tageditor">🏷️ Tag-Editor</button>
+    <button type="button" class="tab" data-tab="nonmp3"
+            data-i18n="config_tabs.tab.nonmp3">🎚️ Nicht-MP3</button>
+    <button type="button" class="tab" data-tab="trash"
+            data-i18n="config_tabs.tab.trash">🗑 Papierkorb</button>
+  </div>
+
+  <!-- Per-tab heading block: the title (reuses each section's existing
+       section.*/heading key) + the description (reuses each section's existing
+       *.hint key). Both are filled by the tab switcher; initial values target
+       the first (finder) tab. #pane-desc is written via innerHTML for the
+       finder/energy descriptions (they carry inert <b>/<code> markup) and via
+       textContent for the plain-text ones. -->
+  <div class="pane-head">
+    <h2 class="pane-title" id="pane-title"></h2>
+    <div class="pane-desc finder-hint" id="pane-desc"></div>
+  </div>
+
+  <!-- Pane 1: Quellen-Finder (visible on load). The section-specific second
+       hint line (finder.run_hint) stays in the pane; only the primary
+       finder.hint is lifted into #pane-desc. -->
+  <div class="tabpane" data-pane="finder">
     <div class="finder-hint" data-i18n="finder.run_hint"></div>
     <div class="finder">
       <!-- Deezer playlist search -->
@@ -68,13 +101,13 @@
         </table>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- Energy channel browser: a read-only panel that mirrors the source
-       finder. It never writes .env/charts.json. -->
-  <section>
-    <h2 data-i18n="section.energy">⚡ Energy channels</h2>
-    <div class="finder-hint" data-i18n-html="energy.hint"></div>
+  <!-- Pane 2: Energy-Kanäle (hidden until selected). Read-only panel that
+       mirrors the source finder; it never writes .env/charts.json. The extra
+       energy.note.* lines + energy.run_hint stay in the pane; only energy.hint
+       is lifted into #pane-desc. -->
+  <div class="tabpane" data-pane="energy" hidden>
     <div class="finder-hint" data-i18n-html="energy.note.own"></div>
     <div class="finder-hint" data-i18n-html="energy.note.feed"></div>
     <div class="finder-hint" data-i18n-html="energy.note.library"></div>
@@ -86,14 +119,13 @@
         <div id="energy-channels"><div class="muted-txt" data-i18n="energy.loading"></div></div>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- Manual tag editor: search the library, pick a song, edit its tags/cover
-       in place. The only read-write section (saving clears the stack markers).
-       Inert without the /music/Music mount (search returns nothing). -->
-  <section>
-    <h2 data-i18n="section.tageditor">🏷️ Manual tag editor</h2>
-    <div class="finder-hint" data-i18n="tageditor.hint"></div>
+  <!-- Pane 3: Manueller Tag-Editor (hidden). Search the library, pick a song,
+       edit its tags/cover in place. The only read-write section (saving clears
+       the stack markers). Inert without the /music/Music mount (search returns
+       nothing). tageditor.hint is lifted into #pane-desc. -->
+  <div class="tabpane" data-pane="tageditor" hidden>
     <div class="finder finder-full">
       <div class="finder-box">
         <input id="te-search" autocomplete="off" data-i18n-ph="tageditor.ph.search"
@@ -252,16 +284,13 @@
 
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- Non-MP3 audio file list (Feature B): its OWN panel, a sibling of the tag
-       editor (not nested inside it), so it reads as a distinct bordered card
-       like the finder/energy sections. Read-only; lists only non-MP3 AUDIO
-       files in the library (fetched from /api/tageditor/nonmp3). Each row
-       offers "open in tag editor". -->
-  <section>
-    <h2 data-i18n="tageditor.nonmp3.heading">🎚️ Non-MP3 audio files</h2>
-    <div class="finder-hint" data-i18n="tageditor.nonmp3.hint"></div>
+  <!-- Pane 4: Nicht-MP3-Audiodateien (hidden). Read-only; lists only non-MP3
+       AUDIO files in the library (fetched from /api/tageditor/nonmp3). Each row
+       offers "open in tag editor", which switches to the Tag-Editor tab.
+       tageditor.nonmp3.hint is lifted into #pane-desc. -->
+  <div class="tabpane" data-pane="nonmp3" hidden>
     <div class="finder finder-full">
       <div class="finder-box">
         <div class="te-nonmp3" id="te-nonmp3">
@@ -269,19 +298,16 @@
         </div>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- Trash (Papierkorb) manager: its OWN panel, a sibling of the tag editor,
-       so it is clearly delineated from the editor and the non-MP3 list.
-       Read-only listing of the entire MUSIC_DIR/.charts-trash tree (per-file +
-       total size), with a per-file permanent delete and an empty-whole-trash
-       action. The delete/empty are the MOST destructive operations in the stack
-       (hard delete of files already at the last reversible stage), so the
-       server confines them strictly to .charts-trash and requires an explicit
-       confirm to empty. Fetched from /api/tageditor/trash. -->
-  <section>
-    <h2 data-i18n="section.trash">🗑️ Trash</h2>
-    <div class="finder-hint" data-i18n="tageditor.trash.hint"></div>
+  <!-- Pane 5: Papierkorb (hidden). Read-only listing of the entire
+       MUSIC_DIR/.charts-trash tree (per-file + total size), with a per-file
+       permanent delete and an empty-whole-trash action. The delete/empty are
+       the MOST destructive operations in the stack (hard delete of files
+       already at the last reversible stage), so the server confines them
+       strictly to .charts-trash and requires an explicit confirm to empty.
+       Fetched from /api/tageditor/trash. tageditor.trash.hint -> #pane-desc. -->
+  <div class="tabpane" data-pane="trash" hidden>
     <div class="finder finder-full">
       <div class="finder-box">
         <div class="te-trash" id="te-trash">
@@ -330,7 +356,7 @@
         </div>
       </div>
     </div>
-  </section>
+  </div>
 </main>
 {{DONATE}}
 <script>
@@ -1062,7 +1088,11 @@ function initTagEditor() {
       const row = e.target.closest(".te-nonmp3-row");
       if (!row) return;
       loadSong(row.getAttribute("data-path"));
-      // Scroll the editor into view so the loaded song is visible above.
+      // The editor and the Non-MP3 list now live in separate panes, so switch
+      // to the Tag-Editor tab first - otherwise the song would load into a
+      // hidden form and scrollIntoView on a display:none element is a no-op.
+      activateTab("tageditor");
+      // Scroll the editor into view so the loaded song is visible.
       const formEl = document.getElementById("te-form");
       if (formEl) formEl.scrollIntoView({behavior: "smooth", block: "start"});
     });
@@ -1317,7 +1347,49 @@ function initTagEditor() {
   }
 }
 
+// --- Tab switcher (config) --------------------------------------------------
+// Pure layout: toggles which .tabpane is visible and updates the per-tab header
+// title/description. No section markup, element ID, form, or request handler is
+// touched. Mirrors charts-songrequest's switcher; adds the header swap and a
+// shared activateTab() used by both the tab bar and the Non-MP3 cross-pane jump
+// (so the two navigation paths cannot drift). Declared as a function so it is
+// hoisted and reachable from the Non-MP3 handler inside initTagEditor().
+const PANE_HEAD = {
+  finder:    { title: "section.finder",            desc: "finder.hint",            html: true  },
+  energy:    { title: "section.energy",            desc: "energy.hint",            html: true  },
+  tageditor: { title: "section.tageditor",         desc: "tageditor.hint",         html: false },
+  nonmp3:    { title: "tageditor.nonmp3.heading",  desc: "tageditor.nonmp3.hint",  html: false },
+  trash:     { title: "section.trash",             desc: "tageditor.trash.hint",   html: false },
+};
+function setPaneHead(tab) {
+  const h = PANE_HEAD[tab];
+  if (!h) return;
+  const titleEl = document.getElementById("pane-title");
+  const descEl = document.getElementById("pane-desc");
+  if (titleEl) titleEl.textContent = t(h.title);   // all titles are plain text
+  if (descEl) {
+    if (h.html) descEl.innerHTML = t(h.desc);       // finder/energy carry <b>/<code>
+    else descEl.textContent = t(h.desc);            // plain-text descriptions
+  }
+}
+const configTabs = document.querySelectorAll(".tabs .tab");
+// Single source of truth for "make tab <target> active": toggles the active
+// button, shows the matching pane and hides the rest, and swaps the header.
+// Reused by the tab-bar click handler AND the Non-MP3 "open in tag editor"
+// button so the two paths cannot diverge.
+function activateTab(target) {
+  configTabs.forEach(b => b.classList.toggle("active", b.dataset.tab === target));
+  document.querySelectorAll("[data-pane]").forEach(p => {
+    p.hidden = p.dataset.pane !== target;
+  });
+  setPaneHead(target);
+}
+
 applyStaticI18n();   // populate the static head/body markup once on load
+configTabs.forEach(tab => {
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+});
+setPaneHead("finder");   // fill the header for the default (finder) tab on load
 initTagEditor();     // wire the manual tag editor (independent of the finder)
 // charts-config has no /api/status; probe the Last.fm endpoint once (empty
 // query) to learn whether a key is configured, then init the finder. The
