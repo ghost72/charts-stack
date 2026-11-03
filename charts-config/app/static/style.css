@@ -69,8 +69,10 @@ section h2 {
   letter-spacing: -0.2px;
 }
 
-/* Segmented tab bar. One button per section; wraps to a second row on narrow
-   viewports (five tabs) instead of overflowing. The active tab glows blue. */
+/* Segmented tab bar. One button per section; all five share one row on
+   tablet/desktop (flex: 1 1 0 below). On phones (<=560px) the row becomes a
+   horizontally scrollable strip instead - see the phone media query below.
+   The active tab glows blue. */
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 /* The .tab buttons live in .tabs, a SIBLING of the panes, and are NOT inside
    any form, .finder-box, .card, or #te-form - so the generic primary-button
@@ -112,10 +114,26 @@ section h2 {
 }
 .pane-desc { margin: 0; }   /* .finder-hint supplies colour/size */
 
-/* Narrow viewports: tighten the tab padding; the flex-wrap above already lets
-   the five pills wrap to a second row. */
+/* Phone-only (<=560px, the file's phone breakpoint; the 720/760px ones are for
+   the wider grid wrap on tablets, which must keep the single desktop row).
+   On a phone the five tabs can't share one row without clipping their labels,
+   so turn the .tabs bar into a horizontally scrollable strip instead: each tab
+   keeps its full emoji + label at a comfortable size (flex: 0 0 auto so it sizes
+   to content and never shrinks), and the bar scrolls sideways with smooth touch
+   scrolling. The active-tab blue glow and all other tab styling are unchanged.
+   Tablet/desktop are untouched, so there the flex: 1 1 0 row above still wins. */
 @media (max-width: 560px) {
-  .tab { padding: 9px 10px; font-size: .82rem; }
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;   /* Firefox: hide scrollbar for a clean strip */
+  }
+  .tabs::-webkit-scrollbar { display: none; }   /* WebKit/Blink: hide scrollbar */
+  .tab {
+    flex: 0 0 auto; min-width: 0;   /* size to content, don't shrink-and-clip */
+    padding: 9px 12px; font-size: .82rem;
+  }
   .config-hero-title { font-size: 1.3rem; }
 }
 
