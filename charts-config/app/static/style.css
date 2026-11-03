@@ -384,6 +384,16 @@ body.login {
   align-items: center;
 }
 .te-grid label { color: var(--muted); font-size: .85rem; }
+
+/* Read-only file path + bitrate/format row under Track. Spans both grid columns
+   so it reads as part of the field stack. Muted, wraps on narrow screens. */
+.te-fileinfo {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  font-size: .8rem; margin-top: 2px;
+}
+.te-fileinfo-label { color: var(--muted); }
+.te-fileinfo-val { color: var(--fg); word-break: break-all; }
 /* Cover block on the right of the top row: the "Cover" label stacked over the
    square cover box as a flex column. flex:0 0 auto so it keeps its intrinsic
    (square) width next to the flexible fields column. */
@@ -405,14 +415,15 @@ body.login {
 .te-cover-box {
   position: relative;
   /* A fixed square sized to the field stack: the 5 input rows (Künstler →
-     Track) measure ~187px tall, so a 200px square makes the cover as tall as
-     that stack (its top sits near the Künstler row, its bottom near the Track
-     row) while staying a true square. A definite width+height is used on
-     purpose instead of an aspect-ratio derived from height: the box must stay
-     square in BOTH states, and when the placeholder (not an <img>) is shown
-     there is no intrinsic width to drive an aspect-ratio, which previously
-     collapsed the empty box to a thin vertical strip. */
-  width: 200px; height: 200px;
+     Track) measure ~187px tall. Adding the read-only File/bitrate row below
+     Track (~1 label line + its gap ≈ 22px) grows the stack to ≈ 209px, so the
+     box is bumped from the old 200px to 222px to keep its BOTTOM aligned with
+     the field column while staying a true square. A definite width+height is
+     used on purpose instead of an aspect-ratio derived from height: the box
+     must stay square in BOTH states, and when the placeholder (not an <img>) is
+     shown there is no intrinsic width to drive an aspect-ratio, which
+     previously collapsed the empty box to a thin vertical strip. */
+  width: 222px; height: 222px;
   flex: 0 0 auto;
   /* 14px radius: at the large album-art size the old 10px read as square to the
      eye; 14px is visibly rounded. This box is the element that paints the
@@ -588,3 +599,33 @@ body.login {
 .te-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .te-legend .badge { margin-left: 0; }
 .te-legend-note { flex-basis: 100%; }
+/* On true phone widths the side-by-side badge+text crushes the explanation, so
+   stack the badge ABOVE its text (badge on its own line, text below). Desktop
+   stays side-by-side (the rule only applies <=560px; 560 is the phone breakpoint
+   — the 720/760px breakpoints elsewhere are for the wider grid wrap). */
+@media (max-width: 560px) {
+  .te-legend-item { flex-direction: column; align-items: flex-start; gap: 2px; }
+}
+
+/* Play overlay centered on the cover (absolute inside the relatively-positioned
+   .te-cover-box). Only rendered when TAGEDITOR_AUDIO_ENABLED is on + a song is
+   loaded; disabled (dimmed) for non-MP3 formats the browser cannot play. */
+.te-play-overlay {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 2; width: 54px; height: 54px; border-radius: 50%;
+  border: 0; background: rgba(0, 0, 0, .55); color: #fff; font-size: 1.4rem;
+  cursor: pointer; display: grid; place-items: center;
+}
+.te-play-overlay[hidden] { display: none; }
+.te-play-overlay:disabled { opacity: .45; cursor: not-allowed; }
+/* The <audio> element is a hidden mechanism (controls live on the overlay). */
+#te-audio { display: none; }
+/* Small secondary download button under the cover (all formats incl. FLAC). */
+.te-download {
+  display: inline-block; margin-top: 8px; text-align: center;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid #5a5172;
+  background: var(--bg); color: var(--fg); font-size: .8rem;
+  text-decoration: none; cursor: pointer;
+}
+.te-download:hover { border-color: var(--accent); }
+.te-download[hidden] { display: none; }

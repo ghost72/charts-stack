@@ -96,6 +96,15 @@ def test_config_ui_keys_present():
         "config.ui.energy.run_hint",
         "config.ui.title",
         "config.ui.logout",
+        # Tag-editor play/download + file-info UI keys the frontend hard-depends
+        # on (guards against an accidental deletion of a frontend-critical key).
+        "config.ui.tageditor.label.fileinfo",
+        "config.ui.tageditor.fileinfo.kbps",
+        "config.ui.tageditor.fileinfo.lossless",
+        "config.ui.tageditor.play.title",
+        "config.ui.tageditor.play.mp3only",
+        "config.ui.tageditor.play.error",
+        "config.ui.tageditor.download.btn",
     }
     for c in _SHIPPED:
         keys = set(_load_shipped(c))

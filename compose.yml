@@ -845,6 +845,14 @@ services:
       - TAGEDITOR_INDEX_TTL=${TAGEDITOR_INDEX_TTL:-300}
       - TAGEDITOR_COVER_MAX_BYTES=${TAGEDITOR_COVER_MAX_BYTES:-8388608}
       - TAGEDITOR_COVER_FETCH_TIMEOUT=${TAGEDITOR_COVER_FETCH_TIMEOUT:-15}
+      # In-browser play + download of a loaded song (the tag editor's play
+      # overlay + download button). OFF by default (fail-closed): a fresh clone
+      # has NO audio egress. When on, the audio endpoint is STILL behind the
+      # config login AND the MUSIC_DIR path guard - this flag is an extra gate,
+      # not a replacement. Turn on only for private/authenticated use; if
+      # charts-config is exposed to the internet, use a strong password and
+      # ideally a VPN/reverse proxy in front.
+      - TAGEDITOR_AUDIO_ENABLED=${TAGEDITOR_AUDIO_ENABLED:-0}
       - TZ=${TZ:-Europe/Zurich}
     ports:
       - "${CONFIG_PORT:-5058}:5058"

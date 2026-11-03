@@ -134,3 +134,16 @@ TAGEDITOR_COVER_MAX_BYTES = _get_int("TAGEDITOR_COVER_MAX_BYTES", 8 * 1024 * 102
 
 # Timeout (seconds) for the cover-from-URL httpx fetch.
 TAGEDITOR_COVER_FETCH_TIMEOUT = _get_int("TAGEDITOR_COVER_FETCH_TIMEOUT", 15)
+
+# --- Manual Tag Editor: in-browser audio play + download (opt-in, default OFF) ---
+# Gates BOTH the GET /api/tageditor/audio endpoint and its UI controls (the play
+# overlay + download button). Default OFF (fail-closed): a fresh clone has NO
+# audio egress at all. charts-config is password-protected, but users may expose
+# it to the internet, so this feature stays off unless deliberately enabled. When
+# ON the audio endpoint is STILL behind the SAME _current_user auth gate AND the
+# SAME editor._guarded_realpath path guard - this flag is an ADDITIONAL gate,
+# never a replacement. Note the asymmetry with CONFIG_ENABLED/PRESERVE_MTIME
+# above: those default ON and treat only "0"/"false"/"no" as off; this one must
+# default OFF, so it instead turns on ONLY for an explicit truthy token.
+TAGEDITOR_AUDIO_ENABLED = os.environ.get(
+    "TAGEDITOR_AUDIO_ENABLED", "0").strip().lower() in ("1", "true", "yes")

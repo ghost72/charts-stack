@@ -120,6 +120,13 @@
               <input id="te-year" autocomplete="off" inputmode="numeric">
               <label data-i18n="tageditor.label.track">Track</label>
               <input id="te-track" autocomplete="off" inputmode="numeric">
+              <!-- Read-only file path + bitrate/format row (always on). Spans
+                   both grid columns; filled by prefill(). Helps spot leftover
+                   non-MP3 (FLAC) files. Never submitted. -->
+              <div class="te-fileinfo" id="te-fileinfo">
+                <span class="te-fileinfo-label" data-i18n="tageditor.label.fileinfo">File</span>
+                <span class="te-fileinfo-val" id="te-fileinfo-val"></span>
+              </div>
             </div>
             <div class="te-cover">
               <span class="te-cover-label" data-i18n="tageditor.label.cover">Cover</span>
@@ -132,7 +139,18 @@
               <div class="te-cover-box">
                 <img class="te-cover-placeholder" src="/static/cover-placeholder.svg" alt="" aria-hidden="true">
                 <img id="te-cover-img" class="te-cover-img" alt="" hidden>
+                <!-- Play overlay on the cover (only rendered when the
+                     TAGEDITOR_AUDIO_ENABLED server flag is on AND a song is
+                     loaded). Enabled for MP3, disabled with an "MP3 only" hint
+                     for FLAC/lossless. Hidden by default; prefill() reveals it. -->
+                <button type="button" id="te-play" class="te-play-overlay" hidden
+                        data-i18n-title="tageditor.play.title" aria-label="Play">▶</button>
+                <audio id="te-audio" preload="none"></audio>
               </div>
+              <!-- Download button under the cover: works for ALL formats
+                   (incl. FLAC), unlike play. Flag-gated like the play overlay. -->
+              <a id="te-download" class="te-download" hidden download
+                 data-i18n="tageditor.download.btn">Download</a>
             </div>
           </div>
           <!-- Upload controls on one responsive row BELOW the top row; the file
@@ -208,6 +226,11 @@ function applyStaticI18n() {
   });
   document.querySelectorAll("[data-i18n-html]").forEach(el => {
     el.innerHTML = t(el.dataset.i18nHtml);
+  });
+  // title sweep: initial tooltip for [data-i18n-title] nodes (e.g. the play
+  // overlay). prefill() later re-sets the play tooltip per song (MP3 vs FLAC).
+  document.querySelectorAll("[data-i18n-title]").forEach(el => {
+    el.title = t(el.dataset.i18nTitle);
   });
 }
 
@@ -669,6 +692,51 @@ function initTagEditor() {
     const urlEl = document.getElementById("te-cover-url");
     fileEl.value = ""; urlEl.value = "";
     fileEl.classList.remove("changed"); urlEl.classList.remove("changed");
+    // Read-only file path + bitrate/format row (always on). The label is
+    // composed on the client from i18n: a lossless ext shows "<FORMAT>
+    // (lossless)", otherwise "<n> kbps" (or "—" when the bitrate is unknown).
+    const fiVal = document.getElementById("te-fileinfo-val");
+    if (fiVal) {
+      let label;
+      if (song.is_lossless) {
+        const fmt = (song.ext || "").replace(/^\./, "").toUpperCase() || "?";
+        label = t("tageditor.fileinfo.lossless", {format: fmt});
+      } else if (song.bitrate_kbps) {
+        label = t("tageditor.fileinfo.kbps", {kbps: song.bitrate_kbps});
+      } else {
+        label = "—";
+      }
+      const rel = song.rel_path == null ? "" : String(song.rel_path);
+      fiVal.textContent = rel ? (rel + " · " + label) : label;
+    }
+    // Play overlay + download button (items 3+4): only when the server flag
+    // TAGEDITOR_AUDIO_ENABLED is on (song.audio_enabled). ALWAYS reset the
+    // <audio> element first so the previous song never keeps playing.
+    const playBtn = document.getElementById("te-play");
+    const audioEl = document.getElementById("te-audio");
+    const dlLink = document.getElementById("te-download");
+    if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); }
+    if (playBtn) { playBtn.textContent = "▶"; }
+    if (!song.audio_enabled) {
+      // Flag off (default): render NO play/download controls at all.
+      if (playBtn) playBtn.hidden = true;
+      if (dlLink) { dlLink.hidden = true; dlLink.removeAttribute("href"); }
+    } else {
+      const src = "/api/tageditor/audio?path=" + encodeURIComponent(song.path);
+      if (dlLink) {
+        dlLink.href = src + "&download=1";   // works for ALL formats incl. FLAC
+        dlLink.hidden = false;
+      }
+      if (playBtn) {
+        playBtn.hidden = false;
+        playBtn.disabled = !song.playable;   // MP3 only (browsers may not do FLAC)
+        // Set the tooltip on EVERY load (the one-shot static sweep cannot know
+        // the per-song playable state): MP3 -> "Play", FLAC -> "MP3 only".
+        playBtn.title = t(song.playable ? "tageditor.play.title"
+                                        : "tageditor.play.mp3only");
+        playBtn.dataset.src = song.playable ? src : "";
+      }
+    }
     // Non-MP3 files are read-only: disable every control + show the note.
     const readOnly = song.is_mp3 === false;
     const note = document.getElementById("te-mp3only");
@@ -715,6 +783,34 @@ function initTagEditor() {
   urlEl.addEventListener("input", () => {
     urlEl.classList.toggle("changed", (urlEl.value || "").trim() !== "");
   });
+  // Play overlay wiring (set up once). Toggles play/pause on the <audio>
+  // element fed by the guarded /api/tageditor/audio endpoint (MP3 only). The
+  // src is stored on the button's dataset by prefill() for the current song.
+  const playBtn = document.getElementById("te-play");
+  const audioEl = document.getElementById("te-audio");
+  if (playBtn && audioEl) {
+    playBtn.addEventListener("click", () => {
+      if (playBtn.disabled) return;
+      if (audioEl.paused) {
+        const src = playBtn.dataset.src || "";
+        if (!src) return;
+        if (audioEl.getAttribute("src") !== src) audioEl.src = src;
+        audioEl.play().catch(() => {});   // the error listener resets the UI
+      } else {
+        audioEl.pause();
+      }
+    });
+    audioEl.addEventListener("play", () => { playBtn.textContent = "⏸"; });
+    audioEl.addEventListener("pause", () => { playBtn.textContent = "▶"; });
+    audioEl.addEventListener("ended", () => { playBtn.textContent = "▶"; });
+    // Non-fatal play failure (e.g. the file vanished -> endpoint 404, or
+    // 403/401): reset the button and surface a hint, never a stuck spinner.
+    audioEl.addEventListener("error", () => {
+      if (!audioEl.getAttribute("src")) return;   // ignore the reset .load()
+      playBtn.textContent = "▶";
+      setMsg(t("tageditor.play.error"), true);
+    });
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

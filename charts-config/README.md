@@ -133,6 +133,34 @@ Hinweise und Grenzen:
   nichts und nichts ist schreibbar. **`/charts` bleibt read-only** – das
   Manifest wird dort nur gelesen.
 
+**Datei + Bitrate (schreibgeschützt).** Unter dem Track-Feld zeigt eine
+schreibgeschützte Zeile den **Library-relativen Pfad** und die **Bitrate/das
+Format** des Songs (`320 kbps`, bzw. `FLAC (verlustfrei)` für verlustfreie
+Formate). Hilft, alte Nicht-MP3-Dateien (FLAC) zu finden. Rein informativ – wird
+nie gespeichert.
+
+**Im Browser abspielen + Herunterladen (optional, standardmäßig AUS).** Ist das
+Flag `TAGEDITOR_AUDIO_ENABLED` eingeschaltet, erscheint auf dem Cover des
+geladenen Songs ein **Play-Overlay** (spielt die Datei über ein HTML5-`<audio>`-
+Element ab, mit Range-/Seek-Unterstützung) und darunter ein **Download-Button**.
+Abspielen funktioniert **nur für MP3** – bei FLAC/verlustfreien Formaten ist der
+Play-Button deaktiviert (Hinweis „Nur MP3 abspielbar"), da Browser (v. a. Safari)
+sie oft nicht dekodieren; der **Download funktioniert für alle Formate** (auch
+FLAC).
+
+> **Sicherheitshinweis (wichtig).** Der Audio-/Download-Endpoint
+> (`GET /api/tageditor/audio`) ist dreifach abgesichert: **flag-gesteuert**
+> (`TAGEDITOR_AUDIO_ENABLED`, **standardmäßig AUS** – ein frischer Clone hat
+> keinerlei Audio-Ausgang, fail-closed), **auth-gesteuert** (dieselbe
+> Login-Session wie alle anderen `/api/tageditor/*`-Routen – unauthentifiziert
+> `401`) **und** **pfad-gesichert** (derselbe `MUSIC_DIR`-Pfad-Guard wie beim
+> Speichern – ein Traversal-/Außen-Pfad wird abgelehnt, kein beliebiges Datei-
+> Lesen). Das Flag ist eine **zusätzliche** Schranke, kein Ersatz für Login oder
+> Pfad-Guard. Schalte es **nur für privaten/authentifizierten** Gebrauch ein.
+> Wird charts-config aus dem Internet erreichbar gemacht, verwende ein **starkes
+> Passwort** und am besten einen **VPN-/Reverse-Proxy-Zugang** davor. Das ist ein
+> privates Werkzeug für die eigene Library, **kein öffentlicher Musik-Server**.
+
 ## Woher die Daten kommen
 
 - **Deezer / Last.fm:** direkte Abfrage der öffentlichen HTTP-APIs (WAN). Ohne
@@ -170,6 +198,7 @@ kann von außen erreichbar sein.
 | `TAGEDITOR_INDEX_TTL` | `300` | Rebuild-Takt des Tag-Editor-Suchindex (Sekunden); von compose gesetzt |
 | `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max. Cover-Upload/-Download-Größe (8 MiB); von compose gesetzt |
 | `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | Timeout für Cover-URL-Abruf (Sekunden); von compose gesetzt |
+| `TAGEDITOR_AUDIO_ENABLED` | `0` | Im-Browser-Abspielen + Download eines geladenen Songs (**standardmäßig AUS**, fail-closed). An = Audio-Endpoint zusätzlich hinter Login **und** Pfad-Guard; nur für privaten/authentifizierten Zugriff einschalten (siehe Sicherheitshinweis) |
 
 ## Zugriff
 

@@ -26,7 +26,7 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import collector, config, editor, i18n
+from . import audio, collector, config, editor, i18n
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -282,6 +282,46 @@ async def api_tageditor_move(
         return JSONResponse({"ok": True, "song": song})
     except editor.EditorError as err:
         return _editor_error(err)
+
+
+# Known audio content types for the stream (extension -> MIME). Only these
+# extensions may be served; anything else inside MUSIC_DIR is refused. This is
+# defense in depth ON TOP of editor._guarded_realpath, not a replacement for it.
+_AUDIO_MIME = {
+    ".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4",
+    ".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+    ".wav": "audio/wav", ".wma": "audio/x-ms-wma", ".aiff": "audio/aiff",
+    ".aif": "audio/aiff",
+}
+
+
+@app.get("/api/tageditor/audio")
+async def api_tageditor_audio(request: Request, path: str = "", download: int = 0):
+    # Gate 1 (auth, FIRST): the identical _current_user check as every other
+    # /api/tageditor/* route. An unauthenticated caller gets 401 and never
+    # learns whether the feature exists (so the flag state is not probeable).
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    # Gate 2 (opt-in flag): fail-closed 403 server-side when the feature is off,
+    # regardless of auth. Checked BEFORE any filesystem touch, so when off the
+    # endpoint does zero I/O and leaks nothing. An ADDITIONAL gate, not a swap.
+    if not config.TAGEDITOR_AUDIO_ENABLED:
+        return JSONResponse(status_code=403,
+                            content={"error": i18n.t("config.tageditor.audio_disabled")})
+    # Gate 3 (path guard + existence + extension): reuse editor._guarded_realpath
+    # UNCHANGED (realpath inside MUSIC_DIR), then require an existing regular
+    # file with a known audio extension (the allowlist is defense in depth).
+    try:
+        real = editor._guarded_realpath(path)
+    except editor.EditorError as err:
+        return _editor_error(err)
+    if not os.path.isfile(real):
+        return _editor_error(editor.EditorError("not_found", 404))
+    ext = os.path.splitext(real)[1].lower()
+    if ext not in _AUDIO_MIME:
+        return _editor_error(editor.EditorError("bad_audio_ext", 400))
+    return audio.stream_file(request, real, _AUDIO_MIME[ext], bool(download))
 
 
 @app.get("/health")
