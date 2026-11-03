@@ -18,9 +18,12 @@ Key safety invariants (design):
     sniffs JPEG/PNG magic bytes (content-type is advisory only).
 """
 
+import base64
 import logging
 
 import httpx
+from mutagen import File as MutagenFile
+from mutagen.flac import Picture
 from mutagen.id3 import ID3, APIC, error as ID3Error
 
 from . import config
@@ -108,17 +111,74 @@ def _make_square(data: bytes) -> bytes | None:
 
 
 def _embedded_cover_bytes(path: str) -> bytes | None:
-    """Return the raw data of the first embedded cover (APIC) or None. Copied."""
+    """
+    Return the raw image bytes of the FIRST embedded cover, or None.
+
+    Format-agnostic (broadened from the old ID3/APIC-only read so the editor's
+    preview also shows embedded art for non-MP3 files the user actually has -
+    .m4a and .flac - which previously fell through to the placeholder even when
+    a cover was embedded):
+      * MP3 / ID3        : the first APIC frame's .data;
+      * MP4 / m4a / m4b  : the first entry of the `covr` atom (MP4Cover bytes);
+      * FLAC             : the first FLAC Picture in .pictures;
+      * OGG / Opus / etc : the first base64 `metadata_block_picture` comment,
+                           decoded via a FLAC Picture block.
+
+    The contract is unchanged: the first embedded cover's raw bytes or None.
+    Fail-open throughout - any read/parse error (unreadable, garbage, missing)
+    returns None and never raises, exactly like the old implementation.
+    """
     try:
-        tags = ID3(path)
+        audio = MutagenFile(path)
     except Exception:
         return None
-    for k in tags.keys():
-        if k.startswith("APIC"):
-            try:
-                return tags[k].data
-            except Exception:
-                return None
+    if audio is None:
+        return None
+
+    tags = getattr(audio, "tags", None)
+
+    # --- MP3 / ID3: first APIC frame. Works whether mutagen loaded this as an
+    # MP3 (audio.tags is an ID3 instance) or any other ID3-tagged container. ---
+    if tags is not None:
+        try:
+            for key in tags.keys():
+                if key.startswith("APIC"):
+                    data = getattr(tags[key], "data", None)
+                    if data:
+                        return bytes(data)
+        except Exception:
+            pass
+
+    # --- MP4 / m4a / m4b: the `covr` atom is a list of MP4Cover (bytes-like). ---
+    if tags is not None:
+        try:
+            covr = tags.get("covr")
+            if covr:
+                return bytes(covr[0])
+        except Exception:
+            pass
+
+    # --- FLAC: native picture blocks on the file object (.pictures). ---
+    pictures = getattr(audio, "pictures", None)
+    if pictures:
+        try:
+            return bytes(pictures[0].data)
+        except Exception:
+            pass
+
+    # --- OGG / Opus / Vorbis: base64 `metadata_block_picture` Vorbis comment,
+    # which encodes a FLAC Picture block. ---
+    if tags is not None:
+        try:
+            encoded = tags.get("metadata_block_picture")
+            if encoded:
+                raw = encoded[0] if isinstance(encoded, list) else encoded
+                pic = Picture(base64.b64decode(raw))
+                if pic.data:
+                    return bytes(pic.data)
+        except Exception:
+            pass
+
     return None
 
 
