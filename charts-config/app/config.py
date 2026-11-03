@@ -147,3 +147,7 @@ TAGEDITOR_COVER_FETCH_TIMEOUT = _get_int("TAGEDITOR_COVER_FETCH_TIMEOUT", 15)
 # default OFF, so it instead turns on ONLY for an explicit truthy token.
 TAGEDITOR_AUDIO_ENABLED = os.environ.get(
     "TAGEDITOR_AUDIO_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+
+# Timeout (seconds) for a single tag-editor FLAC->MP3 ffmpeg transcode. Bounds a
+# hung ffmpeg; generous for one track. Parsed with _get_int like the other ints.
+TAGEDITOR_CONVERT_TIMEOUT = _get_int("TAGEDITOR_CONVERT_TIMEOUT", 600)

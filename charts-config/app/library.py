@@ -33,6 +33,16 @@ from . import config, tags
 # Extensions recognized as audio (identical to charts-songrequest/charts-import).
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".wma"}
 
+# AUDIO allowlist minus .mp3 — the exact set the tag-editor convert button
+# accepts and the non-mp3 list surfaces. Single source of truth so Feature A's
+# convert allowlist and Feature B's list filter are provably identical. Derived
+# from AUDIO_EXTENSIONS plus the two extra lossless container extensions
+# (.aiff/.aif) that main._AUDIO_MIME already recognizes but AUDIO_EXTENSIONS
+# omits, so the set matches _AUDIO_MIME's non-mp3 members exactly. '.alac' is
+# deliberately excluded: ALAC audio lives inside .m4a containers (already
+# covered) and '.alac' is not a real file extension.
+NON_MP3_AUDIO_EXTENSIONS = (AUDIO_EXTENSIONS - {".mp3"}) | {".aiff", ".aif"}
+
 # Invalid characters for folder names (like tags._clean_component elsewhere).
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -747,3 +757,28 @@ def classify(path: str, manifest_entries: dict) -> str:
     if stripped != base and stripped in manifest_entries:
         return "stack"
     return "curated"
+
+
+def list_nonmp3(music_dir: str, limit: int = 500) -> tuple[list[dict], bool]:
+    """
+    List the non-MP3 AUDIO files in music_dir for the tag editor's non-MP3
+    section. Derived from the SAME TTL-cached search index build_search_index
+    produces, filtered to NON_MP3_AUDIO_EXTENSIONS - so it inherits for free
+    every pruning rule _build_records enforces: only AUDIO_EXTENSIONS files are
+    recorded at all (txt / cover.jpg / .png / .m3u / .nfo never present), and
+    the walk prunes @eaDir / #recycle / .charts-trash / every dot-folder.
+
+    Returns (files, truncated). Each file dict is {path, ext} (path absolute, ext
+    lowercased). The route adds rel_path + format for display and sorts the list.
+    `truncated` is True when the cap was hit. Fail-open via build_search_index
+    ([] on an unreadable tree).
+    """
+    recs = build_search_index(music_dir)   # TTL-cached, same pruning as search
+    out: list[dict] = []
+    for rec in recs:
+        ext = os.path.splitext(rec["path"])[1].lower()
+        if ext in NON_MP3_AUDIO_EXTENSIONS:   # mp3 excluded by construction
+            out.append({"path": rec["path"], "ext": ext})
+            if len(out) >= limit:
+                return out, True
+    return out, False

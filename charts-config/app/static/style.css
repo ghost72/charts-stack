@@ -371,7 +371,12 @@ body.login {
    viewports. Scoped to .te-top so the generic finder `form { display:flex }`
    never crushes the field inputs again. */
 .te-top {
-  display: flex; flex-wrap: wrap; align-items: flex-start;
+  /* C1: align-items:stretch (was flex-start) makes the cover column grow to the
+     taller left field column's height, so justify-content:space-between on
+     .te-cover can push the download button to the column bottom, flush with the
+     left .te-fileinfo line. On the narrow-screen wrap the columns stack and the
+     alignment becomes moot (vertical flow), which is correct. */
+  display: flex; flex-wrap: wrap; align-items: stretch;
   gap: 20px;
 }
 /* Editable fields column: label + input pairs stacked one per row. Flexes to
@@ -404,7 +409,15 @@ body.login {
      label rises into the hint-line region and the cover BOX top-aligns with the
      first input row (Künstler) instead of dropping ~22px below it. */
   margin-top: -22px;
+  /* C1: pin the top group (.te-cover-top = label + box) to the top and push the
+     lone #te-download child to the column bottom, so its bottom edge lands on
+     the same baseline as the left .te-fileinfo line. The extra vertical slack
+     opens up BETWEEN the box and the download button, where it should. */
+  justify-content: space-between;
 }
+/* C1: plain wrapper grouping the "Cover" label + the cover box so they move as
+   one and keep the box's top alignment; display:block (no flex needed). */
+.te-cover-top { display: block; }
 .te-cover-label {
   display: block; color: var(--muted); font-size: .82rem; margin-bottom: 6px;
 }
@@ -607,25 +620,85 @@ body.login {
   .te-legend-item { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
 
-/* Play overlay centered on the cover (absolute inside the relatively-positioned
-   .te-cover-box). Only rendered when TAGEDITOR_AUDIO_ENABLED is on + a song is
-   loaded; disabled (dimmed) for non-MP3 formats the browser cannot play. */
+/* C2: glassmorphism / water-drop play button centered on the cover (absolute
+   inside the relatively-positioned .te-cover-box). Only rendered when
+   TAGEDITOR_AUDIO_ENABLED is on + a song is loaded; disabled (dimmed, no blur)
+   for non-MP3 formats the browser cannot play. A translucent dark base + a
+   top-left white radial sheen + inset highlight/shade + an external drop shadow
+   read as a glossy convex droplet floating above the cover; backdrop-blur
+   frosts whatever is behind the glyph so it stays legible over both light and
+   dark covers. Browsers without backdrop-filter fall back to the semi-opaque
+   base - still a visible, tappable round button. 64px exceeds the ~44px mobile
+   touch-target guideline. The play logic + MP3-only gating are unchanged. */
 .te-play-overlay {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 2; width: 54px; height: 54px; border-radius: 50%;
-  border: 0; background: rgba(0, 0, 0, .55); color: #fff; font-size: 1.4rem;
-  cursor: pointer; display: grid; place-items: center;
+  z-index: 2;
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .35);
+  background:
+    radial-gradient(120% 120% at 30% 25%,
+                    rgba(255, 255, 255, .55) 0%,
+                    rgba(255, 255, 255, .12) 40%,
+                    rgba(255, 255, 255, .04) 60%),
+    rgba(40, 40, 60, .28);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);   /* Safari/iOS */
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, .45),                 /* soft drop shadow -> floats */
+    inset 0 1px 1px rgba(255, 255, 255, .6),       /* top sheen highlight */
+    inset 0 -8px 14px rgba(0, 0, 0, .22);          /* bottom inner shade -> volume */
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .5);        /* glyph legible on light covers */
+  font-size: 1.5rem; line-height: 1;
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .12s ease;
 }
+.te-play-glyph { pointer-events: none; }           /* clicks land on the button */
+.te-play-overlay:hover  { transform: translate(-50%, -50%) scale(1.06); }
+.te-play-overlay:active { transform: translate(-50%, -50%) scale(.97); }
 .te-play-overlay[hidden] { display: none; }
-.te-play-overlay:disabled { opacity: .45; cursor: not-allowed; }
+.te-play-overlay:disabled {
+  opacity: .45; cursor: not-allowed;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
 /* The <audio> element is a hidden mechanism (controls live on the overlay). */
 #te-audio { display: none; }
-/* Small secondary download button under the cover (all formats incl. FLAC). */
+/* Small secondary download button under the cover (all formats incl. FLAC).
+   margin-top:0 so C1's justify-content:space-between controls its vertical
+   position (flush at the column bottom with the left file-info line). */
 .te-download {
-  display: inline-block; margin-top: 8px; text-align: center;
+  display: inline-block; margin-top: 0; text-align: center;
   padding: 5px 10px; border-radius: 8px; border: 1px solid #5a5172;
   background: var(--bg); color: var(--fg); font-size: .8rem;
   text-decoration: none; cursor: pointer;
 }
 .te-download:hover { border-color: var(--accent); }
 .te-download[hidden] { display: none; }
+
+/* Convert-to-MP3 button in the always-on .te-actions row (Feature A). Shown
+   only for a loaded non-MP3 song (prefill toggles [hidden]). Secondary look. */
+.te-convert {
+  flex: 0 0 auto; margin-left: auto;
+  padding: 6px 12px; border-radius: 8px; border: 1px solid #5a5172;
+  background: var(--bg); color: var(--fg); font-size: .82rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.te-convert:hover { border-color: var(--accent); }
+.te-convert[hidden] { display: none; }
+
+/* Non-MP3 audio file list (Feature B), below the editor card. Read-only rows. */
+.te-nonmp3 { margin-top: 20px; }
+.te-nonmp3-heading { margin: 0 0 .3rem; font-size: 1rem; }
+.te-nonmp3-hint { margin-bottom: .6rem; }
+.te-nonmp3-list { display: flex; flex-direction: column; gap: 5px; }
+.te-nonmp3-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid #3a3048; background: var(--tile);
+}
+.te-nonmp3-path { flex: 1 1 200px; min-width: 0; word-break: break-all; font-size: .85rem; }
+.te-nonmp3-fmt { margin-left: 0; }
+.te-nonmp3-open { flex: 0 0 auto; }
+.te-nonmp3-trunc { margin-top: 4px; }

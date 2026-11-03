@@ -152,6 +152,32 @@ for all formats** (including FLAC).
 > ideally put it behind a **VPN/reverse-proxy auth**. This is a private tool for
 > your own library, **not a public music server**.
 
+**Convert to MP3 (per non-MP3 song).** When a non-MP3 audio file is loaded
+(FLAC/M4A/OGG/…), a **Convert to MP3** button appears in the actions row. After
+a confirm step (honest warning: **FLAC→MP3 is a quality downgrade**, lossless →
+lossy, not reversible), the service transcodes the file to **MP3 320 kbps CBR**
+via ffmpeg, carries the tags + embedded cover over, preserves the mtime ("date
+added"), and writes the result as `<name>.mp3` in the same folder. The
+**original is NOT deleted** but moved, reversibly, into the trash bin
+`/music/Music/.charts-trash/flac2mp3-<date>/` (same convention as the dedup).
+The provenance markers are cleared → the song becomes **hand-managed** (the
+automation never touches it again). If ffmpeg fails, the original is left
+untouched and nothing is moved to trash. The convert button is **auth-gated
+only** (like every `/api/tageditor/*` route), **not** behind
+`TAGEDITOR_AUDIO_ENABLED` – that flag gates only the play/download endpoint. The
+deliberate per-song click does not violate the "automation never touches the
+hand-added library" rule.
+
+**Non-MP3 list (below the editor).** A read-only list shows **only non-MP3 audio
+files** in the library (FLAC/M4A/OGG/… – no txt/cover.jpg/.m3u/.nfo). Trash,
+`@eaDir`, `#recycle` and dot-folders are skipped (same index pruning as search).
+Each entry shows the library-relative path + the format and offers **Open in tag
+editor** to load the song above (e.g. to convert it to MP3).
+
+> **ffmpeg** is now **part of the charts-config image** (required by the MP3
+> 320 CBR convert action), installed via `apt-get`. It has no other role beyond
+> the audio/download endpoint.
+
 ## Where the data comes from
 
 - **Deezer / Last.fm:** direct query of the public HTTP APIs (WAN). Without
@@ -190,6 +216,7 @@ exposed.
 | `TAGEDITOR_COVER_MAX_BYTES` | `8388608` | max cover upload/fetch size (8 MiB); supplied by compose |
 | `TAGEDITOR_COVER_FETCH_TIMEOUT` | `15` | cover URL fetch timeout (seconds); supplied by compose |
 | `TAGEDITOR_AUDIO_ENABLED` | `0` | in-browser play + download of a loaded song (**default OFF**, fail-closed). When on, the audio endpoint is additionally behind the login **and** the path guard; turn on only for private/authenticated use (see the security note) |
+| `TAGEDITOR_CONVERT_TIMEOUT` | `600` | timeout (seconds) for a single FLAC→MP3 ffmpeg transcode; bounds a hung ffmpeg |
 
 ## Access
 
