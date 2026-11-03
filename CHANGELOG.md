@@ -10,6 +10,92 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [2.2.1] - 2026-11-03
+
+Two threads land together. First, a **cross-service matching fix**: a song that
+only survived in a compilation-named album (e.g. a Lidarr "Greatest Hits" folder)
+was treated as missing by the chart-matching services and re-downloaded,
+silently undoing earlier de-duplication. The presence check is now shared and
+consistent across services and guarded by a parity test so the logic can no
+longer drift apart. Second, the **Manual Tag Editor grows a hands-on toolkit**:
+in-browser play, download, FLAC→MP3 conversion, a non-MP3 list, a trash manager
+and a full-resolution cover download — all behind the existing admin login.
+
+### Added
+- **charts-config — tag-editor in-browser play & download.** A glass play-button
+  overlay on the cover plays the song in the browser (MP3 only; FLAC is
+  disabled), and a download button fetches the original file in any format.
+  Both go through a new `/api/tageditor/audio` endpoint protected by the admin
+  login **and** a path-traversal guard, and gated by an opt-in flag
+  **`TAGEDITOR_AUDIO_ENABLED` (default off)** — a fresh clone exposes no audio
+  route until the operator turns it on. A read-only field under the track shows
+  the library-relative path plus bitrate/format.
+- **charts-config — tag-editor FLAC→MP3 conversion.** For a non-MP3 song, an
+  inline button converts it to MP3 320 CBR (ffmpeg, now in the charts-config
+  image), carrying over tags, cover and mtime, moving the original into
+  `.charts-trash/flac2mp3-<date>/` (reversible) and clearing the provenance
+  markers so the result is hand-managed. An honest UI warning flags the
+  lossless→lossy quality downgrade and the move to trash. Behind the admin login
+  and path guard.
+- **charts-config — non-MP3 list panel.** A separate read-only panel lists only
+  non-MP3 **audio** files (an audio-extension allowlist minus mp3 — never
+  sidecar txt/cover/m3u), each with path + format and an "open in tag editor"
+  action. One deliberate click per song, so it never violates the "automation
+  never touches the hand-managed library" rule.
+- **charts-config — Trash (Papierkorb) manager panel.** A separate panel lists
+  the whole `/music/Music/.charts-trash/` tree (upgrade trash, `dedup-<date>/`,
+  `flac2mp3-<date>/`), each entry with path + format + **size** and a total size
+  + count at the top, with per-file permanent delete and empty-all, each behind
+  a confirm. Strictly scoped to `.charts-trash` (admin login + trash-root guard,
+  symlink escape refused). README notes that `TRASH_RETENTION_DAYS` (charts-import,
+  default 30) prunes by mtime, so a file moved to trash today can be cleaned up
+  at the next charts-import run, not only after 30 days.
+- **charts-config — full-resolution cover download.** A discreet grey "download
+  cover" pill above the cover fetches the embedded art at original size — useful
+  when the cover is larger than the inline preview limit.
+
+### Fixed
+- **Cross-service — stop re-downloading songs that only live in
+  compilation-named albums.** The chart-matching services (charts-sync,
+  charts-energy, charts-flashback, charts-recommend, charts-hitparade) now share
+  a single presence guard (`presence.py`, byte-identical across services) that
+  mirrors songrequest's `find_existing` and applies **no** compilation filter on
+  the missing-song path, and `_looks_like_compilation` now short-circuits on a
+  Lidarr `(Year)` album folder. A song that exists only inside a "Greatest Hits"
+  (or similar) album is no longer reported missing and re-fetched. Live result:
+  the hitparade match counted 134 real tracks instead of ~8242 inflated by
+  compilation entries.
+- **Shared helpers — converge the duplicated matching logic** so every service
+  behaves the same: `_artist_key` transliterates accents stack-wide
+  (`Motörhead` == `Motorhead`), `_strip_title_decoration` is applied identically
+  in charts-import and charts-config, the compilation marker sets match
+  (`kuschelrock` removed from the upgrade path), and charts-import presence folds
+  through `_artist_key`.
+- **charts-config — tag-editor search after a folder rename.** Search query
+  folding is now symmetric with the index `title_key` (it strips the same
+  decoration such as `(remix)`), so a renamed song is found again instead of
+  disappearing from results.
+- **charts-config — embedded cover read for m4a/flac.** Cover extraction is now
+  format-agnostic (MP4 `covr`, FLAC pictures, OGG) instead of ID3/APIC-only, so
+  non-MP3 songs show their cover in the editor.
+- **charts-config — cover-download pill no longer overlaps the search results.**
+  Loading a song removed the hint spacer, which let the cover column's negative
+  margin pull the "download cover" pill up over the results list; the editor form
+  now keeps a fixed top margin.
+
+### Changed
+- **charts-config — two download buttons disambiguated** (en/de/fr): the cover
+  control reads "download cover" and the song control reads "download song", so
+  it is clear which file each one fetches.
+
+### Testing
+- **Repo-root shared-helper parity guard** (`tests/test_shared_helper_parity.py`)
+  freezes the duplicated matching helpers: it asserts `presence.py` is
+  byte-identical across the services that copy it and checks behavioural parity
+  of `_title_key` / `_artist_key` / `_looks_like_compilation` / the marker sets /
+  the quality helper. Future drift now fails a test instead of resurfacing as a
+  re-download bug.
+
 ## [2.2.0] - 2026-11-01
 
 charts-config gains a **Manual Tag Editor** — a password-protected web tool to
