@@ -216,9 +216,13 @@ def _notify(results: list[dict]) -> None:
     parts = [t("notify.overview.channel", title=r["title"],
                matched=r["matched"], missing=r["missing"]) for r in results]
     compact = [f"✅{r['matched']} ⬇{r['missing']}" for r in results]
-    head = [t("hitparade.notify.summary_header",
-              matched=total_matched, missing=total_missing)]
     overview = notify_budget.overview_line(parts, compact)
+    # The trailing colon of the head line introduces the overview below it. With
+    # a single chart the overview is omitted, so the plain variant (no colon)
+    # is used and nothing dangles.
+    head_key = ("hitparade.notify.summary_header" if overview
+                else "hitparade.notify.summary_header_plain")
+    head = [t(head_key, matched=total_matched, missing=total_missing)]
     if overview:
         head.append(overview)
     head.append("")

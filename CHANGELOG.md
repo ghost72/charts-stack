@@ -61,6 +61,16 @@ deployed together, so a single stack version is the honest unit.
   kept) survived the import, and players showed `TIT3` as a title suffix
   ("Power (fordjonly.com)"). Both duplicated copies are updated identically and
   frozen by the repo-root parity test.
+- **Dangling colon in the charts-hitparade and charts-energy Pushover head
+  line.** "89 in the library, 11 to be downloaded:" ended in a colon that used to
+  introduce the overview line; with exactly one chart/channel the overview is
+  intentionally omitted, so the colon introduced nothing. The head line now
+  drops the colon when no overview follows (2+ items keep it). Two new i18n keys
+  (`hitparade.notify.summary_header_plain`, `energy.notify.body_plain`, 1185 →
+  1187 per language); existing values unchanged. charts-sync, -flashback,
+  -recommend and -digest heads do not end in a colon before an omitted overview,
+  and the import/download/upgrade headers introduce song lines directly, so they
+  keep theirs.
 - `charts-import/scripts/strip_provenance_tags.py` no longer rewrites the whole
   library: it is a read-only report by default and writes only for a reviewed
   `--apply-list` of paths inside `MUSIC_DIR` (mtime preserved), in line with the

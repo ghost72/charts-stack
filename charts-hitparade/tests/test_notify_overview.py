@@ -68,13 +68,29 @@ def test_single_chart_has_no_overview_line(monkeypatch):
     main._notify(results)
     msg = sent["msg"]
     lines = msg.split("\n")
-    assert lines[0] == t("hitparade.notify.summary_header", matched=89, missing=11)
+    # No overview follows the head line -> no dangling trailing colon.
+    assert lines[0] == t("hitparade.notify.summary_header_plain",
+                         matched=89, missing=11)
+    assert not lines[0].endswith(":")
     assert lines[1] == ""
     assert lines[2] == "<b>Swiss Hitparade</b>"
     assert lines[3] == t("hitparade.notify.chart_line", matched=89, missing=11,
                          total=100)
     assert "Swiss Hitparade ✅89" not in msg
-    assert msg == _old_message(results)
+    # Identical to the old layout except for the dropped colon on the head line.
+    old = _old_message(results).split("\n")
+    assert old[0].endswith(":")
+    assert [old[0][:-1]] + old[1:] == lines
+
+
+def test_two_charts_keep_colon_before_overview(monkeypatch):
+    sent = _capture(monkeypatch)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    main._notify([_chart("Chart One", 5, 2), _chart("Chart Two", 7, 1)])
+    lines = sent["msg"].split("\n")
+    assert lines[0] == t("hitparade.notify.summary_header", matched=12, missing=3)
+    assert lines[0].endswith(":")
+    assert lines[1] == "Chart One ✅5 ⬇2 · Chart Two ✅7 ⬇1"
 
 
 def test_german_single_chart_example(monkeypatch):

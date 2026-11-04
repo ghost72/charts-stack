@@ -137,6 +137,19 @@ def test_single_channel_has_no_overview_line(monkeypatch):
     assert lines[2] == "<b>Only Channel</b>"
     assert lines[3] == t("energy.notify.own_done", matched=3, missing=2)
     assert "Only Channel ✅3" not in sent["msg"]
+    # No overview follows the head line -> no dangling trailing colon.
+    assert lines[0] == t("energy.notify.body_plain", matched=3, missing=2)
+    assert not lines[0].endswith(":")
+
+
+def test_two_items_keep_colon_before_overview(monkeypatch):
+    sent = _capture(monkeypatch)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    main._notify([_own("A", 1, 0), _own("B", 2, 1)], [], None)
+    lines = sent["msg"].split("\n")
+    assert lines[0] == t("energy.notify.body", matched=3, missing=1)
+    assert lines[0].endswith(":")
+    assert lines[1] == "A ✅1 ⬇0 · B ✅2 ⬇1"
 
 
 def test_twenty_channels_every_missing_count_in_head(monkeypatch):

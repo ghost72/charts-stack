@@ -1183,5 +1183,7 @@
   "recommend.lb.stats_empty_body": "stats: empty response body for '{user}' (range '{range}', HTTP {status}) - treated as no data yet.",
   "recommend.lb.stats_invalid_json": "stats: response for '{user}' (range '{range}') is not valid JSON ({error}) - treated as no data.",
   "recommend.lb.stats_period": "stats '{user}' range '{range}': period {start} to {end} (computed {updated}), {count} recordings.",
-  "recommend.config.unknown_stats_range": "Unknown RECOMMEND_STATS_RANGE '{value}' - ListenBrainz may reject it. Valid: {valid}."
+  "recommend.config.unknown_stats_range": "Unknown RECOMMEND_STATS_RANGE '{value}' - ListenBrainz may reject it. Valid: {valid}.",
+  "hitparade.notify.summary_header_plain": "<b>{matched}</b> in the library, {missing} to be downloaded",
+  "energy.notify.body_plain": "<b>{matched}</b> in the library, {missing} to be downloaded"
 }

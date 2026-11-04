@@ -298,8 +298,11 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
         parts.append(t("energy.notify.overview_library",
                        matched=len(present), missing=len(to_load)))
         compact.append(f"📚 ✅{len(present)} ⬇{len(to_load)}")
-    head = [t("energy.notify.body", matched=total_matched, missing=total_missing)]
     overview = notify_budget.overview_line(parts, compact)
+    # The head line's trailing colon introduces the overview below it; without
+    # an overview (single item omitted) the plain variant avoids a dangling ":".
+    body_key = "energy.notify.body" if overview else "energy.notify.body_plain"
+    head = [t(body_key, matched=total_matched, missing=total_missing)]
     if overview:
         head.append(overview)
 
