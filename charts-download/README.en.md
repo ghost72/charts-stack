@@ -368,7 +368,7 @@ per song and at the end `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 
 ## Pushover message layout
 
-The breakdown line is the overview and stays at the top. The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+The breakdown is the overview and stays at the top. Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line.  The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (`.env`)
 

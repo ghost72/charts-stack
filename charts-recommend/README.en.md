@@ -236,4 +236,4 @@ sudo docker compose down                       # stop
 
 ## Pushover message layout
 
-The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+The per-user source list (`Sources:`) follows the same layout rule: one user stays on one short line, two users share a line joined with ` · `, three or more get one line each. The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.

@@ -84,7 +84,7 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 
 ## Pushover message layout
 
-Below the header an **overview line** lists every own channel, feed and the library part with its counts (`Channel ✅matched ⬇missing`, `theme ➡n`, `📚 Library ✅n ⬇n`). With very many channels it switches to a compact form (`✅n ⬇n`); beyond roughly 35 entries the line ends with " …" (theoretical bound). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+Below the header an **overview** lists every own channel, feed and the library part with its counts (`Channel ✅matched ⬇missing`, `theme ➡n`, `📚 Library ✅n ⬇n`). Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line. With very many entries it switches to a compact one-line form (`✅n ⬇n`); beyond roughly 35 entries the line ends with " …" (theoretical bound). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (central `.env`)
 

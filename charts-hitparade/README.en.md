@@ -61,7 +61,7 @@ the next scheduler check the same day instead of waiting a whole week.
 
 ## Pushover message layout
 
-Below the header an **overview line** shows every chart with its present/missing counts (`Chart ✅n ⬇n`), so later charts stay visible even if the first chart has a long missing list. The failure alert is cut on its escaped length as well. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+Below the header an **overview** shows every chart with its present/missing counts (`Chart ✅n ⬇n`). Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line. With a single chart there is no overview: the chart's own block header (`89 present, 11 missing (of 100)`) is the only place with the numbers. So later charts stay visible even if the first chart has a long missing list. The failure alert is cut on its escaped length as well. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (central `.env`)
 

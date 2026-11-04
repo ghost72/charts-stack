@@ -91,7 +91,7 @@ to `missing-flashback.txt` determines the later folder/file name.
 
 ## Pushover message layout
 
-When there are songs to download **and** songs already present, an **overview line** (`⬇ N missing, ✅ N already in the library`) follows the header; with only one category the header already carries the number. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+When there are songs to download **and** songs already present, an **overview line** (`⬇ N missing · ✅ N already in the library`, one line for two items) follows the header; with only one category the header already carries the number. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (central `.env`)
 

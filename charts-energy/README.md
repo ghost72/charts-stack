@@ -84,7 +84,7 @@ prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
 
 ## Aufbau der Pushover-Meldung
 
-Unter der Kopfzeile listet eine **Übersichtszeile** jeden eigenen Kanal, jeden Feed und den Library-Teil mit seinen Zahlen (`Kanal ✅vorhanden ⬇fehlend`, `Thema ➡n`, `📚 Library ✅n ⬇n`). Bei sehr vielen Kanälen wechselt sie in eine Kompaktform (`✅n ⬇n`); ab etwa 35 Einträgen endet die Zeile mit „ …“ (theoretische Grenze). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+Unter der Kopfzeile listet eine **Übersicht** jeden eigenen Kanal, jeden Feed und den Library-Teil mit seinen Zahlen (`Kanal ✅vorhanden ⬇fehlend`, `Thema ➡n`, `📚 Library ✅n ⬇n`). Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag. Bei sehr vielen Einträgen wechselt sie in eine einzeilige Kompaktform (`✅n ⬇n`); ab etwa 35 Einträgen endet die Zeile mit „ …“ (theoretische Grenze). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration (zentrale `.env`)
 

@@ -415,7 +415,7 @@ Navidrome imports both formats equally and automatically.
 
 ## Pushover message layout
 
-Below the header an **overview line** shows the counts (`🆕 N new, ⬇ N missing`), so they stay visible when the song lists are shortened. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+Below the header an **overview** shows the counts (`🆕 N new · ⬇ N missing`) when both categories exist (one category: omitted, the list header carries the count). They stay visible when the song lists are shortened. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration
 

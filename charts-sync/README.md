@@ -418,7 +418,7 @@ feste Titelliste nicht sauber abbilden. Deshalb schreibt `charts-sync` eine
 
 ## Aufbau der Pushover-Meldung
 
-Unter der Kopfzeile zeigt eine **Übersichtszeile** die Zahlen (`🆕 N neu, ⬇ N fehlen`), damit sie sichtbar bleiben, wenn die Songlisten gekürzt werden. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+Unter der Kopfzeile zeigt eine **Übersicht** die Zahlen (`🆕 N neu · ⬇ N fehlen`), wenn beide Kategorien vorkommen (bei einer Kategorie entfällt sie, die Listen-Kopfzeile trägt die Zahl). So bleiben sie sichtbar, wenn die Songlisten gekürzt werden. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration
 

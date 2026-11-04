@@ -62,7 +62,7 @@ erneut versucht, statt eine ganze Woche zu warten.
 
 ## Aufbau der Pushover-Meldung
 
-Unter der Kopfzeile zeigt eine **Übersichtszeile** jeden Chart mit seinen Zahlen (`Chart ✅n ⬇n`), damit spätere Charts sichtbar bleiben, auch wenn der erste eine lange Fehlt-Liste hat. Die Fehler-Meldung wird ebenfalls auf die escapte Länge gekürzt. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+Unter der Kopfzeile zeigt eine **Übersicht** jeden Chart mit seinen Zahlen (`Chart ✅n ⬇n`). Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag. Bei nur einem Chart entfällt sie: die Kopfzeile des Chart-Blocks (`89 vorhanden, 11 fehlen (von 100)`) ist die einzige Stelle mit den Zahlen. Spätere Charts bleiben so sichtbar, auch wenn der erste eine lange Fehlt-Liste hat. Die Fehler-Meldung wird ebenfalls auf die escapte Länge gekürzt. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration (zentrale `.env`)
 

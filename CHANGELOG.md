@@ -25,6 +25,16 @@ deployed together, so a single stack version is the honest unit.
 - The 1024-character budget is now measured on the HTML-escaped text, i.e. the
   way Pushover receives it (`&`, `<`, `>` count as more than one character).
 
+- **Uniform overview layout in all services.** One overview item is omitted
+  (the detail block below already carries the same numbers, e.g. a single
+  charts-hitparade chart showing `89 present, 11 missing (of 100)`), two items
+  share one line joined with ` · `, three or more are printed one item per line
+  (digest: `📺 YouTube · 44`, one source per line, so labels like "Schweizer
+  Mundart" no longer wrap mid-item). Applies to the digest, sync, energy,
+  flashback, hitparade, import, download and recommend messages; if the full
+  layout is too long it falls back to a compact one-line form. The digest's
+  hard-coded `➖➖➖➖➖➖➖➖` separator line is gone (a blank line separates the
+  blocks). Other separators did not exist.
 ### Fixed
 - **charts-digest no longer hides later sources.** With 112 new songs from six
   sources only the first source's count (Energy 59) was visible, the rest was
