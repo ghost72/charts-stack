@@ -78,7 +78,8 @@ def preserve_mtime(path: str):
 # Copied verbatim from charts-import so the strip whitelist and the two marker
 # names stay in lockstep. See charts-import/app/tags.py for the full rationale.
 _PROVENANCE_FULL_PREFIXES = ("COMM", "TENC", "TSSE", "WXXX",
-                             "WCOM", "WOAF", "WPUB", "TOWN", "TMED", "WOAR")
+                             "WCOM", "WOAF", "WPUB", "TOWN", "TMED", "WOAR",
+                             "WORS", "TRSN", "TRSO", "TIT1", "TIT3", "GRP1")
 
 # TXXX descriptions that are PROTECTED (case-insensitive substring): everything
 # around MusicBrainz / ReplayGain plus the two charts-stack provenance markers,
@@ -128,6 +129,32 @@ def _is_musicbrainz_ufid(frame) -> bool:
     return "musicbrainz.org" in owner.lower()
 
 
+# Frames that are removed ONLY when their value looks like an upload-site /
+# domain stamp (e.g. "fordjonly.com"). Real label / copyright / original-artist
+# text in these frames is legitimate content and is kept. Exact 4-character
+# frame IDs only - never a short prefix such as "TIT"/"TP" (startswith matching
+# would delete TIT2 title / TPE1 artist).
+_PROVENANCE_VALUE_FRAMES = ("TPUB", "TCOP", "TOPE")
+_UPLOAD_STAMP_RE = re.compile(
+    r"https?://|www\.|\bt\.me/|(?<!\w)@\w|[a-z0-9-]+\.[a-z]{2,}\b",
+    re.IGNORECASE)
+
+
+def _looks_like_upload_stamp(frame) -> bool:
+    """
+    True if a text frame's value looks like a domain/URL/upload-site stamp
+    ("fordjonly.com", "www.example.net", "http://...", "t.me/...",
+    "something.ru", "@handle"). Real label/copyright text such as
+    "Universal Music", "℗ 2020 Sony Music Entertainment" or "Warner Records
+    Inc." returns False. Fail-open to False (keep) on an unreadable value.
+    """
+    try:
+        text = " ".join(str(x) for x in (getattr(frame, "text", None) or []))
+    except Exception:
+        return False
+    return bool(_UPLOAD_STAMP_RE.search(text))
+
+
 def strip_provenance_tags(path: str) -> bool:
     """
     Remove provenance/encoder frames (COMM/TENC/TSSE/WXXX/... + non-protected
@@ -153,6 +180,11 @@ def strip_provenance_tags(path: str) -> bool:
                     to_delete.append(k)
             elif ku.startswith("UFID"):
                 if not _is_musicbrainz_ufid(tags.get(k)):
+                    to_delete.append(k)
+            elif ku.startswith(_PROVENANCE_VALUE_FRAMES):
+                # Publisher/copyright/original artist: delete ONLY when the
+                # value is a domain/URL-like upload-site stamp.
+                if _looks_like_upload_stamp(tags.get(k)):
                     to_delete.append(k)
             elif ku.startswith(_PROVENANCE_FULL_PREFIXES):
                 to_delete.append(k)

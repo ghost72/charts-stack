@@ -354,3 +354,46 @@ def test_notify_budget_escape_matches_notify():
                 f"on {s!r}"
             )
             assert len(esc(s)) == nb.measure([s])
+
+
+# --- Provenance strip: frame denylist + value helper ------------------------
+
+_PROVENANCE_SERVICES = ["charts-import", "charts-config"]
+
+_STAMP_CORPUS = [
+    "fordjonly.com", "www.example.net", "http://example.org/x", "t.me/chan",
+    "something.ru", "@handle", "Universal Music",
+    "\u2117 2020 Sony Music Entertainment", "Warner Records Inc.", "",
+]
+
+
+def test_provenance_denylist_and_helper_parity():
+    mods = {svc: _load(svc, "tags.py") for svc in _PROVENANCE_SERVICES}
+    ref = mods["charts-import"]
+    for svc, m in mods.items():
+        assert m._PROVENANCE_FULL_PREFIXES == ref._PROVENANCE_FULL_PREFIXES, svc
+        assert m._PROVENANCE_VALUE_FRAMES == ref._PROVENANCE_VALUE_FRAMES, svc
+        assert m._UPLOAD_STAMP_RE.pattern == ref._UPLOAD_STAMP_RE.pattern, svc
+        assert m._UPLOAD_STAMP_RE.flags == ref._UPLOAD_STAMP_RE.flags, svc
+        assert m._TXXX_PROTECTED_SUBSTR == ref._TXXX_PROTECTED_SUBSTR, svc
+        for value in _STAMP_CORPUS:
+            frame = types.SimpleNamespace(text=[value])
+            assert m._looks_like_upload_stamp(frame) == \
+                ref._looks_like_upload_stamp(frame), (svc, value)
+    # Exact 4-char IDs only: a short prefix would delete TIT2/TPE1 via startswith.
+    all_ids = ref._PROVENANCE_FULL_PREFIXES + ref._PROVENANCE_VALUE_FRAMES
+    for fid in all_ids:
+        assert len(fid) == 4, fid
+    assert not any(f in ("TIT2", "TPE1", "TPE2") for f in all_ids)
+
+
+def test_provenance_helper_source_identical():
+    """The helper's source is frozen identical in both copies (via ast)."""
+    dumps = []
+    for svc in _PROVENANCE_SERVICES:
+        text = (ROOT / svc / "app" / "tags.py").read_text(encoding="utf-8")
+        fn = next(n for n in ast.parse(text).body
+                  if isinstance(n, ast.FunctionDef)
+                  and n.name == "_looks_like_upload_stamp")
+        dumps.append(ast.dump(fn))
+    assert dumps[0] == dumps[1]
