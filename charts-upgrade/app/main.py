@@ -30,7 +30,8 @@ import logging
 import os
 import time
 
-from . import config, library, manifest, notify, quality, slsk, state, status
+from . import (config, library, manifest, notify, notify_budget, quality, slsk,
+               state, status)
 from .i18n import t
 
 logging.basicConfig(
@@ -212,6 +213,27 @@ def _is_stable(path: str, min_age: int = 10) -> bool:
         return False
 
 
+def _upgrade_message(header: str, songs: list[dict], reason_line) -> str:
+    """Header + up to 15 three-line entries, cut between whole entries.
+
+    reason_line(s) renders the reason line of one song. The per-run cap keeps
+    its own "... and N more" note; the 1024-char budget adds the global line.
+    """
+    shown = songs[:15]
+    rest = len(songs) - len(shown)
+    entries = [notify_budget.Entry([
+        t("upgrade.notify.song_entry", artist=s['artist'], title=s['title']),
+        reason_line(s),
+        "",  # blank line between songs for readability
+    ]) for s in shown]
+    block = notify_budget.Block(
+        entries=entries, header=[""], hidden=rest,
+        cap_note=t("upgrade.notify.more", count=rest) if rest else "")
+    return notify_budget.fit_message(
+        [header], [block], [],
+        more=lambda n: t("upgrade.notify.more", count=n))
+
+
 def _notify_summary(planned: list[dict], upgraded: list[dict],
                     scanned: int, skipped_comp: int) -> None:
     """Logs and reports (Pushover) a summary."""
@@ -220,29 +242,20 @@ def _notify_summary(planned: list[dict], upgraded: list[dict],
             logger.info(t("upgrade.notify.dry_run_done_nothing"))
             return
         logger.info(t("upgrade.notify.dry_run_done", count=len(planned)))
-        lines = [t("upgrade.notify.dry_run_header", count=len(planned)), ""]
-        for s in planned[:15]:
-            lines.append(t("upgrade.notify.song_entry", artist=s['artist'], title=s['title']))
-            lines.append(t("upgrade.notify.reason", reason=s['reason']))
-            lines.append("")  # blank line between songs for readability
-        if len(planned) > 15:
-            lines.append(t("upgrade.notify.more", count=len(planned) - 15))
-        notify.send(t("upgrade.notify.title_dry"), "\n".join(lines))
+        message = _upgrade_message(
+            t("upgrade.notify.dry_run_header", count=len(planned)), planned,
+            lambda s: t("upgrade.notify.reason", reason=s['reason']))
+        notify.send(t("upgrade.notify.title_dry"), message)
     else:
         if not upgraded:
             logger.info(t("upgrade.notify.live_done_nothing"))
             return
         logger.info(t("upgrade.notify.live_done", count=len(upgraded)))
-        lines = [t("upgrade.notify.upgraded_header", count=len(upgraded)), ""]
-        for s in upgraded[:15]:
-            lines.append(t("upgrade.notify.song_entry", artist=s['artist'], title=s['title']))
-            lines.append(t("upgrade.notify.reason_bitrate", reason=s['reason'],
-                           bitrate=s.get('new_bitrate', '?')))
-            lines.append("")  # blank line between songs for readability
-        if len(upgraded) > 15:
-            lines.append(t("upgrade.notify.more", count=len(upgraded) - 15))
-        notify.send(t("upgrade.notify.title_live"), "\n".join(lines))
-
+        message = _upgrade_message(
+            t("upgrade.notify.upgraded_header", count=len(upgraded)), upgraded,
+            lambda s: t("upgrade.notify.reason_bitrate", reason=s['reason'],
+                        bitrate=s.get('new_bitrate', '?')))
+        notify.send(t("upgrade.notify.title_live"), message)
 
 def _next_run_iso() -> str:
     """Timestamp of the next run as ISO-8601 (for the dashboard)."""
