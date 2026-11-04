@@ -1170,5 +1170,13 @@
   "dashboard.ui.inflight.missing.backlog_hint": "en attente de téléchargement",
   "dashboard.ui.inflight.missing.per_source_label": "par source : {parts}",
   "dashboard.inprogress.log.slskd_failed": "en cours : échec de lecture des transferts slskd : {error}",
-  "dashboard.inprogress.log.state_read_failed": "en cours : échec de lecture de l'état des téléchargements : {error}"
+  "dashboard.inprogress.log.state_read_failed": "en cours : échec de lecture de l'état des téléchargements : {error}",
+  "digest.notify.overview_item": "{emoji} {label} {count}",
+  "notify.overview.channel": "{title} ✅{matched} ⬇{missing}",
+  "energy.notify.overview_feed": "{theme} ➡{count}",
+  "notify.overview.new": "🆕 {count} nouveaux",
+  "notify.overview.missing": "⬇ {count} manquants",
+  "energy.notify.overview_library": "📚 Bibliothèque ✅{matched} ⬇{missing}",
+  "flashback.notify.overview_present": "✅ {count} déjà dans la bibliothèque",
+  "notify.more": "… et {count} de plus"
 }

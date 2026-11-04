@@ -1170,5 +1170,13 @@
   "dashboard.ui.inflight.missing.backlog_hint": "waiting to be downloaded",
   "dashboard.ui.inflight.missing.per_source_label": "per source: {parts}",
   "dashboard.inprogress.log.slskd_failed": "in-progress: slskd transfers read failed: {error}",
-  "dashboard.inprogress.log.state_read_failed": "in-progress: download-state read failed: {error}"
+  "dashboard.inprogress.log.state_read_failed": "in-progress: download-state read failed: {error}",
+  "digest.notify.overview_item": "{emoji} {label} {count}",
+  "notify.overview.channel": "{title} ✅{matched} ⬇{missing}",
+  "energy.notify.overview_feed": "{theme} ➡{count}",
+  "notify.overview.new": "🆕 {count} new",
+  "notify.overview.missing": "⬇ {count} missing",
+  "energy.notify.overview_library": "📚 Library ✅{matched} ⬇{missing}",
+  "flashback.notify.overview_present": "✅ {count} already in the library",
+  "notify.more": "… and {count} more"
 }

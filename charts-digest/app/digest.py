@@ -17,7 +17,7 @@ import os
 import time
 from datetime import datetime, timedelta
 
-from . import config
+from . import config, notify_budget
 from .i18n import t
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,21 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         if pairs:
             per_source.append((src, pairs))
             unique_total += len(pairs)
-    per_source.sort(key=lambda x: len(x[1]), reverse=True)
+    # Largest group first; ties in canonical _SOURCE_LABELS order, unknown
+    # sources last and alphabetical. The overview line uses the same order.
+    labels = list(_SOURCE_LABELS)
+
+    def _rank(src: str) -> "tuple[int, str]":
+        return (labels.index(src) if src in _SOURCE_LABELS else len(labels), src)
+
+    per_source.sort(key=lambda x: (-len(x[1]), *_rank(x[0])))
+
+    def _label_for(src: str) -> "tuple[str, str]":
+        label_entry = _SOURCE_LABELS.get(src)
+        if label_entry is not None:
+            return label_entry[0], t(label_entry[1])
+        # Unknown source: raw value as label, otherwise translated fallback.
+        return "🎵", src or t("digest.source.unknown")
 
     # Title with song count; subtle variation in the emoji depending on yield.
     if unique_total >= 20:
@@ -190,72 +204,47 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         head_emoji = "🎶"
     title = t("digest.notify.title", emoji=head_emoji, count=unique_total)
 
-    header = [t("digest.notify.header_period", period_from=yesterday, period_to=today),
-              t("digest.notify.header_count", count=unique_total,
-                sources=len(per_source)),
-              "➖➖➖➖➖➖➖➖"]
+    # One overview line with EVERY source and its count, so the counts survive
+    # even when the detail list below is cut by the Pushover budget.
+    parts, compact = [], []
+    for src, pairs in per_source:
+        emoji, label = _label_for(src)
+        parts.append(t("digest.notify.overview_item", emoji=emoji, label=label,
+                       count=len(pairs)))
+        compact.append(f"{emoji} {len(pairs)}")
+    head = [t("digest.notify.header_period", period_from=yesterday, period_to=today),
+            t("digest.notify.header_count", count=unique_total,
+              sources=len(per_source))]
+    overview = notify_budget.overview_line(parts, compact)
+    if overview:
+        head.append(overview)
+    head.append("➖➖➖➖➖➖➖➖")
     footer = ["", t("digest.notify.footer")]
 
-    # Pushover truncates a 'message' hard at PUSHOVER_MESSAGE_LIMIT characters
-    # (otherwise a title breaks off mid-way and the footer is missing). So build
-    # budget-aware: the footer is RESERVED and always appended; if the body
-    # fills up, we close the current source cleanly with "... and N more" and
-    # cut off the rest. Length counts on the finished (\n-joined) HTML raw text
-    # - exactly what Pushover sees.
-    limit = config.PUSHOVER_MESSAGE_LIMIT
-    footer_text = "\n".join(footer)
-    budget = limit - len(footer_text) - 1  # -1 for the \n before the footer
-
-    body = list(header)
-
-    def _len(ls):
-        return len("\n".join(ls))
-
-    truncated = False
+    # One block per source. The budget cuts only between whole songs; the
+    # per-source cap (MAX_PER_SOURCE) keeps its own "... and N more" note.
+    blocks = []
     for src, pairs in per_source:
-        if truncated:
-            break
-        label_entry = _SOURCE_LABELS.get(src)
-        if label_entry is not None:
-            emoji, label = label_entry[0], t(label_entry[1])
-        else:
-            # Unknown source: raw value as label, otherwise translated fallback.
-            emoji, label = "🎵", src or t("digest.source.unknown")
+        emoji, label = _label_for(src)
         shown = pairs[:config.MAX_PER_SOURCE]
         rest = len(pairs) - len(shown)
+        # Artist stays full, only the title is shortened at the end if needed
+        # ("start…"). Compact line format (no indentation) saves space.
+        entries = [
+            notify_budget.Entry([t(
+                "digest.notify.song", artist=a,
+                title=_shorten_title(title_txt, config.TITLE_MAX_LEN))])
+            for a, title_txt in shown
+        ]
+        blocks.append(notify_budget.Block(
+            entries=entries,
+            header=["", t("digest.notify.group_header", emoji=emoji,
+                          label=label, count=len(pairs))],
+            hidden=rest,
+            cap_note=t("digest.notify.more", count=rest) if rest else ""))
 
-        # Append the source header as a trial; if even that does not fit, stop.
-        trial = body + ["", t("digest.notify.group_header",
-                              emoji=emoji, label=label, count=len(pairs))]
-        if _len(trial) > budget:
-            truncated = True
-            break
-        body = trial
-
-        for i, (a, title_txt) in enumerate(shown):
-            # Artist stays full, only the title is shortened at the end if
-            # needed ("start…") - artist + title start are enough to recognize
-            # it. Compact line format (no indentation) saves space -> more songs
-            # fit.
-            song = t("digest.notify.song",
-                     artist=a, title=_shorten_title(title_txt, config.TITLE_MAX_LEN))
-            remaining = len(shown) - i + (1 if rest else 0)
-            # Reserve space for a possible "... and N more" line as long as more
-            # songs/rest follow (otherwise the closing line itself could blow
-            # the budget).
-            more_hint = t("digest.notify.more", count=rest + (len(shown) - i))
-            need_hint = remaining > 1
-            projected = _len(body + [song] + ([more_hint] if need_hint else []))
-            if projected > budget:
-                # This song no longer fits -> summarize everything from here.
-                left = rest + (len(shown) - i)
-                body.append(t("digest.notify.more", count=left))
-                truncated = True
-                break
-            body.append(song)
-        else:
-            if rest:
-                body.append(t("digest.notify.more", count=rest))
-
-    body.extend(footer)
-    return title, "\n".join(body).rstrip(), unique_total
+    message = notify_budget.fit_message(
+        head, blocks, footer,
+        more=lambda n: t("digest.notify.more", count=n),
+        limit=config.PUSHOVER_MESSAGE_LIMIT)
+    return title, message, unique_total

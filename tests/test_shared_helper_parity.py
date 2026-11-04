@@ -29,6 +29,7 @@ None of the helpers UNDER TEST ever call these runtime objects, so name-only
 stubs suffice to satisfy import-time resolution.
 """
 
+import ast
 import importlib.util
 import pathlib
 import sys
@@ -286,3 +287,70 @@ def test_quality_table_and_boundaries():
         assert set(results.values()) == {want}, (
             f"_expected_cutoff_khz({bitrate}) != {want}: {results}"
         )
+
+
+# --- FR-2: notify_budget ----------------------------------------------------
+
+# Every service that sends list-shaped Pushover messages (= has app/notify.py).
+# The reference is charts-sync.
+_NOTIFY_BUDGET_SERVICES = [
+    "charts-digest", "charts-download", "charts-energy", "charts-flashback",
+    "charts-hitparade", "charts-import", "charts-recommend", "charts-sync",
+    "charts-upgrade",
+]
+_NOTIFY_BUDGET_REFERENCE = "charts-sync"
+
+
+def test_notify_budget_byte_identity():
+    reference = (ROOT / _NOTIFY_BUDGET_REFERENCE / "app"
+                 / "notify_budget.py").read_bytes()
+    for service in _NOTIFY_BUDGET_SERVICES:
+        path = ROOT / service / "app" / "notify_budget.py"
+        assert path.exists(), f"{service}/app/notify_budget.py is missing"
+        assert path.read_bytes() == reference, (
+            f"{service}/app/notify_budget.py is not byte-identical to "
+            f"{_NOTIFY_BUDGET_REFERENCE}/app/notify_budget.py (copy-drift)"
+        )
+
+
+_ESCAPE_CORPUS = [
+    "a & b", "<b>x</b>", "<x>", "<i>a</i> <u>u</u>", "&amp;", "a < b > c",
+    "</b><B>", "🎵 Beyoncé & Jay-Z", "",
+]
+
+
+def _notify_escape_func(service: str):
+    """Extract _ALLOWED_TAGS + _escape_html_keep_tags from notify.py.
+
+    notify.py is not imported (it needs httpx/config/i18n); the two module-level
+    definitions are extracted with ast and exec'd in a clean namespace.
+    """
+    src = (ROOT / service / "app" / "notify.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    assigns = [
+        n for n in tree.body
+        if isinstance(n, ast.Assign) and len(n.targets) == 1
+        and isinstance(n.targets[0], ast.Name)
+        and n.targets[0].id == "_ALLOWED_TAGS"
+    ]
+    funcs = [n for n in tree.body
+             if isinstance(n, ast.FunctionDef)
+             and n.name == "_escape_html_keep_tags"]
+    assert len(assigns) == 1, f"{service}: expected one _ALLOWED_TAGS assign"
+    assert len(funcs) == 1, f"{service}: expected one _escape_html_keep_tags"
+    code = "\n".join(ast.get_source_segment(src, n) for n in (assigns[0], funcs[0]))
+    ns: dict = {}
+    exec(compile(code, f"{service}/app/notify.py", "exec"), ns)
+    return ns["_escape_html_keep_tags"]
+
+
+def test_notify_budget_escape_matches_notify():
+    nb = _load(_NOTIFY_BUDGET_REFERENCE, "notify_budget.py")
+    for service in _NOTIFY_BUDGET_SERVICES:
+        esc = _notify_escape_func(service)
+        for s in _ESCAPE_CORPUS:
+            assert esc(s) == nb.escaped(s), (
+                f"{service}: notify escape differs from notify_budget.escaped "
+                f"on {s!r}"
+            )
+            assert len(esc(s)) == nb.measure([s])
