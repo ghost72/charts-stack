@@ -244,3 +244,7 @@ sudo docker compose logs -f charts-recommend   # Logs
 sudo docker compose up -d --build              # neu bauen/starten
 sudo docker compose down                       # stoppen
 ```
+
+## Aufbau der Pushover-Meldung
+
+Das 15-Song-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.

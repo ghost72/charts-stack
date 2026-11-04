@@ -285,6 +285,7 @@ charts-import/
 │   ├── backfill_replaygain.py# Einmal-Skript: ReplayGain nachrüsten
 │   ├── backfill_metadata.py  # Gemeinsamer Kern: Fehlende-Felder-Entscheidung + Schreiben (Jahr/Album/Track)
 │   ├── notify.py         # Optionale Pushover-Benachrichtigung
+│   ├── notify_budget.py  # 1024-Zeichen-Budget + Übersichtszeile (geteilte Kopie)
 │   └── main.py           # Scheduler-Loop, verbindet alle Module
 ├── scripts/
 │   ├── cleanup_flashback_legacy.py  # Einmal-Skript: alte flashback-Altlasten entfernen
@@ -585,6 +586,10 @@ gefolgt von einer Zusammenfassung wie
 `Lauf fertig: X Songs importiert, Y alte Downloads entfernt.`
 
 ---
+
+## Aufbau der Pushover-Meldung
+
+Die Aufschlüsselung (`N aus <Playlist>, …`) ist die Übersicht und bleibt immer vollständig. Das 10-Einträge-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration (`.env`)
 

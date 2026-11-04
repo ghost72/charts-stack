@@ -206,3 +206,7 @@ sudo docker compose up -d --build
 # Stoppen
 sudo docker compose down
 ```
+
+## Aufbau der Pushover-Meldung
+
+Jeder Song ist ein unteilbarer Dreizeilen-Eintrag (Song, Grund, Leerzeile) und wird nie zerschnitten; das 15-Einträge-Limit behält seinen eigenen Hinweis. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.

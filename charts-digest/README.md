@@ -47,6 +47,10 @@ anstoßen (sendet auch bei 0 neuen Songs eine ehrliche Rückmeldung):
 docker exec charts-digest python -m app.main --now
 ```
 
+## Aufbau der Pushover-Meldung
+
+Die ersten Zeilen der Meldung sind eine **Übersichtszeile** mit jeder Quelle und ihrer Song-Anzahl, größte zuerst (z. B. `⚡ Energy 59, 🙋 Manuell angefordert 12, 📤 Manuell hochgeladen 8`). So geht keine Quelle verloren, auch wenn die Detailliste darunter gekürzt wird. Gruppen, die nicht mehr passen, stehen in der Schlusszeile „… und N weitere“ statt stillschweigend zu fehlen. `DIGEST_MAX_PER_SOURCE` behält seine Bedeutung (Limit pro Quelle mit eigenem Hinweis). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+
 ## Konfiguration (zentrale `.env`)
 
 | Variable | Default | Bedeutung |

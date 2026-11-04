@@ -282,6 +282,7 @@ charts-import/
 │   ├── backfill_replaygain.py# one-time script: backfill ReplayGain
 │   ├── backfill_metadata.py  # shared core: missing-field decision + write (year/album/track)
 │   ├── notify.py         # optional Pushover notification
+│   ├── notify_budget.py  # 1024-char message budget + overview line (shared copy)
 │   └── main.py           # scheduler loop, connects all modules
 ├── scripts/
 │   ├── cleanup_flashback_legacy.py  # one-time script: remove old flashback legacy entries
@@ -569,6 +570,10 @@ On the first run you see per song `Kopiert: … -> …` (copied) or
 X songs imported, Y old downloads removed.)
 
 ---
+
+## Pushover message layout
+
+The breakdown line (`N from <playlist>, …`) is the overview and always stays complete. The 10-entry cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (`.env`)
 

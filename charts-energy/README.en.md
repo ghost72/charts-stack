@@ -82,6 +82,10 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 > There is deliberately no speculative "slug guesser". The alarm only fires for
 > a channel that WAS live and has stayed gone past the threshold.
 
+## Pushover message layout
+
+Below the header an **overview line** lists every own channel, feed and the library part with its counts (`Channel ✅matched ⬇missing`, `theme ➡n`, `📚 Library ✅n ⬇n`). With very many channels it switches to a compact form (`✅n ⬇n`); beyond roughly 35 entries the line ends with " …" (theoretical bound). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+
 ## Configuration (central `.env`)
 
 | Variable | Default | Purpose |

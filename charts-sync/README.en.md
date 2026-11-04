@@ -177,6 +177,7 @@ charts-sync/
 │   ├── library.py        # library scan + matching (mutagen + difflib)
 │   ├── playlist.py       # writes the .m3u playlists and missing files
 │   ├── notify.py         # optional Pushover notification
+│   ├── notify_budget.py  # 1024-char message budget + overview line (shared copy)
 │   └── main.py           # scheduler loop, ties all modules together
 ├── Dockerfile            # python:3.12-slim, starts app.main
 ├── compose.yml           # service definition for the NAS
@@ -411,6 +412,10 @@ represent a fixed title list. That is why `charts-sync` writes an `.m3u`.
 Navidrome imports both formats equally and automatically.
 
 ---
+
+## Pushover message layout
+
+Below the header an **overview line** shows the counts (`🆕 N new, ⬇ N missing`), so they stay visible when the song lists are shortened. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration
 

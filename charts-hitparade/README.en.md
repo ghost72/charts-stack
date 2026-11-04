@@ -59,6 +59,10 @@ is only stamped on a genuine success, so a run that hit a transient fetch error
 (including a `RUN_ON_START` run right after a container restart) is retried at
 the next scheduler check the same day instead of waiting a whole week.
 
+## Pushover message layout
+
+Below the header an **overview line** shows every chart with its present/missing counts (`Chart ✅n ⬇n`), so later charts stay visible even if the first chart has a long missing list. The failure alert is cut on its escaped length as well. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+
 ## Configuration (central `.env`)
 
 | Variable | Default | Purpose |

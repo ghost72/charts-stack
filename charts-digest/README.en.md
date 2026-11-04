@@ -46,6 +46,10 @@ Independently of the daily schedule, the summary can be triggered immediately
 docker exec charts-digest python -m app.main --now
 ```
 
+## Pushover message layout
+
+The first lines of the message are an **overview line** with every source and its song count, largest first (e.g. `⚡ Energy 59, 🙋 Manually requested 12, 📤 Manual upload 8`), so no source is lost even when the detail list below is shortened. Groups that no longer fit are summarised in the final "… and N more" line instead of being dropped silently. `DIGEST_MAX_PER_SOURCE` keeps its meaning (per-source cap with its own note). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+
 ## Configuration (central `.env`)
 
 | Variable | Default | Meaning |

@@ -10,6 +10,38 @@ The services are tightly coupled (shared `.env`, shared `compose.yml`, shared
 central `lang/` files, shared copy-into-every-service modules) and are always
 deployed together, so a single stack version is the honest unit.
 
+## [Unreleased]
+
+### Changed
+- **All list-shaped Pushover messages** (charts-digest, -sync, -energy,
+  -flashback, -hitparade, -import, -download, -recommend, -upgrade) now lead
+  with a header and, where there is more than one category, **one overview
+  line** with every category and its count. Detail lists are cut explicitly at
+  Pushover's 1024-character budget, only between whole entries, with exactly
+  one "… and N more" line. The old blunt "truncated" cut of sync, energy,
+  flashback and hitparade is gone. Output is byte-identical to before when
+  nothing needs to be cut (import, download, recommend, covered by golden
+  tests).
+- The 1024-character budget is now measured on the HTML-escaped text, i.e. the
+  way Pushover receives it (`&`, `<`, `>` count as more than one character).
+
+### Fixed
+- **charts-digest no longer hides later sources.** With 112 new songs from six
+  sources only the first source's count (Energy 59) was visible, the rest was
+  silently dropped. The overview line now shows all six counts at the top and
+  the final line counts the omitted songs.
+- charts-hitparade's failure alert is cut on its escaped length, so a reason
+  containing `&` or `<` can no longer exceed the limit.
+
+### Added
+- Shared `notify_budget.py` helper (byte-identical copy in the nine notifying
+  services), frozen by `tests/test_shared_helper_parity.py` (byte identity and
+  escape parity with every `notify.py`), plus unit tests in
+  `tests/test_notify_budget.py` and per-service builder tests.
+- 8 i18n keys (en/de/fr, 1172 → 1180 per language). Language files are
+  bind-mounted: copy the updated `lang/*.json` to the NAS and restart the
+  affected containers.
+
 ## [2.2.1] - 2026-11-03
 
 Two threads land together. First, a **cross-service matching fix**: a song that

@@ -60,6 +60,10 @@ vorübergehenden Abruffehler scheitert (auch ein `RUN_ON_START`-Lauf direkt nach
 einem Container-Neustart), wird noch am selben Tag beim nächsten Scheduler-Check
 erneut versucht, statt eine ganze Woche zu warten.
 
+## Aufbau der Pushover-Meldung
+
+Unter der Kopfzeile zeigt eine **Übersichtszeile** jeden Chart mit seinen Zahlen (`Chart ✅n ⬇n`), damit spätere Charts sichtbar bleiben, auch wenn der erste eine lange Fehlt-Liste hat. Die Fehler-Meldung wird ebenfalls auf die escapte Länge gekürzt. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+
 ## Konfiguration (zentrale `.env`)
 
 | Variable | Default | Zweck |

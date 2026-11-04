@@ -90,6 +90,10 @@ Die Kanonisierung läuft **vor** Key/Match/missing/Jahr-Map, damit der in
 `missing-flashback.txt` geschriebene Name den späteren Ordner-/Dateinamen
 bestimmt.
 
+## Aufbau der Pushover-Meldung
+
+Gibt es Songs zum Nachladen **und** schon vorhandene, folgt auf die Kopfzeile eine **Übersichtszeile** (`⬇ N fehlen, ✅ N schon in der Library`); bei nur einer Kategorie steht die Zahl bereits in der Kopfzeile. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+
 ## Konfiguration (zentrale `.env`)
 
 | Variable | Default | Bedeutung |

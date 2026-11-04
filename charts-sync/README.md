@@ -179,6 +179,7 @@ charts-sync/
 │   ├── library.py        # Library-Scan + Matching (mutagen + difflib)
 │   ├── playlist.py       # Schreibt die .m3u-Playlists und missing-Dateien
 │   ├── notify.py         # Optionale Pushover-Benachrichtigung
+│   ├── notify_budget.py  # 1024-Zeichen-Budget + Übersichtszeile (geteilte Kopie)
 │   └── main.py           # Scheduler-Loop, verbindet alle Module
 ├── Dockerfile            # python:3.12-slim, startet app.main
 ├── compose.yml           # Service-Definition für das NAS
@@ -414,6 +415,10 @@ feste Titelliste nicht sauber abbilden. Deshalb schreibt `charts-sync` eine
 `.m3u`. Navidrome importiert beide Formate gleichwertig automatisch.
 
 ---
+
+## Aufbau der Pushover-Meldung
+
+Unter der Kopfzeile zeigt eine **Übersichtszeile** die Zahlen (`🆕 N neu, ⬇ N fehlen`), damit sie sichtbar bleiben, wenn die Songlisten gekürzt werden. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration
 

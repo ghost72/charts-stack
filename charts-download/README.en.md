@@ -232,6 +232,7 @@ charts-download/
 │   ├── state.py          # remembers requested songs (no double downloads)
 │   ├── manifest.py       # writes chart metadata for charts-import
 │   ├── notify.py         # optional Pushover notification
+│   ├── notify_budget.py  # 1024-char message budget + overview line (shared copy)
 │   └── main.py           # scheduler loop, connects all modules
 ├── Dockerfile            # python:3.12-slim, starts app.main
 ├── compose.yml           # service definition for the NAS
@@ -364,6 +365,10 @@ per song and at the end `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 (run finished (DRY_RUN): X songs would be downloaded.)
 
 ---
+
+## Pushover message layout
+
+The breakdown line is the overview and stays at the top. The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (`.env`)
 

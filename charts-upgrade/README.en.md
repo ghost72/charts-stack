@@ -203,3 +203,7 @@ sudo docker compose up -d --build
 # Stop
 sudo docker compose down
 ```
+
+## Pushover message layout
+
+Each song is an atomic three-line entry (song, reason, blank line) and is never split; the 15-entry cap keeps its own note. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.

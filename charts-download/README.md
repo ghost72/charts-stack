@@ -234,6 +234,7 @@ charts-download/
 │   ├── state.py          # merkt sich angefragte Songs (keine Doppel-Downloads)
 │   ├── manifest.py       # schreibt Chart-Metadaten für charts-import
 │   ├── notify.py         # optionale Pushover-Benachrichtigung
+│   ├── notify_budget.py  # 1024-Zeichen-Budget + Übersichtszeile (geteilte Kopie)
 │   └── main.py           # Scheduler-Loop, verbindet alle Module
 ├── Dockerfile            # python:3.12-slim, startet app.main
 ├── compose.yml           # Service-Definition für das NAS
@@ -367,6 +368,10 @@ Im ersten (Dry-Run-)Lauf siehst du pro Song `[DRY_RUN] wuerde laden: …` und
 am Ende `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 
 ---
+
+## Aufbau der Pushover-Meldung
+
+Die Aufschlüsselung ist die Übersicht und bleibt zuoberst. Das 15-Song-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration (`.env`)
 
