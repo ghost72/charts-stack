@@ -22,7 +22,8 @@ Position in the chain:
 import logging
 import time
 
-from . import config, manifest, missing, notify, slsk, state, status
+from . import (config, manifest, missing, notify, notify_budget, slsk, state,
+               status)
 from .i18n import t
 
 logging.basicConfig(
@@ -361,32 +362,33 @@ def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None
     header = header lines (count + breakdown). items = (label, text).
     Format: header, blank line, then one bold heading per playlist with the
     songs below it, blank lines between the groups. Capped at 15 songs total
-    (keep the Pushover message short).
+    (keep the Pushover message short) and cut between whole songs if the
+    1024-character Pushover budget is reached first.
     """
-    lines = list(header)
+    cap = 15
     # Group by label (order: largest group first).
     groups: dict[str, list[str]] = {}
     for label, text in items:
         groups.setdefault(label, []).append(text)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-
-    shown = 0
-    remaining = len(items)
-    for i, (label, texts) in enumerate(ordered):
-        if shown >= 15:
+    blocks = []
+    taken = 0
+    for label, texts in ordered:
+        if taken >= cap:
             break
-        lines.append("")  # blank line before each group (also after the header)
-        lines.append(f"<b>{label}</b>")
-        for text in texts:
-            if shown >= 15:
-                break
-            lines.append(text)
-            shown += 1
-            remaining -= 1
-    if remaining > 0:
-        lines.append("")
-        lines.append(t("download.notify.more", count=remaining))
-    notify.send(title, "\n".join(lines))
+        take = texts[:cap - taken]
+        taken += len(take)
+        # Blank line before each group (also after the header).
+        blocks.append(notify_budget.Block(
+            entries=[notify_budget.Entry([text]) for text in take],
+            header=["", f"<b>{label}</b>"]))
+    if blocks:
+        # Songs beyond the cap are reported through the one global line.
+        blocks[-1].hidden = len(items) - taken
+    message = notify_budget.fit_message(
+        list(header), blocks, [],
+        more=lambda n: t("download.notify.more", count=n), more_sep=("",))
+    notify.send(title, message)
 
 
 def _next_run_iso() -> str:

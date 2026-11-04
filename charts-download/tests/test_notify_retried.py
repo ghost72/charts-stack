@@ -100,3 +100,82 @@ def test_requeue_failed_returns_songs(monkeypatch):
     assert songs == [("ABBA", "Waterloo")]
     # The failed key was removed from the state.
     assert "abba|waterloo" not in st["requested"]
+
+
+# --- Golden no-cut tests + budget (notify_budget) ------------------------------
+
+from app import notify_budget  # noqa: E402
+from app.i18n import t  # noqa: E402
+
+
+def _old_message(header, items):
+    """Frozen copy of the pre-change _notify body (message only)."""
+    lines = list(header)
+    groups: dict[str, list[str]] = {}
+    for label, text in items:
+        groups.setdefault(label, []).append(text)
+    ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    shown = 0
+    remaining = len(items)
+    for i, (label, texts) in enumerate(ordered):
+        if shown >= 15:
+            break
+        lines.append("")
+        lines.append(f"<b>{label}</b>")
+        for text in texts:
+            if shown >= 15:
+                break
+            lines.append(text)
+            shown += 1
+            remaining -= 1
+    if remaining > 0:
+        lines.append("")
+        lines.append(t("download.notify.more", count=remaining))
+    return "\n".join(lines)
+
+
+def _items(spec):
+    return [(label, f"{label} Artist {i} - Song {i}")
+            for label, n in spec for i in range(n)]
+
+
+def _check_equal(monkeypatch, spec):
+    _setup(monkeypatch)
+    captured = _capture(monkeypatch)
+    header = ["⬇ <b>3 songs</b>", "<i>breakdown</i>"]
+    items = _items(spec)
+    main._notify("title", header, items)
+    assert captured["message"] == _old_message(header, items)
+    return captured["message"]
+
+
+def test_golden_below_cap(monkeypatch):
+    _check_equal(monkeypatch, [("charts", 3), ("mundart", 2)])
+
+
+def test_golden_above_cap_within_budget(monkeypatch):
+    # 20 songs: cap reached inside the 2nd group; the 3rd group never reached.
+    msg = _check_equal(monkeypatch, [("charts", 9), ("mundart", 9), ("manuell", 2)])
+    assert msg.endswith("\n\n" + t("download.notify.more", count=5))
+    assert "<b>manuell</b>" not in msg
+
+
+def test_golden_cap_at_group_boundary(monkeypatch):
+    msg = _check_equal(monkeypatch, [("charts", 15), ("mundart", 2)])
+    assert msg.endswith(t("download.notify.more", count=2))
+
+
+def test_budget_case_breakdown_first_and_within_limit(monkeypatch):
+    _setup(monkeypatch)
+    captured = _capture(monkeypatch)
+    header = ["⬇ <b>15 songs</b>", "<i>15 from charts</i>"]
+    items = [("charts", f"A Rather Long Artist Name Number {i} - "
+                        f"A Rather Long Song Title To Fill The Budget {i}")
+             for i in range(40)]
+    main._notify("title", header, items)
+    msg = captured["message"]
+    assert notify_budget.measure([msg]) <= 1024
+    lines = msg.split("\n")
+    assert lines[:2] == header
+    shown = sum(1 for ln in lines if ln.startswith("A Rather"))
+    assert lines[-2] == "" and lines[-1] == t("download.notify.more", count=40 - shown)
