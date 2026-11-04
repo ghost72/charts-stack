@@ -86,7 +86,8 @@ def test_notify_no_new_songs_does_not_send(captured, de_lang):
 
 
 def test_notify_truncates_large_batch(captured, de_lang):
-    """A very large batch is cut to Pushover's 1024-char cap with a note."""
+    """A very large batch is cut to Pushover's 1024-char cap with an explicit
+    '... and N more' line carrying the exact number of omitted songs."""
     counters = {"channels": 1, "new": 50, "matched": 0, "missing": 50}
     missing = [(i, f"Artist Number {i}", f"A Fairly Long Song Title {i}", "1985")
                for i in range(1, 51)]
@@ -94,8 +95,32 @@ def test_notify_truncates_large_batch(captured, de_lang):
 
     msg = captured["message"]
     assert len(msg) <= 1024
-    # The shared truncation note is appended.
-    assert "gekürzt" in msg
+    lines = msg.split("\n")
+    shown = sum(1 for ln in lines if ln.startswith("Artist Number"))
+    assert 0 < shown < 50
+    assert lines[-1] == i18n.t("notify.more", count=50 - shown)
+    assert not hasattr(main, "_truncate_for_pushover")
+
+
+def test_overview_line_both_categories(captured, de_lang):
+    """miss > 0 and present > 0: one overview line with the untruncated counts."""
+    counters = {"channels": 1, "new": 7, "matched": 3, "missing": 4}
+    missing = [(i, f"A{i}", f"T{i}", "") for i in range(4)]
+    present = [(f"P{i}", f"Q{i}", "") for i in range(3)]
+    main._notify(counters, missing, present)
+    lines = captured["message"].split("\n")
+    assert lines[1] == "⬇ 4 fehlen, ✅ 3 schon in der Library"
+
+
+def test_overview_line_single_category_none(captured, de_lang):
+    """Only missing, or only present: the head line already carries the number."""
+    main._notify({"channels": 1, "new": 2, "matched": 0, "missing": 2},
+                 [(1, "A", "B", ""), (2, "C", "D", "")])
+    assert "⬇" not in captured["message"].split("\n")[1]
+    main._notify({"channels": 1, "new": 2, "matched": 2, "missing": 0}, [],
+                 [("A", "B", ""), ("C", "D", "")])
+    assert "schon in der Library" not in captured["message"]
+    assert "⬇" not in captured["message"]
 
 
 def test_notify_lists_present_songs(captured, de_lang):

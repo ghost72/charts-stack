@@ -30,7 +30,8 @@ import os
 import time
 from datetime import datetime
 
-from . import (config, deezer, flashback, library, notify, presence, status,
+from . import (config, deezer, flashback, library, notify, notify_budget,
+               presence, status,
                year as year_mod)
 from .errors import FetchError
 from .i18n import t
@@ -292,43 +293,36 @@ def _notify(counters: dict, missing: list[tuple[int, str, str, str]],
         head = t("flashback.notify.all_present", new=new)
 
     lines = [head]
+    # Overview line (head, never cut) only when both categories exist; with a
+    # single category the head line above already carries the number.
+    if miss > 0 and present:
+        overview = notify_budget.overview_line([
+            t("notify.overview.missing", count=miss),
+            t("flashback.notify.overview_present", count=len(present)),
+        ])
+        lines.append(overview)
+    blocks = []
     # List the songs that will actually be downloaded (the `missing` set), the
     # way charts-sync lists its songs - one line per song, with the resolved
     # release year when available. flashback has no chart position, so no #pos.
     if missing:
-        lines.append("")
-        lines.append(t("flashback.notify.to_load_header", count=len(missing)))
-        for _pos, artist, title, yr in missing:
-            lines.append(_song_line(artist, title, yr))
-
+        blocks.append(notify_budget.Block(
+            header=["", t("flashback.notify.to_load_header", count=len(missing))],
+            entries=[notify_budget.Entry([_song_line(artist, title, yr)])
+                     for _pos, artist, title, yr in missing]))
     # Also list the newly-seen songs that were ALREADY in the library, so the
     # message is informative even when nothing needs downloading (the user asked
     # to see which songs are already present, not just a count).
     if present:
-        lines.append("")
-        lines.append(t("flashback.notify.present_header", count=len(present)))
-        for artist, title, yr in present:
-            lines.append(_song_line(artist, title, yr))
-
-    message = "\n".join(lines)
-    # Pushover limits a message to 1024 characters. On overflow we cut at the
-    # last complete line and append a note (same pattern as charts-sync).
-    message = _truncate_for_pushover(message)
+        blocks.append(notify_budget.Block(
+            header=["", t("flashback.notify.present_header", count=len(present))],
+            entries=[notify_budget.Entry([_song_line(artist, title, yr)])
+                     for artist, title, yr in present]))
+    # Pushover limits a message to 1024 characters. Entries are cut as whole
+    # songs with one explicit "... and N more" line.
+    message = notify_budget.fit_message(
+        lines, blocks, [], more=lambda n: t("notify.more", count=n))
     notify.send(t("flashback.notify.title", service="charts-flashback"), message)
-
-
-def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
-    """Truncate the message to Pushover's 1024-character limit (at a line boundary)."""
-    if len(message) <= max_len:
-        return message
-    suffix = "\n" + t("notify.truncated")
-    budget = max_len - len(suffix)
-    cut = message[:budget]
-    # Cut at the last complete line so no song is left half-shown.
-    nl = cut.rfind("\n")
-    if nl > 0:
-        cut = cut[:nl]
-    return cut + suffix
 
 
 def _next_run_iso() -> str:
