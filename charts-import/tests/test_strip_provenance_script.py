@@ -97,6 +97,47 @@ def test_apply_list_rejects_outside_and_missing(lib, tmp_path, capsys):
     assert capsys.readouterr().out.count("SKIP") == 3
 
 
+_EXCLUDED = [".charts-trash/x", "@eaDir", "#recycle", ".stfolder"]
+
+
+def test_excluded_folders_not_reported_but_normal_is(lib, capsys):
+    s = _load_script()
+    for d in _EXCLUDED:
+        p = lib / "A" / d / "s.mp3" if d == "@eaDir" else lib / d / "s.mp3"
+        p.parent.mkdir(parents=True)
+        _mp3(p, [("TIT3", "fordjonly.com")])
+    ok = lib / "A" / "ok.mp3"
+    _mp3(ok, [("TIT3", "fordjonly.com")])
+    assert s.main([]) == 0
+    out = capsys.readouterr().out
+    assert "A/ok.mp3\tTIT3" in out
+    assert out.count("\n") == 1
+
+
+def test_apply_list_refuses_excluded_folders(lib, tmp_path, capsys):
+    s = _load_script()
+    entries = []
+    for d in _EXCLUDED:
+        p = lib / d / "s.mp3"
+        p.parent.mkdir(parents=True)
+        _mp3(p, [("TIT3", "fordjonly.com")])
+        # Absolute paths: a relative "#recycle/..." line would be read as a
+        # '#' comment by the list parser.
+        entries.append(str(p))
+    ok = lib / "A" / "ok.mp3"
+    ok.parent.mkdir()
+    _mp3(ok, [("TIT3", "fordjonly.com")])
+    entries.append("A/ok.mp3")
+    lst = tmp_path / "list.txt"
+    lst.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    assert s.main(["--apply-list", str(lst)]) == 0
+    out = capsys.readouterr().out
+    assert out.count("SKIP (inside excluded folder)") == len(_EXCLUDED)
+    for d in _EXCLUDED:
+        assert "TIT3" in _keys(lib / d / "s.mp3")
+    assert "TIT3" not in _keys(ok)
+
+
 def test_apply_list_dry_run_writes_nothing(lib, tmp_path):
     s = _load_script()
     p = lib / "x.mp3"

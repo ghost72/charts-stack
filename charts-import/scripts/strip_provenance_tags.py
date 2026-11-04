@@ -16,7 +16,10 @@ this script NEVER rewrites files on its own:
   1. Default mode = READ-ONLY REPORT. It scans the whole library (MUSIC_DIR,
      or --artist) and prints every file whose frames from the 9-frame list
      (WORS, GRP1, TCOP, TIT1, TIT3, TOPE, TPUB, TRSN, TRSO) hold a domain/URL-
-     like value, as "path<TAB>frame<TAB>value". It never writes.
+     like value, as "path<TAB>frame<TAB>value". It never writes. The stack's
+     trash (.charts-trash), Synology sidecars (@eaDir, #recycle) and every
+     dot-folder are excluded: never scanned, reported or rewritten (listed
+     paths inside them are refused by --apply-list).
   2. Writing happens ONLY with --apply-list FILE: a text file with one path per
      line (relative to MUSIC_DIR or absolute; blank lines and '#' comments are
      ignored; a tab-separated report line is accepted, only the first field is
@@ -83,11 +86,20 @@ def _clean_value(v: str) -> str:
     return " ".join(v.split())
 
 
+# Same rule as the charts-config tag editor index (copied, not imported): never
+# touch the stack's own trash (.charts-trash), Synology sidecars (@eaDir,
+# #recycle) or any dot-folder (.stfolder, ...).
+_EXCLUDED_DIRS = {".charts-trash", "@eaDir", "#recycle"}
+
+
+def _is_excluded_dir(name: str) -> bool:
+    return name in _EXCLUDED_DIRS or name.startswith(".")
+
+
 def _walk_mp3(root: str):
     for dp, dirs, fs in os.walk(root):
-        dirs[:] = [d for d in dirs if d != "@eaDir"]
-        if "@eaDir" in dp:
-            continue
+        # Prune in place so os.walk never visits the excluded subtrees.
+        dirs[:] = [d for d in dirs if not _is_excluded_dir(d)]
         for name in sorted(fs):
             if os.path.splitext(name)[1].lower() == ".mp3":
                 yield os.path.join(dp, name)
@@ -134,11 +146,15 @@ def _resolve_in_music(entry: str) -> str | None:
     real = os.path.realpath(cand)
     if os.path.commonpath([music, real]) != music or real == music:
         return None
-    if "@eaDir" in real.split(os.sep):
-        return None
     if not os.path.isfile(real) or os.path.splitext(real)[1].lower() != ".mp3":
         return None
     return real
+
+
+def _in_excluded_folder(real: str) -> bool:
+    """True if a (resolved, inside-MUSIC_DIR) path lies in an excluded folder."""
+    rel = os.path.relpath(real, os.path.realpath(config.MUSIC_DIR))
+    return any(_is_excluded_dir(part) for part in rel.split(os.sep)[:-1])
 
 
 def _clean_file(path: str, frames: list[tuple[str, str]], dry_run: bool) -> bool:
@@ -174,6 +190,10 @@ def apply_list(list_file: str, dry_run: bool = False) -> int:
         if real is None:
             skipped += 1
             print(f"  SKIP (missing / not an mp3 / outside MUSIC_DIR): {entry}")
+            continue
+        if _in_excluded_folder(real):
+            skipped += 1
+            print(f"  SKIP (inside excluded folder): {entry}")
             continue
         frames = _stamped_frames(real)
         if not frames:

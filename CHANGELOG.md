@@ -12,6 +12,10 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+### Fixed
+- `strip_provenance_tags.py` no longer scans or rewrites `.charts-trash`,
+  `@eaDir`, `#recycle` or dot-folders; `--apply-list` refuses paths inside them.
+
 ### Changed
 - **All list-shaped Pushover messages** (charts-digest, -sync, -energy,
   -flashback, -hitparade, -import, -download, -recommend, -upgrade) now lead

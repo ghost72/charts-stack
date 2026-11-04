@@ -893,7 +893,8 @@ sudo docker compose exec charts-import python -m scripts.fix_youtube_years --app
 Neue Importe werden automatisch bereinigt (siehe `tags.py`); für den **bereits**
 vorhandenen Bestand gibt es ein Einmal-Skript. Es verletzt die Manifest-Regel
 nicht: Der **Standardlauf ist ein reiner Bericht** (schreibt nie) über die ganze
-Library und listet Dateien, deren Frames `WORS`/`GRP1`/`TCOP`/`TIT1`/`TIT3`/
+Library (ohne Papierkorb `.charts-trash`, `@eaDir`, `#recycle` und Punkt-Ordner;
+`--apply-list` verweigert Pfade darin) und listet Dateien, deren Frames `WORS`/`GRP1`/`TCOP`/`TIT1`/`TIT3`/
 `TOPE`/`TPUB`/`TRSN`/`TRSO` einen Domain-/URL-artigen Wert tragen
 (`Pfad<TAB>Frame<TAB>Wert`). Geschrieben wird **nur** für eine von dir geprüfte
 Pfadliste (`--apply-list DATEI`, ein Pfad pro Zeile, relativ zu `MUSIC_DIR` oder

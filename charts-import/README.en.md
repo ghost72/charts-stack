@@ -871,7 +871,9 @@ sudo docker compose exec charts-import python -m scripts.fix_youtube_years --app
 **Strip provenance/encoder tags from the existing library (one-time).** New
 imports are cleaned automatically (see `tags.py`); for the **existing** stock
 there is a one-time script. It respects the manifest rule: the **default run is
-a read-only report** (never writes) over the whole library, listing files whose
+a read-only report** (never writes) over the whole library (excluding the trash
+`.charts-trash`, `@eaDir`, `#recycle` and dot-folders; `--apply-list` refuses
+paths inside them), listing files whose
 `WORS`/`GRP1`/`TCOP`/`TIT1`/`TIT3`/`TOPE`/`TPUB`/`TRSN`/`TRSO` frames hold a
 domain/URL-like value (`path<TAB>frame<TAB>value`). It writes **only** for a path
 list you reviewed (`--apply-list FILE`, one path per line, relative to
