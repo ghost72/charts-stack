@@ -1178,5 +1178,10 @@
   "notify.overview.missing": "⬇ {count} missing",
   "energy.notify.overview_library": "📚 Library ✅{matched} ⬇{missing}",
   "flashback.notify.overview_present": "✅ {count} already in the library",
-  "notify.more": "… and {count} more"
+  "notify.more": "… and {count} more",
+  "recommend.notify.source_range": "{source} {range} {n}",
+  "recommend.lb.stats_empty_body": "stats: empty response body for '{user}' (range '{range}', HTTP {status}) - treated as no data yet.",
+  "recommend.lb.stats_invalid_json": "stats: response for '{user}' (range '{range}') is not valid JSON ({error}) - treated as no data.",
+  "recommend.lb.stats_period": "stats '{user}' range '{range}': period {start} to {end} (computed {updated}), {count} recordings.",
+  "recommend.config.unknown_stats_range": "Unknown RECOMMEND_STATS_RANGE '{value}' - ListenBrainz may reject it. Valid: {valid}."
 }

@@ -31,6 +31,7 @@ that is not an error but missing data (the "stats" source has data immediately).
 
 import logging
 import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -41,6 +42,12 @@ from .i18n import t
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.listenbrainz.org"
+def _fmt_ts(value) -> str:
+    """Format a ListenBrainz unix timestamp as YYYY-MM-DD (UTC); '?' if absent."""
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "?"
 
 
 def _get_with_retry(client: httpx.Client, url: str, **kwargs) -> httpx.Response:
@@ -226,7 +233,10 @@ def fetch_stats_recordings(user: str, token: str, range_: str,
     fetch_recommendations and lastfm.fetch_recommendations.
 
     404/204 (no profile / no data yet) is handled like "no data yet": empty
-    list, NO FetchError. Any other HTTP error (after all retries in
+    list, NO FetchError. The same applies to an HTTP 200/204 with an EMPTY
+    body and to a body that is not valid JSON (warning, empty list). Range
+    semantics: week/month/quarter/half_yearly/year are the last COMPLETED
+    period, this_week/this_month/this_year the RUNNING one. Any other HTTP error (after all retries in
     _get_with_retry) is reported as a FetchError.
     Note: since _get_with_retry only raises AFTER the retry loop, a 404 is
     requested HTTP_RETRIES times per run before [] comes back - deliberately
@@ -248,8 +258,29 @@ def fetch_stats_recordings(user: str, token: str, range_: str,
         logger.error(t("recommend.lb.stats_error", user=user, error=e))
         raise FetchError(t("recommend.lb.stats_unreachable", user=user, error=e)) from e
 
-    payload = (resp.json() or {}).get("payload", {})
+    # ListenBrainz may answer HTTP 200 (or 204) with an EMPTY body when stats
+    # are not calculated yet (observed for range=year): same as "no data".
+    if not (resp.content or b"").strip():
+        logger.info(t("recommend.lb.stats_empty_body", user=user, range=range_,
+                      status=resp.status_code))
+        return []
+    try:
+        body = resp.json()
+    except ValueError as e:
+        logger.warning(t("recommend.lb.stats_invalid_json", user=user,
+                         range=range_, error=e))
+        return []
+    if not isinstance(body, dict):
+        body = {}
+    payload = body.get("payload") or {}
+    if not isinstance(payload, dict):
+        payload = {}
     recs = payload.get("recordings", []) or []
+    logger.info(t("recommend.lb.stats_period", user=user, range=range_,
+                  start=_fmt_ts(payload.get("from_ts")),
+                  end=_fmt_ts(payload.get("to_ts")),
+                  updated=_fmt_ts(payload.get("last_updated")),
+                  count=len(recs)))
     out: list[tuple[int, str, str]] = []
     for i, r in enumerate(recs, start=1):
         if not isinstance(r, dict):

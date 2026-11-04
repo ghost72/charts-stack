@@ -118,7 +118,8 @@ def run_once() -> tuple[dict, list[str], int, int]:
                         config.RECOMMEND_STATS_RANGE, config.RECOMMEND_LIMIT)
                     _merge(recs[:config.RECOMMEND_LIMIT], merged, seen)
                     source_results.append({"user": user, "source": "stats",
-                                           "n": len(recs)})
+                                           "n": len(recs),
+                                           "range": config.RECOMMEND_STATS_RANGE})
                 except FetchError as e:
                     fetch_errors.append(f"{user}/stats: {e}")
                     transport_failures += 1
@@ -222,7 +223,13 @@ def _notify(source_results: list[dict], counters: dict,
     for s in source_results:
         if s["n"] <= 0:
             continue
-        by_user.setdefault(s["user"], []).append(f"{s['source']} {s['n']}")
+        if s.get("range"):
+            # Name the period the numbers refer to (stats source only).
+            item = t("recommend.notify.source_range", source=s["source"],
+                     range=s["range"], n=s["n"])
+        else:
+            item = f"{s['source']} {s['n']}"
+        by_user.setdefault(s["user"], []).append(item)
     user_items = [f"{u} ({', '.join(parts)})" for u, parts in by_user.items()]
     if len(user_items) == 1:
         # One user: keep the source detail on one short line (it appears
@@ -327,8 +334,15 @@ def _guarded_run() -> None:
         _alert_fetch_error(str(e), prev_status == "error")
 
 
+def _warn_unknown_stats_range() -> None:
+    """Log a WARNING (never fail) if RECOMMEND_STATS_RANGE is not a known value."""
+    if config.RECOMMEND_STATS_RANGE not in config.STATS_RANGES:
+        logger.warning(t("recommend.config.unknown_stats_range",
+                         value=config.RECOMMEND_STATS_RANGE,
+                         valid=", ".join(config.STATS_RANGES)))
 def main() -> None:
     status.init("charts-recommend")
+    _warn_unknown_stats_range()
     logger.info(t(
         "recommend.scheduler.started",
         library=config.MUSIC_DIR,

@@ -1178,5 +1178,10 @@
   "notify.overview.missing": "⬇ {count} fehlen",
   "energy.notify.overview_library": "📚 Library ✅{matched} ⬇{missing}",
   "flashback.notify.overview_present": "✅ {count} schon in der Library",
-  "notify.more": "… und {count} weitere"
+  "notify.more": "… und {count} weitere",
+  "recommend.notify.source_range": "{source} {range} {n}",
+  "recommend.lb.stats_empty_body": "stats: leere Antwort für '{user}' (Zeitraum '{range}', HTTP {status}) - als noch keine Daten behandelt.",
+  "recommend.lb.stats_invalid_json": "stats: Antwort für '{user}' (Zeitraum '{range}') ist kein gültiges JSON ({error}) - als keine Daten behandelt.",
+  "recommend.lb.stats_period": "stats '{user}' Zeitraum '{range}': Periode {start} bis {end} (berechnet {updated}), {count} Aufnahmen.",
+  "recommend.config.unknown_stats_range": "Unbekannter RECOMMEND_STATS_RANGE '{value}' - ListenBrainz lehnt ihn evtl. ab. Gültig: {valid}."
 }

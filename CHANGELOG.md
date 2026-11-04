@@ -39,7 +39,25 @@ deployed together, so a single stack version is the honest unit.
   (2026-11-04): the block header below says the same and more. The one
   exception is charts-recommend, whose single-user line `Sources: u (stats 21)`
   is kept because the per-source counts appear nowhere else in that message.
+- **charts-recommend names the stats period in Pushover.** The per-user source
+  text is now `ghost72 (stats this_month 100)` instead of `ghost72 (stats 100)`,
+  so a frozen window is visible at a glance. The actual `from`/`to`/`last_updated`
+  dates reported by ListenBrainz are logged at INFO. A WARNING is logged at
+  startup if `RECOMMEND_STATS_RANGE` is not a known ListenBrainz range (the
+  value is still passed through; the default `month` is unchanged).
+- **charts-recommend docs: stats range semantics.** README (EN/DE),
+  `.env.example`, `compose.yml` and `config.py` now state that
+  `week|month|quarter|half_yearly|year` are the last *completed* period (so
+  `month` stays frozen for the whole current month) while
+  `this_week|this_month|this_year` are the *running* one, recommend
+  `this_month`/`this_week` for "what I listen to now", and note that
+  ListenBrainz stats are batch-computed (can be days old) and that
+  `RECOMMEND_LIMIT` caps what is taken from a range.
 ### Fixed
+- **charts-recommend no longer crashes on an empty ListenBrainz stats body.**
+  An HTTP 200/204 with an empty body (seen for `range=year`) is treated like
+  "no data yet" (empty list, info log); a body that is not valid JSON logs a
+  warning and yields an empty list. Real HTTP errors still raise `FetchError`.
 - **charts-digest no longer hides later sources.** With 112 new songs from six
   sources only the first source's count (Energy 59) was visible, the rest was
   silently dropped. The overview line now shows all six counts at the top and
@@ -52,6 +70,7 @@ deployed together, so a single stack version is the honest unit.
   services), frozen by `tests/test_shared_helper_parity.py` (byte identity and
   escape parity with every `notify.py`), plus unit tests in
   `tests/test_notify_budget.py` and per-service builder tests.
+- 5 more i18n keys for charts-recommend (1180 → 1185 per language).
 - 8 i18n keys (en/de/fr, 1172 → 1180 per language). Language files are
   bind-mounted: copy the updated `lang/*.json` to the NAS and restart the
   affected containers.
