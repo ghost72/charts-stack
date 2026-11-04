@@ -469,6 +469,15 @@ Signaturen wie „eXenz", „PMEDIA", `www.t.me/…` oder den fre:ac-Werbetext),
 enthält) und `UFID` (nur wenn der Owner **nicht** die MusicBrainz-URL ist; die
 MusicBrainz-Recording-ID bleibt erhalten). So landet keine Quellen-Spur in der
 Library.
+Zusätzlich (Upload-Seiten-Stempel wie `fordjonly.com`): **bedingungslos** entfernt
+werden `WORS`, `TRSN`, `TRSO` (Internetradio-URL/-Name/-Besitzer) sowie `TIT1`,
+`TIT3`, `GRP1` (Gruppierung/Untertitel; Player wie Substreamer zeigen `TIT3` als
+Titel-Zusatz, z. B. „Power (fordjonly.com)"). **Nur wenn der Wert wie eine
+Domain/URL aussieht** (`fordjonly.com`, `www.…`, `http://…`, `t.me/…`,
+`@handle`) werden `TPUB`, `TCOP`, `TOPE` entfernt; echter Label-/Copyright-Text
+(„Universal Music", „℗ 2020 Sony Music Entertainment") bleibt erhalten. Es
+werden nur exakte 4-Zeichen-Frame-IDs geprüft, `TIT2`/`TPE1` etc. sind nie
+betroffen.
 **Geschützt (nie angefasst):** `TXXX:MusicBrainz*` und `TXXX:*replaygain*`
 (Metadaten-IDs + Lautstärke-Normalisierung), die whitelisteten Stack-Marker
 `TXXX:CHARTS_SOURCE` und `TXXX:CHARTS_ALBUM_SRC` (werden nie gestrippt) sowie
@@ -882,20 +891,25 @@ sudo docker compose exec charts-import python -m scripts.fix_youtube_years --app
 
 **Herkunfts-/Encoder-Tags aus der bestehenden Library entfernen (einmalig).**
 Neue Importe werden automatisch bereinigt (siehe `tags.py`); für den **bereits**
-vorhandenen Bestand gibt es ein Einmal-Skript mit **derselben** Lösch-Logik. Es
-läuft über die **ganze Library** und entfernt `COMM`/`TENC`/`TSSE`/URL-Frames +
-ungeschützte `TXXX` (z. B. Uploader-Signaturen, `TXXX:LOG`, der fre:ac-Kommentar)
-– **schützt** aber `TXXX:MusicBrainz*` und `TXXX:*replaygain*` sowie alle
-Standard-Tags. Läuft im Container (dort ist `/music` beschreibbar), **immer zuerst
-mit `--dry-run`** (zeigt mit `--verbose` die betroffenen Frames; mit `--artist
-"<Name>"` auf einen Künstler-Ordner begrenzen zum Testen):
-
+vorhandenen Bestand gibt es ein Einmal-Skript. Es verletzt die Manifest-Regel
+nicht: Der **Standardlauf ist ein reiner Bericht** (schreibt nie) über die ganze
+Library und listet Dateien, deren Frames `WORS`/`GRP1`/`TCOP`/`TIT1`/`TIT3`/
+`TOPE`/`TPUB`/`TRSN`/`TRSO` einen Domain-/URL-artigen Wert tragen
+(`Pfad<TAB>Frame<TAB>Wert`). Geschrieben wird **nur** für eine von dir geprüfte
+Pfadliste (`--apply-list DATEI`, ein Pfad pro Zeile, relativ zu `MUSIC_DIR` oder
+absolut, muss existieren und innerhalb von `MUSIC_DIR` liegen; Berichtszeilen
+mit Tabs sind erlaubt). Entfernt werden nur die berichteten Frames, mtime bleibt
+erhalten, gespeichert wird ID3v2.3. `--dry-run` zeigt die Wirkung vorab,
+`--artist "<Name>"` begrenzt den Bericht auf einen Künstler-Ordner:
 ```bash
-sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --dry-run
-sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py
+# 1. Bericht (read-only)
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py > report.txt
+# 2. Geprüfte Pfade in eine Datei (z. B. /tmp/reviewed.txt) und anwenden
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --apply-list /tmp/reviewed.txt --dry-run
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --apply-list /tmp/reviewed.txt
 ```
-
-Danach einen Navidrome-Scan auslösen, damit die bereinigten Tags sichtbar werden.
+Kuratierte Compilations (Bravo Hits, Kuschelrock) bleiben unberührt, solange du
+sie nicht in die Liste aufnimmst. Danach einen Navidrome-Scan auslösen.
 
 **Nach Code-Änderungen neu bauen:**
 

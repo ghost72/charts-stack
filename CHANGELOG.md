@@ -54,6 +54,17 @@ deployed together, so a single stack version is the honest unit.
   ListenBrainz stats are batch-computed (can be days old) and that
   `RECOMMEND_LIMIT` caps what is taken from a range.
 ### Fixed
+- **Provenance strip missed nine ID3 frames** (charts-import, charts-config):
+  upload-site stamps such as `fordjonly.com` in `WORS`, `TRSN`, `TRSO`, `TIT1`,
+  `TIT3`, `GRP1` (removed unconditionally) and `TPUB`, `TCOP`, `TOPE` (removed
+  only when the value looks like a domain/URL; real label/copyright text is
+  kept) survived the import, and players showed `TIT3` as a title suffix
+  ("Power (fordjonly.com)"). Both duplicated copies are updated identically and
+  frozen by the repo-root parity test.
+- `charts-import/scripts/strip_provenance_tags.py` no longer rewrites the whole
+  library: it is a read-only report by default and writes only for a reviewed
+  `--apply-list` of paths inside `MUSIC_DIR` (mtime preserved), in line with the
+  manifest-only rule.
 - **charts-recommend no longer crashes on an empty ListenBrainz stats body.**
   An HTTP 200/204 with an empty body (seen for `range=year`) is treated like
   "no data yet" (empty list, info log); a body that is not valid JSON logs a

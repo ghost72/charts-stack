@@ -454,6 +454,14 @@ The strip now **also** removes `TMED` (media type), `WOAR` (artist URL), `TOAL`
 (original album — only when its value contains `(CD-Rip)`) and `UFID` (only when
 the owner is **not** the MusicBrainz URL; the MusicBrainz Recording ID is
 preserved). This keeps any source trace out of the library.
+For upload-site stamps such as `fordjonly.com`, `WORS`, `TRSN`, `TRSO` (internet
+radio URL/name/owner) and `TIT1`, `TIT3`, `GRP1` (grouping/subtitle; players such
+as Substreamer render `TIT3` as a title suffix, e.g. "Power (fordjonly.com)") are
+removed **unconditionally**. `TPUB`, `TCOP`, `TOPE` are removed **only when the
+value looks like a domain/URL** (`fordjonly.com`, `www.…`, `http://…`, `t.me/…`,
+`@handle`); real label/copyright text ("Universal Music", "℗ 2020 Sony Music
+Entertainment") is kept. Only exact 4-character frame IDs are matched, so
+`TIT2`/`TPE1` etc. are never affected.
 **Protected (never touched):** `TXXX:MusicBrainz*` and `TXXX:*replaygain*`
 (metadata IDs + loudness normalization), the whitelisted stack markers
 `TXXX:CHARTS_SOURCE` and `TXXX:CHARTS_ALBUM_SRC` (never stripped), and all
@@ -862,20 +870,24 @@ sudo docker compose exec charts-import python -m scripts.fix_youtube_years --app
 
 **Strip provenance/encoder tags from the existing library (one-time).** New
 imports are cleaned automatically (see `tags.py`); for the **existing** stock
-there is a one-time script with the **same** removal logic. It runs over the
-**whole library** and removes `COMM`/`TENC`/`TSSE`/URL frames + unprotected
-`TXXX` (e.g. uploader signatures, `TXXX:LOG`, the fre:ac comment) – but
-**protects** `TXXX:MusicBrainz*` and `TXXX:*replaygain*` and all standard tags.
-Run it inside the container (where `/music` is writable), **always with
-`--dry-run` first** (add `--verbose` to list the affected frames; `--artist
-"<name>"` limits it to one artist folder for testing):
-
+there is a one-time script. It respects the manifest rule: the **default run is
+a read-only report** (never writes) over the whole library, listing files whose
+`WORS`/`GRP1`/`TCOP`/`TIT1`/`TIT3`/`TOPE`/`TPUB`/`TRSN`/`TRSO` frames hold a
+domain/URL-like value (`path<TAB>frame<TAB>value`). It writes **only** for a path
+list you reviewed (`--apply-list FILE`, one path per line, relative to
+`MUSIC_DIR` or absolute, must exist and lie inside `MUSIC_DIR`; report lines with
+tabs are accepted). Only the reported frames are removed, mtime is preserved,
+saved as ID3v2.3. `--dry-run` previews the apply, `--artist "<name>"` limits the
+report to one artist folder:
 ```bash
-sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --dry-run
-sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py
+# 1. report (read-only)
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py > report.txt
+# 2. put the reviewed paths into a file (e.g. /tmp/reviewed.txt) and apply
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --apply-list /tmp/reviewed.txt --dry-run
+sudo docker compose exec charts-import python /app/scripts/strip_provenance_tags.py --apply-list /tmp/reviewed.txt
 ```
-
-Then trigger a Navidrome scan so the cleaned tags become visible.
+Curated compilations (Bravo Hits, Kuschelrock) stay untouched unless you list
+them. Then trigger a Navidrome scan so the cleaned tags become visible.
 
 **Rebuild after code changes:**
 
