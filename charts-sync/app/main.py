@@ -23,7 +23,8 @@ import os
 import time
 from datetime import datetime
 
-from . import config, deezer, health, library, notify, playlist, presence, status
+from . import (config, deezer, health, library, notify, notify_budget, playlist,
+               presence, status)
 from .i18n import t
 
 logging.basicConfig(
@@ -255,46 +256,49 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
     if stats.get("genre_filtered"):
         lines.append(t("notify.genre_filtered", count=stats["genre_filtered"]))
 
-    if new_songs and changed:
-        lines.append("")
-        lines.append(t("notify.new_in_playlist", count=len(new_songs)))
-        for pos, a, song_title in new_songs[:8]:
-            lines.append(t("notify.song_entry", pos=pos, artist=a, title=song_title))
+    # Overview line first: the new/missing counts must survive the Pushover
+    # budget cut, so they sit in the head (never cut). Order = detail order.
+    new_count = len(new_songs) if (new_songs and changed) else 0
+    overview_parts = []
+    if new_count:
+        overview_parts.append(t("notify.overview.new", count=new_count))
+    if missing:
+        overview_parts.append(t("notify.overview.missing", count=len(missing)))
+    overview = notify_budget.overview_line(overview_parts)
+    if overview:
+        lines.append(overview)
+
+    blocks = []
+    if new_count:
+        # Songs 9+ were never listed (the overview carries the full count).
+        blocks.append(notify_budget.Block(
+            header=["", t("notify.new_in_playlist", count=len(new_songs))],
+            entries=[notify_budget.Entry([t("notify.song_entry", pos=pos,
+                                            artist=a, title=song_title)])
+                     for pos, a, song_title in new_songs[:8]]))
 
     # List missing songs so you can search for them in slskd straight from the
     # phone (without a NAS login). Amount limited via NOTIFY_MISSING_LIMIT.
     if missing and config.NOTIFY_MISSING_LIMIT > 0:
         limit = config.NOTIFY_MISSING_LIMIT
-        shown = missing[:limit]
-        lines.append("")
-        lines.append(t("notify.missing.header", count=len(missing)))
-        for pos, a, song_title in shown:
-            lines.append(t("notify.song_entry", pos=pos, artist=a, title=song_title))
-        if len(missing) > limit:
-            lines.append(t("notify.missing.more", count=len(missing) - limit))
+        blocks.append(notify_budget.Block(
+            header=["", t("notify.missing.header", count=len(missing))],
+            entries=[notify_budget.Entry([t("notify.song_entry", pos=pos,
+                                            artist=a, title=song_title)])
+                     for pos, a, song_title in missing[:limit]],
+            hidden=max(0, len(missing) - limit),
+            cap_note=(t("notify.missing.more", count=len(missing) - limit)
+                      if len(missing) > limit else "")))
     elif missing:
-        lines.append("")
-        lines.append(t("notify.missing.none_listed", count=len(missing)))
+        blocks.append(notify_budget.Block(entries=[notify_budget.Entry(
+            ["", t("notify.missing.none_listed", count=len(missing))],
+            weight=0)]))
 
-    message = "\n".join(lines)
-    # Pushover limits a message to 1024 characters. On overflow we cut at the
-    # last complete song and append a note.
-    message = _truncate_for_pushover(message)
+    # Pushover limits a message to 1024 characters. Entries are cut as whole
+    # songs with one explicit "... and N more" line.
+    message = notify_budget.fit_message(
+        lines, blocks, [], more=lambda n: t("notify.more", count=n))
     notify.send(title, message)
-
-
-def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
-    """Truncate the message to Pushover's 1024-character limit (at a line boundary)."""
-    if len(message) <= max_len:
-        return message
-    suffix = "\n" + t("notify.truncated")
-    budget = max_len - len(suffix)
-    cut = message[:budget]
-    # Cut at the last complete line so no song is left half-shown.
-    nl = cut.rfind("\n")
-    if nl > 0:
-        cut = cut[:nl]
-    return cut + suffix
 
 
 def run_sync() -> tuple[dict, int, int, dict]:
