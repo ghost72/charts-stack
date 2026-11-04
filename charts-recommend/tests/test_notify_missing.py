@@ -78,3 +78,69 @@ def test_missing_list_respects_cap_and_more_tail(monkeypatch):
     shown = [line for line in msg.splitlines() if line.startswith("Artist")]
     assert len(shown) == 15
     assert i18n.t("recommend.notify.more", count=3) in msg
+
+
+# --- Golden no-cut tests + budget (notify_budget) ------------------------------
+
+from app import notify_budget  # noqa: E402
+
+
+def _old_message(body, missing):
+    """Frozen copy of the pre-change message builder (message only)."""
+    t = i18n.t
+    lines = [body]
+    if missing:
+        lines.append("")
+        lines.append(t("recommend.notify.to_load_header", count=len(missing)))
+        shown = missing[:15]
+        for _pos, artist, title in shown:
+            lines.append(t("recommend.notify.song_entry", artist=artist, title=title))
+        if len(missing) > 15:
+            lines.append("")
+            lines.append(t("recommend.notify.more", count=len(missing) - 15))
+    return "\n".join(lines)
+
+
+def _body(n_missing, cand):
+    t = i18n.t
+    head = t("recommend.notify.new_to_load", missing=n_missing, users=1,
+             candidates=cand)
+    return head + t("recommend.notify.sources", sources="u1 (stats 20)")
+
+
+def _run(monkeypatch, n_missing, pad=0):
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    captured = _capture(monkeypatch)
+    missing = [(i, "A" * pad + f"Artist{i}", f"Title{i}") for i in range(n_missing)]
+    main._notify(
+        source_results=[{"user": "u1", "source": "stats", "n": 20}],
+        counters={"sources": 1, "candidates": 20, "matched": 20 - n_missing,
+                  "missing": n_missing},
+        missing=missing)
+    return captured["message"], missing
+
+
+def test_golden_below_cap(monkeypatch):
+    msg, missing = _run(monkeypatch, 5)
+    assert msg == _old_message(_body(5, 20), missing)
+
+
+def test_golden_above_cap_within_budget(monkeypatch):
+    msg, missing = _run(monkeypatch, 18)
+    assert msg == _old_message(_body(18, 20), missing)
+    assert msg.endswith("\n\n" + i18n.t("recommend.notify.more", count=3))
+
+
+def test_golden_exactly_at_cap(monkeypatch):
+    msg, missing = _run(monkeypatch, 15)
+    assert msg == _old_message(_body(15, 20), missing)
+
+
+def test_budget_cut_many_long_songs(monkeypatch):
+    msg, _missing = _run(monkeypatch, 30, pad=60)
+    assert notify_budget.measure([msg]) <= 1024
+    lines = msg.split("\n")
+    shown = sum(1 for ln in lines if "Artist" in ln)
+    assert 0 < shown < 15
+    assert lines[-2] == ""
+    assert lines[-1] == i18n.t("recommend.notify.more", count=30 - shown)

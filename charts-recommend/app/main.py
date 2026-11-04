@@ -28,7 +28,8 @@ data (the "stats" source has data immediately).
 import logging
 import time
 
-from . import (config, lastfm, library, listenbrainz, notify, playlist,
+from . import (config, lastfm, library, listenbrainz, notify, notify_budget,
+               playlist,
                presence, status)
 from .errors import FetchError
 from .i18n import t
@@ -231,21 +232,24 @@ def _notify(source_results: list[dict], counters: dict,
     else:
         head = t("recommend.notify.all_present", candidates=cand, users=n_users)
     body = head + (t("recommend.notify.sources", sources=quellen) if quellen else "")
-    lines = [body]
     # List the songs that will actually be downloaded (the `missing` set), one
     # artist/title line per song (no chart #pos), mirroring charts-flashback.
     # The all_present path (no missing songs) deliberately renders no song list.
+    # Capped at 15 songs; the cap remainder and the 1024-char budget share one
+    # global "... and N more" line.
+    blocks = []
     if missing:
-        lines.append("")
-        lines.append(t("recommend.notify.to_load_header", count=len(missing)))
         shown = missing[:15]
-        for _pos, artist, title in shown:
-            lines.append(t("recommend.notify.song_entry", artist=artist, title=title))
-        if len(missing) > 15:
-            lines.append("")
-            lines.append(t("recommend.notify.more", count=len(missing) - 15))
-    notify.send(t("recommend.notify.title", service="charts-recommend"),
-                "\n".join(lines))
+        blocks.append(notify_budget.Block(
+            entries=[notify_budget.Entry([t("recommend.notify.song_entry",
+                                            artist=artist, title=title)])
+                     for _pos, artist, title in shown],
+            header=["", t("recommend.notify.to_load_header", count=len(missing))],
+            hidden=len(missing) - len(shown)))
+    message = notify_budget.fit_message(
+        [body], blocks, [],
+        more=lambda n: t("recommend.notify.more", count=n), more_sep=("",))
+    notify.send(t("recommend.notify.title", service="charts-recommend"), message)
 
 
 def _next_run_iso() -> str:
