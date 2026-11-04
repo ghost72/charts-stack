@@ -37,13 +37,15 @@ def test_screenshot_regression_overview_survives_budget():
     assert notify_budget.measure([msg]) <= config.PUSHOVER_MESSAGE_LIMIT
     # All six counts in the first lines / first 400 chars.
     first = msg[:400]
-    for text in ("⚡ Energy 59", "🔥 Aktuelle Charts 25", "🙋 Manuell angefordert 12",
-                 "📤 Manuell hochgeladen 8", "🇨🇭 Schweizer Mundart 5", "📺 YouTube 3"):
+    for text in ("⚡ Energy · 59", "🔥 Aktuelle Charts · 25", "🙋 Manuell angefordert · 12",
+                 "📤 Manuell hochgeladen · 8", "🇨🇭 Schweizer Mundart · 5", "📺 YouTube · 3"):
         assert text in first, text
     lines = msg.split("\n")
-    # Overview is the 3rd head line, directly before the separator.
-    assert lines[2].startswith("⚡ Energy 59, ")
-    assert lines[3] == "➖➖➖➖➖➖➖➖"
+    # Overview: one item per line (lines 2..7), then a blank line, no separator.
+    assert lines[2] == "⚡ Energy · 59"
+    assert lines[7] == "📺 YouTube · 3"
+    assert lines[8] == ""
+    assert "➖" not in msg
     # Footer intact, last detail line is the global "more" line.
     assert lines[-1] == i18n.t("digest.notify.footer")
     more_line = lines[-3]
@@ -62,17 +64,46 @@ def test_overview_order_by_size_then_canonical_rank():
     groups = {"youtube": _entries("Y", 2), "charts": _entries("C", 2),
               "zzz-raw": _entries("Z", 2), "energy-library": _entries("E", 5)}
     _, msg, _ = digest.build_message(groups, 11)
-    overview = msg.split("\n")[2]
-    assert overview == "⚡ Energy 5, 🔥 Current charts 2, 📺 YouTube 2, 🎵 zzz-raw 2"
+    overview = msg.split("\n")[2:6]
+    assert overview == ["⚡ Energy · 5", "🔥 Current charts · 2",
+                        "📺 YouTube · 2", "🎵 zzz-raw · 2"]
 
 
-def test_single_source_no_dangling_separator():
+def test_single_source_has_no_overview_and_no_separator():
     i18n.setup(lang="en", lang_dir=_LANG_DIR)
     _, msg, unique = digest.build_message({"charts": _entries("C", 2)}, 2)
     lines = msg.split("\n")
     assert unique == 2
-    assert lines[2] == "🔥 Current charts 2"
-    assert lines[3] == "➖➖➖➖➖➖➖➖"
+    # One source: no overview line; the blank line and the group header (with
+    # label + count) follow the count header directly.
+    assert lines[2] == ""
+    assert "Current charts" in lines[3] and "2" in lines[3]
+    assert "➖" not in msg
+
+
+def test_two_sources_overview_on_one_line():
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    _, msg, _ = digest.build_message({"charts": _entries("C", 3),
+                                      "youtube": _entries("Y", 2)}, 5)
+    assert msg.split("\n")[2] == "🔥 Current charts · 3 · 📺 YouTube · 2"
+
+
+def test_real_message_91_songs_six_sources_one_line_each():
+    # Real digest from the phone: used to be ONE wrapped line that broke
+    # inside "Schweizer / Mundart 5" plus a separator line.
+    i18n.setup(lang="de", lang_dir=_LANG_DIR)
+    groups = {"youtube": _entries("Y", 44), "energy-library": _entries("E", 39),
+              "mundart": _entries("M", 5), "charts": _entries("C", 1),
+              "flashback": _entries("F", 1), "manuell": _entries("A", 1)}
+    _, msg, unique = digest.build_message(groups, 91)
+    assert unique == 91
+    lines = msg.split("\n")
+    assert lines[2:8] == [
+        "📺 YouTube · 44", "⚡ Energy · 39", "🇨🇭 Schweizer Mundart · 5",
+        "🔥 Aktuelle Charts · 1", "📻 FLASHBACK FM · 1",
+        "🙋 Manuell angefordert · 1"]
+    assert "➖" not in msg
+    assert notify_budget.measure([msg]) <= 1024
 
 
 def test_below_budget_all_songs_shown_no_more_line():
@@ -96,4 +127,4 @@ def test_no_songs_edge():
     i18n.setup(lang="en", lang_dir=_LANG_DIR)
     _, msg, unique = digest.build_message({}, 0)
     assert unique == 0
-    assert "➖➖➖➖➖➖➖➖" in msg
+    assert "➖" not in msg

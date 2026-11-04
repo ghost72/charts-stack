@@ -1171,7 +1171,7 @@
   "dashboard.ui.inflight.missing.per_source_label": "pro Quelle: {parts}",
   "dashboard.inprogress.log.slskd_failed": "In Bearbeitung: slskd-Transfers konnten nicht gelesen werden: {error}",
   "dashboard.inprogress.log.state_read_failed": "In Bearbeitung: Download-State konnte nicht gelesen werden: {error}",
-  "digest.notify.overview_item": "{emoji} {label} {count}",
+  "digest.notify.overview_item": "{emoji} {label} · {count}",
   "notify.overview.channel": "{title} ✅{matched} ⬇{missing}",
   "energy.notify.overview_feed": "{theme} ➡{count}",
   "notify.overview.new": "🆕 {count} neu",

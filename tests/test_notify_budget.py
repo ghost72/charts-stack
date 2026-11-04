@@ -164,20 +164,42 @@ def test_hard_cut_never_splits_tags_or_entities():
 
 # --- overview_line ----------------------------------------------------------
 
-def test_overview_empty_one_join():
+def test_overview_empty_and_single_omitted():
     assert nb.overview_line([]) == ""
-    assert nb.overview_line(["a 1"]) == "a 1"
-    assert nb.overview_line(["a 1", "b 2"]) == "a 1, b 2"
+    # One item: the detail block below carries the same numbers -> omitted.
+    assert nb.overview_line(["a 1"]) == ""
 
 
-def test_overview_compact_fallback():
+def test_overview_two_items_one_line():
+    assert nb.overview_line(["a 1", "b 2"]) == "a 1 · b 2"
+    assert nb.overview_line(["a 1", "b 2"], sep=", ") == "a 1, b 2"
+
+
+def test_overview_three_or_more_one_per_line():
+    assert nb.overview_line(["a 1", "b 2", "c 3"]) == "a 1\nb 2\nc 3"
+    six = [f"label {i} · {i}" for i in range(6)]
+    assert nb.overview_line(six).split("\n") == six
+
+
+def test_overview_compact_fallback_is_one_line():
     parts = ["x" * 30 + f" {i}" for i in range(20)]
     compact = [f"c{i}" for i in range(20)]
-    assert nb.overview_line(parts, compact) == ", ".join(compact)
+    out = nb.overview_line(parts, compact)
+    assert out == " · ".join(compact)
+    assert "\n" not in out
 
 
-def test_overview_ellipsis_fallback():
+def test_overview_ellipsis_fallback_multiline():
     parts = ["y" * 30 for _ in range(30)]
+    out = nb.overview_line(parts)
+    assert out.endswith("\n…")
+    assert len(out) <= nb.OVERVIEW_MAX
+    # Only whole items are kept.
+    assert all(line in ("y" * 30, "…") for line in out.split("\n"))
+
+
+def test_overview_ellipsis_fallback_two_items_single_line():
+    parts = ["q" * 200, "r" * 200]
     out = nb.overview_line(parts)
     assert out.endswith(" …")
     assert len(out) <= nb.OVERVIEW_MAX
@@ -186,7 +208,22 @@ def test_overview_ellipsis_fallback():
 def test_overview_mismatched_compact_ignored():
     parts = ["z" * 40 for _ in range(10)]
     out = nb.overview_line(parts, ["a", "b"])
-    assert out.endswith(" …")
+    assert out.endswith("\n…")
+    assert len(out) <= nb.OVERVIEW_MAX
+
+
+def test_multiline_overview_in_head_is_never_cut_and_fits():
+    six = ["📺 YouTube · 44", "⚡ Energy · 39", "🇨🇭 Schweizer Mundart · 5",
+           "🔥 Aktuelle Charts · 1", "📻 FLASHBACK FM · 1",
+           "🙋 Manuell angefordert · 1"]
+    overview = nb.overview_line(six)
+    blocks = [nb.Block(entries=[nb.Entry([f"♪ Artist {i} - Song {i}"])
+                                for i in range(200)], header=["", "<b>x</b>"])]
+    out = nb.fit_message(["head", overview], blocks, ["", "footer"],
+                         more=lambda n: f"... {n} more")
+    assert nb.measure([out]) <= nb.LIMIT
+    for line in six:
+        assert line in out.split("\n")
 
 
 # --- escaped / measure ------------------------------------------------------

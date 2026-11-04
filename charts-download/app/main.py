@@ -313,9 +313,13 @@ def _breakdown(items: list[tuple[str, str]]) -> str:
         counts[label] = counts.get(label, 0) + 1
     parts = [t("download.breakdown.item", count=n, label=label)
              for label, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
-    return ", ".join(parts)
+    # "" for a single playlist (the group block below carries label + count).
+    return notify_budget.overview_line(parts)
 
 
+def _breakdown_lines(items: list[tuple[str, str]]) -> list[str]:
+    """Italic breakdown lines (each line on its own, tags never span lines)."""
+    return [f"<i>{line}</i>" for line in _breakdown(items).split("\n") if line]
 def _summary_and_notify(planned: list[tuple[str, str]],
                         enqueued: list[tuple[str, str]],
                         retried: int,
@@ -324,8 +328,8 @@ def _summary_and_notify(planned: list[tuple[str, str]],
     if config.DRY_RUN:
         logger.info(t("download.summary.done_dry_run", count=len(planned)))
         if planned:
-            header = [t("download.notify.dry_run_header", count=len(planned)),
-                      f"<i>{_breakdown(planned)}</i>"]
+            header = [t("download.notify.dry_run_header", count=len(planned))]
+            header.extend(_breakdown_lines(planned))
             _notify(t("download.notify.title_dry"), header, planned)
     else:
         parts = []
@@ -339,7 +343,7 @@ def _summary_and_notify(planned: list[tuple[str, str]],
             header = []
             if enqueued:
                 header.append(t("download.notify.enqueued_header", count=len(enqueued)))
-                header.append(f"<i>{_breakdown(enqueued)}</i>")
+                header.extend(_breakdown_lines(enqueued))
             if retried:
                 header.append(t("download.notify.retried_header", count=retried))
             # List the re-downloaded songs as a second group, mirroring the

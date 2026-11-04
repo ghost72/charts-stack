@@ -179,3 +179,18 @@ def test_budget_case_breakdown_first_and_within_limit(monkeypatch):
     assert lines[:2] == header
     shown = sum(1 for ln in lines if ln.startswith("A Rather"))
     assert lines[-2] == "" and lines[-1] == t("download.notify.more", count=40 - shown)
+
+
+def test_breakdown_uniform_overview_rule():
+    one = [("charts", "A - 1"), ("charts", "B - 2")]
+    two = one + [("mundart", "C - 3")]
+    three = two + [("manuell", "D - 4")]
+    # One playlist: omitted (the group block carries label and count).
+    assert main._breakdown(one) == ""
+    assert main._breakdown_lines(one) == []
+    # Two: one line; three or more: one item per line, each its own <i>.
+    assert main._breakdown(two) == "2 from charts \u00b7 1 from mundart"
+    assert main._breakdown(three).split("\n") == [
+        "2 from charts", "1 from manuell", "1 from mundart"]
+    assert main._breakdown_lines(three) == [
+        "<i>2 from charts</i>", "<i>1 from manuell</i>", "<i>1 from mundart</i>"]

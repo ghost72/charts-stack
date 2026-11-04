@@ -109,7 +109,7 @@ def test_overview_line_both_categories(captured, de_lang):
     present = [(f"P{i}", f"Q{i}", "") for i in range(3)]
     main._notify(counters, missing, present)
     lines = captured["message"].split("\n")
-    assert lines[1] == "⬇ 4 fehlen, ✅ 3 schon in der Library"
+    assert lines[1] == "⬇ 4 fehlen · ✅ 3 schon in der Library"
 
 
 def test_overview_line_single_category_none(captured, de_lang):

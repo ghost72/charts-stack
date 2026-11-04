@@ -144,3 +144,30 @@ def test_budget_cut_many_long_songs(monkeypatch):
     assert 0 < shown < 15
     assert lines[-2] == ""
     assert lines[-1] == i18n.t("recommend.notify.more", count=30 - shown)
+
+
+def _sources_line(monkeypatch, users):
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    captured = _capture(monkeypatch)
+    main._notify(
+        source_results=[{"user": u, "source": "stats", "n": 3} for u in users],
+        counters={"sources": len(users), "candidates": 3, "matched": 1,
+                  "missing": 2},
+        missing=[(1, "Dua Lipa", "Levitating")])
+    return captured["message"].split("\n")
+
+
+def test_sources_one_user_stays_on_one_line(monkeypatch):
+    lines = _sources_line(monkeypatch, ["u1"])
+    assert "Sources: u1 (stats 3)" in lines
+
+
+def test_sources_two_users_one_line(monkeypatch):
+    lines = _sources_line(monkeypatch, ["u1", "u2"])
+    assert "Sources: u1 (stats 3) \u00b7 u2 (stats 3)" in lines
+
+
+def test_sources_three_users_one_per_line(monkeypatch):
+    lines = _sources_line(monkeypatch, ["u1", "u2", "u3"])
+    i = lines.index("Sources: ")
+    assert lines[i + 1:i + 4] == ["u1 (stats 3)", "u2 (stats 3)", "u3 (stats 3)"]

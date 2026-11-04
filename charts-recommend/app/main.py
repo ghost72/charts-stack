@@ -223,8 +223,16 @@ def _notify(source_results: list[dict], counters: dict,
         if s["n"] <= 0:
             continue
         by_user.setdefault(s["user"], []).append(f"{s['source']} {s['n']}")
-    quellen = ", ".join(f"{u} ({', '.join(parts)})"
-                        for u, parts in by_user.items())
+    user_items = [f"{u} ({', '.join(parts)})" for u, parts in by_user.items()]
+    if len(user_items) == 1:
+        # One user: keep the source detail on one short line (it appears
+        # nowhere else, so it must not be dropped).
+        quellen = user_items[0]
+    else:
+        # 2 users: one line; 3+: one per line (starting on a fresh line).
+        quellen = notify_budget.overview_line(user_items)
+        if "\n" in quellen:
+            quellen = "\n" + quellen
     n_users = len(by_user)
     if miss > 0:
         head = t("recommend.notify.new_to_load", missing=miss, users=n_users,

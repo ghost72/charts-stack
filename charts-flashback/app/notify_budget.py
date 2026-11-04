@@ -60,35 +60,42 @@ def hard_cut(text: str, limit: int = LIMIT) -> str:
 
 
 def overview_line(parts: list[str], compact_parts: list[str] | None = None,
-                  sep: str = ", ") -> str:
-    """Join already translated overview parts into ONE line.
-
+                  sep: str = " · ") -> str:
+    """Render already translated overview parts as the overview block.
+    Layout rule (uniform across services): a single part is OMITTED (returns
+    "") because the detail block below already carries the same numbers; 2
+    parts stay on one line joined with ``sep``; 3 or more parts are printed one
+    per line. The result may therefore contain newlines; callers append it to
+    the head as one item and skip it when it is empty.
     ``compact_parts`` must have the same length and order as ``parts``; a
-    length mismatch is ignored. If the full line is longer than OVERVIEW_MAX the
-    compact variant is used; if that is still too long, the leading parts that
-    fit are kept and the line ends with " …". Empty ``parts`` returns "".
+    length mismatch is ignored. If the full layout is longer than OVERVIEW_MAX
+    the compact variant is used, joined on ONE line with ``sep``; if that is
+    still too long (or none was given), the leading parts that fit are kept and
+    the block ends with an ellipsis. Empty or single ``parts`` return "".
     """
-    if not parts:
+    if len(parts) < 2:
         return ""
-    line = sep.join(parts)
+    multiline = len(parts) >= 3
+    joiner = "\n" if multiline else sep
+    suffix = "\n…" if multiline else " …"
+    line = joiner.join(parts)
     if len(line) <= OVERVIEW_MAX:
         return line
     use = parts
     if compact_parts is not None and len(compact_parts) == len(parts):
-        use = compact_parts
-        line = sep.join(use)
+        use, joiner, suffix = compact_parts, sep, " …"
+        line = joiner.join(use)
         if len(line) <= OVERVIEW_MAX:
             return line
-    suffix = " …"
     kept: list[str] = []
     for part in use:
-        candidate = sep.join(kept + [part])
+        candidate = joiner.join(kept + [part])
         if len(candidate) + len(suffix) > OVERVIEW_MAX:
             break
         kept.append(part)
     if not kept:
         return use[0][: OVERVIEW_MAX - len(suffix)] + suffix
-    return sep.join(kept) + suffix
+    return joiner.join(kept) + suffix
 
 
 @dataclass

@@ -38,9 +38,9 @@ def _missing(n, pad=0):
 def test_overview_new_and_missing(monkeypatch):
     msg = _send(monkeypatch, _matched(3), _missing(2))
     lines = msg.split("\n")
-    assert "🆕 3 new, ⬇ 2 missing" in lines
+    assert "🆕 3 new · ⬇ 2 missing" in lines
     # Overview sits in the head, before the first detail block.
-    assert lines.index("🆕 3 new, ⬇ 2 missing") < lines.index("")
+    assert lines.index("🆕 3 new · ⬇ 2 missing") < lines.index("")
 
 
 def test_no_overview_when_nothing_new_or_missing(monkeypatch):
@@ -53,13 +53,15 @@ def test_overview_only_missing(monkeypatch):
     state = {"charts.m3u": {"paths": ["/music/1.mp3"], "missing": []}}
     msg = _send(monkeypatch, [(1, "A", "B", "/music/1.mp3")], _missing(4),
                 state=state)
-    assert "⬇ 4 missing" in msg and "🆕" not in msg
+    # One category only: no overview line; the block header carries the count.
+    assert "⬇ 4 missing" not in msg and "🆕" not in msg
+    assert "<b>4 still missing:</b>" in msg
 
 
 def test_budget_overflow_neutral_more_line(monkeypatch):
     msg = _send(monkeypatch, _matched(8), _missing(40, pad=30), limit=100)
     assert notify_budget.measure([msg]) <= 1024
-    assert "🆕 8 new, ⬇ 40 missing" in msg.split("\n")
+    assert "🆕 8 new · ⬇ 40 missing" in msg.split("\n")
     shown_missing = sum(1 for ln in msg.split("\n") if "Miss " in ln)
     shown_new = sum(1 for ln in msg.split("\n") if "Artist " in ln)
     omitted = (8 - shown_new) + (40 - shown_missing)

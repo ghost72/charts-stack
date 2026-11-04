@@ -204,8 +204,10 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         head_emoji = "🎶"
     title = t("digest.notify.title", emoji=head_emoji, count=unique_total)
 
-    # One overview line with EVERY source and its count, so the counts survive
-    # even when the detail list below is cut by the Pushover budget.
+    # Overview with EVERY source and its count, so the counts survive even when
+    # the detail list below is cut by the Pushover budget. Layout (one source:
+    # omitted, 2: one line, 3+: one per line) is decided by overview_line. No
+    # separator line: the blank line before each group header is enough.
     parts, compact = [], []
     for src, pairs in per_source:
         emoji, label = _label_for(src)
@@ -218,7 +220,6 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
     overview = notify_budget.overview_line(parts, compact)
     if overview:
         head.append(overview)
-    head.append("➖➖➖➖➖➖➖➖")
     footer = ["", t("digest.notify.footer")]
 
     # One block per source. The budget cuts only between whole songs; the

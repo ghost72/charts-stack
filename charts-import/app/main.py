@@ -324,10 +324,15 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
 
     # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"). It is the
     # overview line and lives in the head, which the budget never cuts.
-    breakdown = ", ".join(t("import.breakdown.item", count=len(songs), label=label)
-                          for label, songs in ordered)
-    head = [t("import.notify.imported_header", count=count),
-            t("import.notify.imported_breakdown", breakdown=breakdown)]
+    # Layout via overview_line (one group: omitted, the group block carries the
+    # label and the header the count; 2: one line; 3+: one per line). Each line
+    # is italic on its own so the tags never span a newline.
+    overview = notify_budget.overview_line(
+        [t("import.breakdown.item", count=len(songs), label=label)
+         for label, songs in ordered])
+    head = [t("import.notify.imported_header", count=count)]
+    head.extend(t("import.notify.imported_breakdown", breakdown=line)
+                for line in overview.split("\n") if line)
 
     # Songs per playlist as their own group, with a blank line between them.
     # Capped at 10 songs total (keep the Pushover message short).

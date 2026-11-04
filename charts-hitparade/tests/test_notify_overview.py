@@ -54,8 +54,39 @@ def test_golden_uncut_matches_old_except_overview(monkeypatch):
     results = [_chart("Chart One", 5, 2), _chart("Chart Two", 7, 1)]
     main._notify(results)
     lines = sent["msg"].split("\n")
-    assert lines[1] == "Chart One ✅5 ⬇2, Chart Two ✅7 ⬇1"
+    assert lines[1] == "Chart One ✅5 ⬇2 · Chart Two ✅7 ⬇1"
     assert "\n".join(lines[:1] + lines[2:]) == _old_message(results)
+
+
+def test_single_chart_has_no_overview_line(monkeypatch):
+    # Real message: 1 chart, 89 present, 11 missing of 100. The overview used to
+    # repeat the block header with less information; now the block header
+    # ("89 present, 11 missing (of 100)") is the only place with the numbers.
+    sent = _capture(monkeypatch)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    results = [_chart("Swiss Hitparade", 89, 11)]
+    main._notify(results)
+    msg = sent["msg"]
+    lines = msg.split("\n")
+    assert lines[0] == t("hitparade.notify.summary_header", matched=89, missing=11)
+    assert lines[1] == ""
+    assert lines[2] == "<b>Swiss Hitparade</b>"
+    assert lines[3] == t("hitparade.notify.chart_line", matched=89, missing=11,
+                         total=100)
+    assert "Swiss Hitparade ✅89" not in msg
+    assert msg == _old_message(results)
+
+
+def test_german_single_chart_example(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(main.notify, "send",
+                        lambda title, msg: sent.update(title=title, msg=msg))
+    i18n.setup(lang="de", lang_dir=_LANG_DIR)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    main._notify([_chart("Schweizer Hitparade 🇨🇭", 89, 11)])
+    msg = sent["msg"]
+    assert "89 vorhanden, 11 fehlen (von 100)" in msg
+    assert "✅89" not in msg and "⬇️11" not in msg
 
 
 def test_chart_two_visible_when_chart_one_has_40_missing(monkeypatch):

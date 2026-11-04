@@ -152,9 +152,15 @@ def _old_imported(imported):
             rel = os.path.basename(path)
         groups.setdefault(label, []).append(rel)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-    breakdown = ", ".join(t("import.breakdown.item", count=len(songs), label=label)
-                          for label, songs in ordered)
-    lines.append(t("import.notify.imported_breakdown", breakdown=breakdown))
+    items = [t("import.breakdown.item", count=len(songs), label=label)
+             for label, songs in ordered]
+    # Uniform overview rule: 1 item omitted, 2 items on one line, 3+ one each.
+    if len(items) == 2:
+        items = [" · ".join(items)]
+    elif len(items) == 1:
+        items = []
+    for item in items:
+        lines.append(t("import.notify.imported_breakdown", breakdown=item))
     lines.append("")
     shown = 0
     remaining = count
@@ -190,6 +196,24 @@ def _setup_en(monkeypatch):
     monkeypatch.setattr(config, "MUSIC_DIR", "/music/Music")
     i18n.setup(lang="en", lang_dir=_LANG_DIR)
     return _capture_notify(monkeypatch)
+
+
+def test_single_group_has_no_breakdown_line(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    batch = _imported_batch([("charts", 3)])
+    import_main._notify_imported(batch)
+    body = sent[0][1]
+    assert "<i>" not in body
+    assert body == _old_imported(batch)
+
+
+def test_three_groups_one_breakdown_item_per_line(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    batch = _imported_batch([("charts", 3), ("mundart", 2), ("manuell", 1)])
+    import_main._notify_imported(batch)
+    lines = sent[0][1].split("\n")
+    assert lines[1:4] == ["<i>3 from charts</i>", "<i>2 from mundart</i>",
+                          "<i>1 from manuell</i>"]
 
 
 def test_golden_imported_below_cap(monkeypatch):
@@ -243,8 +267,9 @@ def test_imported_many_long_songs_stays_within_budget(monkeypatch):
     assert notify_budget.measure([body]) <= 1024
     lines = body.split("\n")
     # Breakdown (overview) stays complete in the head; exactly one "more" line.
+    # 4 groups -> one breakdown item per line, directly under the header.
     for i in range(4):
-        assert f"playlist-{i}" in lines[1]
+        assert f"playlist-{i}" in lines[1 + i]
     shown = sum(1 for ln in lines if ln.endswith(".mp3"))
     assert body.count(t("import.notify.more", count=60 - shown)) == 1
     assert lines[-2] == "" and lines[-1] == t("import.notify.more", count=60 - shown)

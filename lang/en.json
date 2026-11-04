@@ -1171,7 +1171,7 @@
   "dashboard.ui.inflight.missing.per_source_label": "per source: {parts}",
   "dashboard.inprogress.log.slskd_failed": "in-progress: slskd transfers read failed: {error}",
   "dashboard.inprogress.log.state_read_failed": "in-progress: download-state read failed: {error}",
-  "digest.notify.overview_item": "{emoji} {label} {count}",
+  "digest.notify.overview_item": "{emoji} {label} · {count}",
   "notify.overview.channel": "{title} ✅{matched} ⬇{missing}",
   "energy.notify.overview_feed": "{theme} ➡{count}",
   "notify.overview.new": "🆕 {count} new",

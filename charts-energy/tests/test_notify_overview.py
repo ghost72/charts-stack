@@ -104,10 +104,11 @@ def test_golden_uncut_message_matches_old_except_overview(monkeypatch):
     lib = _library(2, 2)
     main._notify(results, feeds, lib)
     new_lines = sent["msg"].split("\n")
-    # Drop the overview line (2nd line); everything else equals the old message.
-    assert new_lines[1].startswith("Channel A ✅3 ⬇2, Channel B ✅1 ⬇1, mundart ➡7")
-    assert new_lines[1].endswith("📚 Library ✅2 ⬇2")
-    without_overview = "\n".join(new_lines[:1] + new_lines[2:])
+    # Drop the overview (4 items -> lines 2..5, one per line); everything else
+    # equals the old message.
+    assert new_lines[1:5] == ["Channel A ✅3 ⬇2", "Channel B ✅1 ⬇1",
+                              "mundart ➡7", "📚 Library ✅2 ⬇2"]
+    without_overview = "\n".join(new_lines[:1] + new_lines[5:])
     assert _norm(without_overview) == _norm(_old_message(results, feeds, lib))
 
 
@@ -115,7 +116,27 @@ def test_overview_order_channels_feeds_library(monkeypatch):
     sent = _capture(monkeypatch)
     main._notify([_own("Ch", 1, 0)], [{"theme": "t", "count": 4}],
                  _library(1, 0))
-    assert sent["msg"].split("\n")[1] == "Ch ✅1 ⬇0, t ➡4, 📚 Library ✅0 ⬇1"
+    assert sent["msg"].split("\n")[1:4] == ["Ch ✅1 ⬇0", "t ➡4",
+                                             "📚 Library ✅0 ⬇1"]
+
+
+def test_two_items_one_line(monkeypatch):
+    sent = _capture(monkeypatch)
+    main._notify([_own("Ch", 1, 0)], [{"theme": "t", "count": 4}], None)
+    assert sent["msg"].split("\n")[1] == "Ch ✅1 ⬇0 · t ➡4"
+
+
+def test_single_channel_has_no_overview_line(monkeypatch):
+    sent = _capture(monkeypatch)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    main._notify([_own("Only Channel", 3, 2)], [], None)
+    lines = sent["msg"].split("\n")
+    # Head line, blank line, then the bold block header: the channel's own
+    # counts live in the block (own_done), nowhere twice.
+    assert lines[1] == ""
+    assert lines[2] == "<b>Only Channel</b>"
+    assert lines[3] == t("energy.notify.own_done", matched=3, missing=2)
+    assert "Only Channel ✅3" not in sent["msg"]
 
 
 def test_twenty_channels_every_missing_count_in_head(monkeypatch):
@@ -142,7 +163,9 @@ def test_library_present_list_cut_with_exact_more_count(monkeypatch):
     assert 0 < shown < 120
     assert notify_budget.measure([msg]) <= 1024
     assert lines[-1] == t("notify.more", count=120 - shown)
-    assert "📚 Library ✅120 ⬇0" in lines[1]
+    # Library is the only item -> no overview line; its section carries the count.
+    assert lines[1] == ""
+    assert t("energy.notify.library_done", matched=120, missing=0) in msg
 
 
 def test_missing_limit_zero_no_song_lines_no_more(monkeypatch):
