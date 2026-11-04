@@ -143,7 +143,7 @@ cp .env.example .env
 | `RECOMMEND_LISTENBRAINZ_USERS` | – | Komma-Liste öffentlicher ListenBrainz-Usernamen (kein Secret). Leer = Feature aus. |
 | `LISTENBRAINZ_USER` | – | Backward-Compat: alter Einzelwert, Fallback wenn die Liste leer ist |
 | `RECOMMEND_SOURCES` | `stats,createdfor` | aktive Quellen (`stats` und/oder `createdfor`) |
-| `RECOMMEND_STATS_RANGE` | `month` | Zeitraum der stats-Quelle (`week`…`all_time`) |
+| `RECOMMEND_STATS_RANGE` | `month` | Zeitraum der stats-Quelle. **Abgeschlossene** Zeiträume: `week`, `month`, `quarter`, `half_yearly`, `year` (z. B. `month` = letzter vollständiger Kalendermonat, bleibt bis zur nächsten ListenBrainz-Berechnung eingefroren). **Laufender** Zeitraum: `this_week`, `this_month`, `this_year`. Dazu `all_time`. Siehe Hinweis unten. |
 | `LISTENBRAINZ_TOKEN` | – | optional, nur zum Anheben des Rate-Limits – **KEIN Passwort** |
 | `LISTENBRAINZ_KINDS` | `jams,exploration` | welche createdfor-Playlists |
 | `LASTFM_ENABLED` | `0` | Last.fm als optionale Zusatz-Quelle |
@@ -155,6 +155,15 @@ cp .env.example .env
 | `HTTP_RETRIES` | `3` | Versuche je Request bei Transport-Fehlern |
 | `NOTIFY_ONLY_ON_CHANGE` | `1` | Fehler-Alarm nur bei Zustandswechsel |
 
+> **Zeitraum der stats-Quelle:** `week`/`month`/`quarter`/`half_yearly`/`year`
+> sind der zuletzt *abgeschlossene* Zeitraum, `this_week`/`this_month`/`this_year`
+> der *laufende*. Mit `month` bleibt die Liste daher den ganzen aktuellen Monat
+> gleich (z. B. 21 Songs aus dem Vormonat). Für „was ich gerade höre" nimm
+> `this_month` oder `this_week`, für einen stabilen Rückblick `month`/`quarter`/`year`.
+> ListenBrainz berechnet die Statistiken in Batches, die Werte können deshalb
+> mehrere Tage alt sein. `RECOMMEND_LIMIT` (Default 100) begrenzt, wie viele
+> Songs pro User aus dem Zeitraum übernommen werden. Die Pushover-Meldung nennt
+> den Zeitraum (z. B. `ghost72 (stats this_month 100)`).
 > In der compose/`.env` heissen die drei letzten Werte
 > `RECOMMEND_HTTP_TIMEOUT`, `RECOMMEND_HTTP_RETRIES` und
 > `RECOMMEND_NOTIFY_ONLY_ON_CHANGE`.

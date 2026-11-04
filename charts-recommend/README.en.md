@@ -134,7 +134,7 @@ cp .env.example .env
 | `RECOMMEND_LISTENBRAINZ_USERS` | – | comma list of public ListenBrainz usernames (no secret). Empty = feature off. |
 | `LISTENBRAINZ_USER` | – | backward-compat: old single value, fallback when the list is empty |
 | `RECOMMEND_SOURCES` | `stats,createdfor` | active sources (`stats` and/or `createdfor`) |
-| `RECOMMEND_STATS_RANGE` | `month` | range of the stats source (`week`…`all_time`) |
+| `RECOMMEND_STATS_RANGE` | `month` | range of the stats source. **Completed** periods: `week`, `month`, `quarter`, `half_yearly`, `year` (e.g. `month` = last full calendar month, frozen until ListenBrainz computes the next one). **Running** period: `this_week`, `this_month`, `this_year`. Plus `all_time`. See the note below. |
 | `LISTENBRAINZ_TOKEN` | – | optional, only to raise the rate limit – **NO password** |
 | `LISTENBRAINZ_KINDS` | `jams,exploration` | which createdfor playlists |
 | `LASTFM_ENABLED` | `0` | Last.fm as an optional extra source |
@@ -146,6 +146,15 @@ cp .env.example .env
 | `HTTP_RETRIES` | `3` | attempts per request on transport errors |
 | `NOTIFY_ONLY_ON_CHANGE` | `1` | error alert only on state change |
 
+> **Stats range:** `week`/`month`/`quarter`/`half_yearly`/`year` are the last
+> *completed* period, `this_week`/`this_month`/`this_year` the *running* one.
+> With `month` the list therefore stays the same for the whole current month
+> (e.g. 21 songs from last month). Use `this_month` or `this_week` for "what I
+> listen to now", `month`/`quarter`/`year` for a stable retrospective.
+> ListenBrainz computes stats in batches, so values can be several days old.
+> `RECOMMEND_LIMIT` (default 100) caps how many songs per user are taken from
+> the range. The Pushover message names the range (e.g.
+> `ghost72 (stats this_month 100)`).
 > In compose/`.env` these last three are named `RECOMMEND_HTTP_TIMEOUT`,
 > `RECOMMEND_HTTP_RETRIES` and `RECOMMEND_NOTIFY_ONLY_ON_CHANGE`.
 

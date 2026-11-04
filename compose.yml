@@ -411,7 +411,12 @@ services:
       # Welche Datenquellen: stats (meistgehoerte Songs) + createdfor (Weekly
       # Jams/Exploration). Default beide.
       - RECOMMEND_SOURCES=${RECOMMEND_SOURCES:-stats,createdfor}
-      # Zeitraum fuer die stats-Quelle (week|month|quarter|half_yearly|year|all_time).
+      # Zeitraum fuer die stats-Quelle. week|month|quarter|half_yearly|year =
+      # zuletzt ABGESCHLOSSENER Zeitraum (month = Vormonat, eingefroren);
+      # this_week|this_month|this_year = LAUFENDER Zeitraum (empfohlen fuer
+      # "was ich gerade hoere"); all_time = alles. Stats werden von ListenBrainz
+      # in Batches berechnet (Werte koennen Tage alt sein); RECOMMEND_LIMIT
+      # begrenzt, wie viele Songs aus dem Zeitraum genommen werden.
       - RECOMMEND_STATS_RANGE=${RECOMMEND_STATS_RANGE:-month}
       # Optional, nur noch Fallback, wenn RECOMMEND_LISTENBRAINZ_USERS leer ist.
       - LISTENBRAINZ_USER=${LISTENBRAINZ_USER:-}

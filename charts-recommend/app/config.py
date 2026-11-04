@@ -65,8 +65,15 @@ LISTENBRAINZ_KINDS = [
     if k.strip()
 ]
 
-# Time range for the "stats" source: week | month | quarter | half_yearly |
-# year | all_time (ListenBrainz range values). Default "month".
+# Time range for the "stats" source (ListenBrainz range values). Default "month".
+# week | month | quarter | half_yearly | year = the last COMPLETED period (frozen
+# until ListenBrainz computes the next one, e.g. "month" = previous calendar
+# month). this_week | this_month | this_year = the RUNNING period (best for
+# "what I listen to now"). all_time = everything. ListenBrainz computes stats
+# in batches, so values can be several days old. RECOMMEND_LIMIT caps how many
+# recordings are taken from the range.
+STATS_RANGES = ("this_week", "this_month", "this_year", "week", "month",
+                "quarter", "half_yearly", "year", "all_time")
 RECOMMEND_STATS_RANGE = os.environ.get("RECOMMEND_STATS_RANGE", "month").strip()
 
 # --- Last.fm (optional, sofort nutzbar mit vorhandenem API-Key) ---
