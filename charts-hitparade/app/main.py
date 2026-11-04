@@ -24,7 +24,8 @@ import os
 import time
 from datetime import date, datetime
 
-from . import (chart_cache, config, hitparade, library, notify, playlist,
+from . import (chart_cache, config, hitparade, library, notify, notify_budget,
+               playlist,
                presence, status)
 from .i18n import t
 
@@ -210,26 +211,44 @@ def _notify(results: list[dict]) -> None:
     # playlist in the body - identical to the Navidrome display name.
     push_title = t("hitparade.notify.title", service="charts-hitparade")
 
-    lines = [t("hitparade.notify.summary_header",
-               matched=total_matched, missing=total_missing), ""]
-    for r in results:
-        lines.append(f"<b>{r['title']}</b>")
-        lines.append(t("hitparade.notify.chart_line",
-                       matched=r["matched"], missing=r["missing"], total=r["total"]))
+    # Overview line (head, never cut): every chart with its present/missing
+    # counts, in chart order, so a long song list can never hide chart 2+.
+    parts = [t("notify.overview.channel", title=r["title"],
+               matched=r["matched"], missing=r["missing"]) for r in results]
+    compact = [f"✅{r['matched']} ⬇{r['missing']}" for r in results]
+    head = [t("hitparade.notify.summary_header",
+              matched=total_matched, missing=total_missing)]
+    overview = notify_budget.overview_line(parts, compact)
+    if overview:
+        head.append(overview)
+    head.append("")
+
+    Block, Entry = notify_budget.Block, notify_budget.Entry
+    blocks = []
+    limit = config.NOTIFY_MISSING_LIMIT
+    for idx, r in enumerate(results):
+        # The chart header is a weight-0 info entry (separator blank line
+        # between charts); song lines follow as one entry each.
+        top = ["", f"<b>{r['title']}</b>"] if idx else [f"<b>{r['title']}</b>"]
+        entries = [Entry(top + [t("hitparade.notify.chart_line",
+                                  matched=r["matched"], missing=r["missing"],
+                                  total=r["total"])], weight=0)]
         # List missing songs (like charts-sync) so you can see directly from
         # your phone what will be fetched. Quantity limited via
         # NOTIFY_MISSING_LIMIT (0 = only the count, no song list).
         missing_songs = r.get("missing_songs") or []
-        if missing_songs and config.NOTIFY_MISSING_LIMIT > 0:
-            limit = config.NOTIFY_MISSING_LIMIT
-            lines.append("")  # blank line before the song list (readability)
-            for pos, artist, title in missing_songs[:limit]:
-                lines.append(t("notify.song_entry", pos=pos, artist=artist, title=title))
+        hidden, cap_note = 0, ""
+        if missing_songs and limit > 0:
+            for i, (pos, artist, title) in enumerate(missing_songs[:limit]):
+                line = t("notify.song_entry", pos=pos, artist=artist, title=title)
+                # Blank line before the song list (readability).
+                entries.append(Entry(["", line] if i == 0 else [line]))
             if len(missing_songs) > limit:
-                rest = len(missing_songs) - limit
-                lines.append(t("notify.missing.more", count=rest))
-        lines.append("")
-    message = _truncate_for_pushover("\n".join(lines).strip())
+                hidden = len(missing_songs) - limit
+                cap_note = t("notify.missing.more", count=hidden)
+        blocks.append(Block(entries=entries, hidden=hidden, cap_note=cap_note))
+    message = notify_budget.fit_message(
+        head, blocks, [], more=lambda n: t("notify.more", count=n))
     # NOTIFY_ONLY_ON_CHANGE is not checked in notify.send itself - the
     # scheduler only runs 1x/week anyway, so one message per run is fine.
     notify.send(push_title, message)
@@ -246,22 +265,11 @@ def _notify_run_failed(reason: str) -> None:
     try:
         push_title = t("hitparade.notify.title", service="charts-hitparade")
         message = t("hitparade.notify.run_failed", error=reason)
-        notify.send(push_title, _truncate_for_pushover(message))
+        # The reason may contain & < > (escaped by notify.send): cut on the
+        # escaped length so Pushover never receives an over-limit message.
+        notify.send(push_title, notify_budget.hard_cut(message))
     except Exception as e:  # pragma: no cover - notification must never break a run
         logger.debug("run-failed notification could not be sent: %s", e)
-
-
-def _truncate_for_pushover(message: str, max_len: int = 1024) -> str:
-    """Truncate the message to Pushover's 1024-char limit (at a line boundary)."""
-    if len(message) <= max_len:
-        return message
-    suffix = "\n" + t("notify.truncated")
-    budget = max_len - len(suffix)
-    cut = message[:budget]
-    nl = cut.rfind("\n")
-    if nl > 0:
-        cut = cut[:nl]
-    return cut + suffix
 
 
 def _next_run_dt(now: datetime) -> datetime:
