@@ -13,6 +13,7 @@ still yields that one label.
 All tests run WITHOUT network/Docker/Pushover (notify.send is stubbed).
 """
 
+import os
 import pathlib
 import sys
 
@@ -105,3 +106,145 @@ def test_legacy_single_source_renders_one_label(monkeypatch):
     _title, body = sent[0]
     assert "charts" in body
     assert body.count("T.mp3") == 1
+
+
+# --- Golden no-cut tests: new output == frozen copy of the old builders -------
+
+from app import i18n, notify_budget  # noqa: E402
+from app.i18n import t  # noqa: E402
+
+_LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
+
+
+def _old_rejected(rejected):
+    count = len(rejected)
+    lines = [t("import.notify.rejected_header", count=count), ""]
+    for entry in rejected[:10]:
+        base = os.path.basename(entry.get("path", ""))
+        reason = entry.get("reason", "?")
+        lines.append(t("import.notify.rejected_entry", base=base, reason=reason))
+    if count > 10:
+        lines.append("")
+        lines.append(t("import.notify.more", count=count - 10))
+    return "\n".join(lines)
+
+
+def _old_flagged(flagged):
+    count = len(flagged)
+    lines = [t("import.notify.flagged_header", count=count), ""]
+    for artist, song_title in flagged[:10]:
+        lines.append(t("import.notify.flagged_entry", artist=artist, title=song_title))
+    if count > 10:
+        lines.append("")
+        lines.append(t("import.notify.more", count=count - 10))
+    return "\n".join(lines)
+
+
+def _old_imported(imported):
+    count = len(imported)
+    lines = [t("import.notify.imported_header", count=count)]
+    groups = {}
+    for path, source, _artist, _title, _album, _dev in imported:
+        label = source or t("import.notify.unknown_source")
+        try:
+            rel = os.path.relpath(path, config.MUSIC_DIR)
+        except ValueError:
+            rel = os.path.basename(path)
+        groups.setdefault(label, []).append(rel)
+    ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    breakdown = ", ".join(t("import.breakdown.item", count=len(songs), label=label)
+                          for label, songs in ordered)
+    lines.append(t("import.notify.imported_breakdown", breakdown=breakdown))
+    lines.append("")
+    shown = 0
+    remaining = count
+    for i, (label, songs) in enumerate(ordered):
+        if shown >= 10:
+            break
+        if i > 0:
+            lines.append("")
+        lines.append(t("import.notify.imported_group", label=label))
+        for rel in songs:
+            if shown >= 10:
+                break
+            lines.append(rel)
+            shown += 1
+            remaining -= 1
+    if remaining > 0:
+        lines.append("")
+        lines.append(t("import.notify.more", count=remaining))
+    return "\n".join(lines)
+
+
+def _imported_batch(spec):
+    """spec = [(source, n_songs)] -> imported tuples with short rel paths."""
+    out = []
+    for source, n in spec:
+        for i in range(n):
+            out.append((f"/music/Music/{source}/A{i}/T{i}.mp3", source,
+                        f"A{i}", f"T{i}", f"T{i}", ""))
+    return out
+
+
+def _setup_en(monkeypatch):
+    monkeypatch.setattr(config, "MUSIC_DIR", "/music/Music")
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    return _capture_notify(monkeypatch)
+
+
+def test_golden_imported_below_cap(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    batch = _imported_batch([("charts", 3), ("mundart", 2)])
+    import_main._notify_imported(batch)
+    assert sent[0][1] == _old_imported(batch)
+
+
+def test_golden_imported_above_cap_within_budget(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    # 14 songs: cap reached inside the 2nd group; the 3rd group never reached.
+    batch = _imported_batch([("charts", 6), ("mundart", 6), ("manuell", 2)])
+    import_main._notify_imported(batch)
+    body = sent[0][1]
+    assert body == _old_imported(batch)
+    assert body.endswith("\n\n" + t("import.notify.more", count=4))
+    # The third group was never reached: no group heading for it.
+    assert t("import.notify.imported_group", label="manuell") not in body
+
+
+def test_golden_imported_cap_at_group_boundary(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    batch = _imported_batch([("charts", 10), ("mundart", 3)])
+    import_main._notify_imported(batch)
+    assert sent[0][1] == _old_imported(batch)
+    assert sent[0][1].endswith(t("import.notify.more", count=3))
+
+
+def test_golden_rejected_and_flagged(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    for n in (3, 10, 14):
+        rejected = [{"path": f"/charts/f{i}.mp3", "reason": "too short (24s)"}
+                    for i in range(n)]
+        flagged = [(f"ARTIST {i}", f"TITLE {i}") for i in range(n)]
+        sent.clear()
+        import_main._notify_rejected(rejected)
+        import_main._notify_flagged_upper(flagged)
+        assert sent[0][1] == _old_rejected(rejected)
+        assert sent[1][1] == _old_flagged(flagged)
+
+
+def test_imported_many_long_songs_stays_within_budget(monkeypatch):
+    sent = _setup_en(monkeypatch)
+    batch = [(f"/music/Music/Some Long Artist Name {i}/A Very Long Album Name "
+              f"That Goes On And On {i}/{i:02d} - A Quite Long Song Title For "
+              f"Testing Purposes {i}.mp3", f"playlist-{i % 4}", "a", "t", "al", "")
+             for i in range(60)]
+    import_main._notify_imported(batch)
+    body = sent[0][1]
+    assert notify_budget.measure([body]) <= 1024
+    lines = body.split("\n")
+    # Breakdown (overview) stays complete in the head; exactly one "more" line.
+    for i in range(4):
+        assert f"playlist-{i}" in lines[1]
+    shown = sum(1 for ln in lines if ln.endswith(".mp3"))
+    assert body.count(t("import.notify.more", count=60 - shown)) == 1
+    assert lines[-2] == "" and lines[-1] == t("import.notify.more", count=60 - shown)

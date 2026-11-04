@@ -25,7 +25,8 @@ import time
 import unicodedata
 import re
 
-from . import backfill, cleanup, config, importer, lidarr, notify, status
+from . import (backfill, cleanup, config, importer, lidarr, notify,
+               notify_budget, status)
 from .i18n import t
 
 logging.basicConfig(
@@ -238,22 +239,49 @@ def _release_rejected(rejected: list[dict]) -> None:
             logger.warning(t("import.release.state_write_failed", error=e))
 
 
+def _capped_message(head: "list[str]", groups: "list[tuple[list[str], list[str]]]",
+                    cap: int) -> str:
+    """Assemble a message listing at most ``cap`` entries plus one global
+    "... and N more" line (preceded by a blank line), within Pushover's budget.
+
+    groups = [(header_lines, entry_lines), ...] in display order. Entries beyond
+    the cap are not turned into blocks; their count is carried as ``hidden`` of
+    the last block that received an entry, so the "more" line is identical
+    whether the cap or the character budget cut the list.
+    """
+    blocks = []
+    taken = 0
+    total = sum(len(entries) for _header, entries in groups)
+    for header, entries in groups:
+        if taken >= cap:
+            break
+        take = entries[:cap - taken]
+        taken += len(take)
+        blocks.append(notify_budget.Block(
+            entries=[notify_budget.Entry([line]) for line in take],
+            header=header))
+    if blocks:
+        blocks[-1].hidden = total - taken
+    return notify_budget.fit_message(
+        head, blocks, [], more=lambda n: t("import.notify.more", count=n),
+        more_sep=("",))
+
+
 def _notify_rejected(rejected: list[dict]) -> None:
     """Pushover message about rejected (sorted-out) files."""
     count = len(rejected)
     title = t("import.notify.rejected_title", count=count)
-    lines = [t("import.notify.rejected_header", count=count), ""]
-    for entry in rejected[:10]:
+    entries = []
+    for entry in rejected:
         base = os.path.basename(entry.get("path", ""))
         reason = entry.get("reason", "?")
         # Separate the reason with a dash (not in parentheses) so reasons that
         # themselves contain parentheses (e.g. "zu kurz (24s < 90s)") do not
         # create double parentheses.
-        lines.append(t("import.notify.rejected_entry", base=base, reason=reason))
-    if count > 10:
-        lines.append("")
-        lines.append(t("import.notify.more", count=count - 10))
-    notify.send(title, "\n".join(lines))
+        entries.append(t("import.notify.rejected_entry", base=base, reason=reason))
+    message = _capped_message(
+        [t("import.notify.rejected_header", count=count)], [([""], entries)], 10)
+    notify.send(title, message)
 
 
 def _notify_flagged_upper(flagged: "list[tuple[str, str]]") -> None:
@@ -266,13 +294,11 @@ def _notify_flagged_upper(flagged: "list[tuple[str, str]]") -> None:
     """
     count = len(flagged)
     title = t("import.notify.flagged_title", count=count)
-    lines = [t("import.notify.flagged_header", count=count), ""]
-    for artist, song_title in flagged[:10]:
-        lines.append(t("import.notify.flagged_entry", artist=artist, title=song_title))
-    if count > 10:
-        lines.append("")
-        lines.append(t("import.notify.more", count=count - 10))
-    notify.send(title, "\n".join(lines))
+    entries = [t("import.notify.flagged_entry", artist=artist, title=song_title)
+               for artist, song_title in flagged]
+    message = _capped_message(
+        [t("import.notify.flagged_header", count=count)], [([""], entries)], 10)
+    notify.send(title, message)
 
 
 def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> None:
@@ -284,7 +310,6 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
     """
     count = len(imported)
     title = t("import.notify.imported_title", count=count)
-    lines = [t("import.notify.imported_header", count=count)]
 
     # Group songs by playlist (order: largest group first).
     groups: dict[str, list[str]] = {}
@@ -297,33 +322,21 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
         groups.setdefault(label, []).append(rel)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
-    # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"), followed by
-    # a blank line.
+    # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"). It is the
+    # overview line and lives in the head, which the budget never cuts.
     breakdown = ", ".join(t("import.breakdown.item", count=len(songs), label=label)
                           for label, songs in ordered)
-    lines.append(t("import.notify.imported_breakdown", breakdown=breakdown))
-    lines.append("")
+    head = [t("import.notify.imported_header", count=count),
+            t("import.notify.imported_breakdown", breakdown=breakdown)]
 
     # Songs per playlist as their own group, with a blank line between them.
     # Capped at 10 songs total (keep the Pushover message short).
-    shown = 0
-    remaining = count
-    for i, (label, songs) in enumerate(ordered):
-        if shown >= 10:
-            break
-        if i > 0:
-            lines.append("")  # blank line between the groups
-        lines.append(t("import.notify.imported_group", label=label))
-        for rel in songs:
-            if shown >= 10:
-                break
-            lines.append(rel)
-            shown += 1
-            remaining -= 1
-    if remaining > 0:
-        lines.append("")
-        lines.append(t("import.notify.more", count=remaining))
-    notify.send(title, "\n".join(lines))
+    message = _capped_message(
+        head,
+        [(["", t("import.notify.imported_group", label=label)], songs)
+         for label, songs in ordered],
+        10)
+    notify.send(title, message)
 
 
 def _notify_manual_available(imported: "list[tuple[str, str, str, str, str, str]]") -> None:
