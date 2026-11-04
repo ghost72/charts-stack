@@ -35,6 +35,10 @@ deployed together, so a single stack version is the honest unit.
   layout is too long it falls back to a compact one-line form. The digest's
   hard-coded `➖➖➖➖➖➖➖➖` separator line is gone (a blank line separates the
   blocks). Other separators did not exist.
+  Omitting a single overview item is an intentional user decision
+  (2026-11-04): the block header below says the same and more. The one
+  exception is charts-recommend, whose single-user line `Sources: u (stats 21)`
+  is kept because the per-source counts appear nowhere else in that message.
 ### Fixed
 - **charts-digest no longer hides later sources.** With 112 new songs from six
   sources only the first source's count (Energy 59) was visible, the rest was
