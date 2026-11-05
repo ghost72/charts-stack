@@ -431,6 +431,19 @@ body.login {
 }
 .badge-stack { background: #4a2a12; color: #f0b57a; }
 .badge-curated { background: #1d3350; color: #9cc3ff; }
+/* Path chip: the file path inside a delete/restore success message, framed in a
+   subtle neutral-gray bordered box (same border family as the legend/hint boxes
+   on the dark theme) instead of plain inline text. Monospace + wrapping so a
+   long path stays readable and breaks across lines rather than overflowing. */
+.te-pathchip {
+  display: inline-block;
+  margin: 2px 0; padding: 2px 7px;
+  border: 1px solid #5a5172; border-radius: 6px;
+  background: rgba(255, 255, 255, .04);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82em; color: var(--fg);
+  overflow-wrap: anywhere; word-break: break-word;
+}
 /* Select-a-song hint ("Wähle oben einen Song…"): give it a little breathing
    room below so it does not cling to the first input row of the form. */
 #te-hint { margin-bottom: 14px; }

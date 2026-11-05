@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config14">
+<link rel="stylesheet" href="/static/style.css?v=config15">
 </head>
 <body>
 <header>
@@ -999,6 +999,28 @@ function initTagEditor() {
     msg.className = "te-msg" + (isErr ? " err" : " ok");
   }
 
+  // Like setMsg but renders a pre-built, already-escaped HTML fragment (used for
+  // the delete/restore success message, which wraps the file path in a gray
+  // .te-pathchip). Callers MUST pass HTML built via pathMsgHtml (path escaped).
+  function setMsgHtml(html, isErr) {
+    const msg = document.getElementById("te-msg");
+    msg.innerHTML = html;
+    msg.className = "te-msg" + (isErr ? " err" : " ok");
+  }
+
+  // Build a success message HTML fragment from an i18n template that contains a
+  // {path} placeholder, rendering the substituted path inside a gray-bordered
+  // .te-pathchip span. SECURITY: the path is a filesystem path from the server,
+  // so it is HTML-escaped before injection; the template's own literal segments
+  // are escaped too, and only the chip markup is trusted. Split/join on {path}
+  // mirrors the t() substitution so the human sentence stays intact.
+  function pathMsgHtml(key, path) {
+    const tmpl = t(key);                       // raw template, {path} unexpanded
+    const parts = tmpl.split("{path}");
+    const chip = `<span class="te-pathchip">${esc(path)}</span>`;
+    return parts.map(esc).join(chip);
+  }
+
   // Changed-field highlight (advisory; the server re-verifies).
   TE_FIELDS.forEach(f => {
     const el = document.getElementById("te-" + f);
@@ -1140,7 +1162,8 @@ function initTagEditor() {
           // now-deleted song is no longer offered. The success message goes into
           // the (visible) select-hint line, because #te-msg lives inside the
           // #te-form that resetEditor() hides.
-          resetEditor(t("tageditor.delete.ok", {path: d.trashed_to || ""}));
+          // Render the path inside a gray .te-pathchip (path HTML-escaped).
+          resetEditor(pathMsgHtml("tageditor.delete.ok", d.trashed_to || ""), true);
           // The file was moved into the trash, so refresh the trash list too.
           loadTrash();
         } else {
@@ -1157,7 +1180,9 @@ function initTagEditor() {
   // (which also carries the success message, since #te-msg lives inside the now
   // hidden form). `message` is the status text to show; falls back to the
   // default select hint. Defensive null-checks so it never throws.
-  function resetEditor(message) {
+  // `message` is the status text (or, when isHtml is true, a pre-built escaped
+  // HTML fragment from pathMsgHtml) shown in the select-hint line.
+  function resetEditor(message, isHtml) {
     // Stop in-browser playback: if the just-deleted (or just-unloaded) song was
     // playing via the cover play button, the <audio> would otherwise keep
     // playing from its buffer after the file was moved to the trash. Pause,
@@ -1173,7 +1198,8 @@ function initTagEditor() {
     if (results) results.innerHTML = "";
     if (hint) {
       hint.hidden = false;
-      hint.textContent = message || t("tageditor.select_hint");
+      if (isHtml && message) hint.innerHTML = message;   // escaped chip fragment
+      else hint.textContent = message || t("tageditor.select_hint");
     }
   }
 
@@ -1366,7 +1392,8 @@ function initTagEditor() {
           {method: "POST", body: fd, cache: "no-store"});
         const d = await r.json();
         if (r.ok && d && d.ok) {
-          setMsg(t("tageditor.trash.restore.ok", {path: d.restored || ""}), false);
+          // Render the restored path inside a gray .te-pathchip (path escaped).
+          setMsgHtml(pathMsgHtml("tageditor.trash.restore.ok", d.restored || ""), false);
         } else {
           setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
         }

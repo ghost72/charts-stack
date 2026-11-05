@@ -265,6 +265,38 @@ def test_restore_round_trip_from_real_delete(tmp_path, monkeypatch):
     assert data["entries"]["my song.mp3"]["source"] == "youtube"
 
 
+def test_restore_invalidates_trash_cache(tmp_path, monkeypatch):
+    """After a successful restore the trash listing no longer contains the
+    restored entry IMMEDIATELY - restore_file busts the TTL-cached trash scan so
+    the Papierkorb tab (and the UI's post-restore loadTrash re-fetch) shows the
+    row gone without waiting for the TTL to expire. This mirrors the delete
+    route's trash.invalidate(); it is the backend half of the "restored row
+    stays in the list" bug."""
+    # A long TTL guarantees the first listing's cache would still be served if
+    # restore did NOT invalidate - so a stale hit here would be a real failure.
+    monkeypatch.setenv("TAGEDITOR_INDEX_TTL", "3600")
+    root, trashed, original, manifest = _deleted_entry(tmp_path)
+    main_mod, _ = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+
+    # Prime the TTL-cached trash scan: the restorable entry is present.
+    before = client.get("/api/tageditor/trash").json()
+    rels_before = {e["rel_path"] for e in before["entries"]}
+    assert any(r.endswith("Song/Song.mp3") for r in rels_before)
+    assert before["count"] == 1
+
+    rr = client.post("/api/tageditor/trash/restore", data={"path": trashed})
+    assert rr.status_code == 200, rr.text
+    assert original.is_file()
+
+    # Re-list straight away (same long TTL): the cache was invalidated, so the
+    # re-walk no longer finds the restored file - the row is gone, count is 0.
+    after = client.get("/api/tageditor/trash").json()
+    rels_after = {e["rel_path"] for e in after["entries"]}
+    assert not any(r.endswith("Song/Song.mp3") for r in rels_after)
+    assert after["count"] == 0
+
+
 def test_restore_song_searchable_immediately(tmp_path, monkeypatch):
     """After a delete+restore round trip the restored song is findable in a
     Tag-Editor search right away - restore upserts (add_index_entry) the path

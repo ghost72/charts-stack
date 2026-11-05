@@ -237,7 +237,11 @@ read-only und TTL-gecacht. Zwei Aktionen:
   Original­pfad + entferntem Manifest-Eintrag schreibt. **Nur Songs, die mit dem
   Tag-Editor NACH Einführung dieser Funktion gelöscht wurden, sind
   wiederherstellbar** – ältere Löschungen haben keine Sidecar, und der Button
-  lehnt mit einer klaren „keine Restore-Daten"-Meldung ab.
+  lehnt mit einer klaren „keine Restore-Daten"-Meldung ab. Nach dem
+  Wiederherstellen wird die Papierkorb-Liste sofort neu geladen (die Zeile
+  verschwindet, Zähler/Grösse aktualisiert), analog zum Löschen.
+  Die Erfolgsmeldungen von Löschen und Wiederherstellen zeigen den Dateipfad in
+  einem grau umrandeten Chip (`.te-pathchip`) statt als blossen Inline-Text.
 
 **Sicherheit:** Liste **und** Löschen/Leeren/Wiederherstellen liegen hinter demselben Auth-Gate
 wie jede andere `/api/tageditor/*`-Route (401 anonym). Das Löschen ist **streng

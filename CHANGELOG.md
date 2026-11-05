@@ -13,6 +13,14 @@ deployed together, so a single stack version is the honest unit.
 ## [Unreleased]
 
 ### Fixed
+- **charts-config Trash-Manager: the trash list refreshes after a RESTORE.**
+  After a successful green "Wiederherstellen", the restored row stayed in the
+  Papierkorb list (even across a page reload) although the file had really been
+  moved back. The restore success path now re-fetches and re-renders the trash
+  list (count/size updated), mirroring the delete button, so the row disappears
+  without a manual reload. Backend note: `trash.restore_file` already invalidated
+  the TTL-cached trash scan after the move (verified + pinned by a new test: the
+  restored entry is gone from the listing immediately, no TTL wait).
 - **charts-config Trash-Manager: Tag-Editor-deleted songs now appear in the
   trash listing immediately.** A song deleted via the Tag-Editor delete button
   did not show up in the Papierkorb tab afterwards (not even after a page
@@ -39,6 +47,17 @@ deployed together, so a single stack version is the honest unit.
   search right after restore returns the song. Delete already busts the index
   (`remove_index_entry`), so a deleted song drops out of search right away too.
 - Static cache token bumped `config13` → `config14`.
+
+### Changed
+- **charts-config Tag-Editor: delete/restore success messages frame the file
+  path in a gray-bordered chip.** The path in "Song gelöscht — in den Papierkorb
+  verschoben (…)" and "… wiederhergestellt" is now rendered inside a subtle
+  gray-bordered `.te-pathchip` box (monospace, wrapping) instead of plain inline
+  text, so the file name + path stands out like the editor's badges. The path is
+  HTML-escaped before injection (filesystem path → no injection). The i18n
+  sentence templates are unchanged; the chip wraps the substituted `{path}`.
+  Manual verification: delete/restore a song → the path shows inside the gray
+  chip, long paths wrap. Static cache token bumped `config14` → `config15`.
 
 ### Added
 - **charts-config Trash-Manager: a green "Wiederherstellen" (Restore) button.**
