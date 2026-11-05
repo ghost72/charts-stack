@@ -33,6 +33,11 @@ deployed together, so a single stack version is the honest unit.
     variants carry the full button colour trio (background + border + text)
     instead of only a tinted border, and the confirm-dialog + success-message
     text gets more line-height so a two-line chip's borders no longer overlap.
+  - The confirm-dialog action buttons now match their UI buttons exactly:
+    "Song löschen" uses the dark-red delete-button palette
+    (`#3a1616`/`#7a2a2a`/`#ffb4b4`) instead of the brighter orange `#c0392b`,
+    and "Wiederherstellen" uses the restore-button green
+    (`#16321f`/`#2a7a3a`/`var(--ok)`).
   - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
     volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
     refresh, form reset) is not delayed by the fade tail. Nothing audible happens

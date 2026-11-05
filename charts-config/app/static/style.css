@@ -985,10 +985,13 @@ body.login {
 }
 .te-trash-empty-btn:hover { filter: brightness(1.2); border-color: #c04545; }
 .te-del-btn { color: #ffb4b4; border-color: #7a2a2a; }
+/* Modal confirm button uses the SAME palette as the Tag-Editor / Trash-Manager
+   delete button (.te-delete-btn / .te-trash-empty-btn: #3a1616/#7a2a2a/#ffb4b4)
+   so the dialog's "Song löschen" reads identically, not as a brighter orange. */
 .te-modal-btn.danger {
-  background: #c0392b; border-color: transparent; color: #fff;
+  background: #3a1616; border: 1px solid #7a2a2a; color: #ffb4b4;
 }
-.te-modal-btn.danger:hover { filter: brightness(1.1); }
+.te-modal-btn.danger:hover { filter: brightness(1.2); border-color: #c04545; }
 .te-danger-text { color: #ffb4b4; }
 
 /* Green restore button on a restorable (Tag-Editor-delete) trash row + its
@@ -1002,7 +1005,10 @@ body.login {
   padding: 6px 12px; font-size: .8rem; cursor: pointer; white-space: nowrap;
 }
 .te-trash-restore:hover { filter: brightness(1.2); border-color: #45c060; }
+/* Modal confirm button uses the SAME palette as the Trash-Manager restore
+   button (.te-trash-restore: #16321f/#2a7a3a/var(--ok)) so the dialog's
+   "Wiederherstellen" reads identically to the row button. */
 .te-modal-btn.te-restore-ok {
-  background: #2a7a3a; border-color: transparent; color: #fff;
+  background: #16321f; border: 1px solid #2a7a3a; color: var(--ok);
 }
-.te-modal-btn.te-restore-ok:hover { filter: brightness(1.1); }
+.te-modal-btn.te-restore-ok:hover { filter: brightness(1.2); border-color: #45c060; }
