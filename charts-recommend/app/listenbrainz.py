@@ -121,7 +121,19 @@ def _list_created_for(user: str, token: str, client: httpx.Client) -> list[dict]
                           status=e.response.status_code))
             return []
         raise
-    data = resp.json()
+    # ListenBrainz (or an intermediary during a stack restart) can answer HTTP
+    # 200 with an EMPTY or non-JSON (e.g. HTML) body: treat as "no data yet"
+    # instead of crashing the whole run (mirrors the stats-source guard).
+    if not (resp.content or b"").strip():
+        logger.info(t("recommend.lb.createdfor_empty_body",
+                      what=f"user '{user}'"))
+        return []
+    try:
+        data = resp.json()
+    except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
+        logger.warning(t("recommend.lb.createdfor_invalid_json",
+                         what=f"user '{user}'", error=e))
+        return []
     # Response: {"playlists": [{"playlist": {...JSPF...}}, ...], "count": ..}
     out = []
     for wrapper in data.get("playlists", []):
@@ -157,7 +169,18 @@ def _fetch_playlist_tracks(mbid: str, token: str,
     """
     url = f"{_BASE_URL}/1/playlist/{mbid}"
     resp = _get_with_retry(client, url, headers=_headers(token))
-    data = resp.json()
+    # Same empty/non-JSON guard as _list_created_for: a transient empty or HTML
+    # 200 body is treated as "no tracks" rather than failing the run.
+    if not (resp.content or b"").strip():
+        logger.info(t("recommend.lb.createdfor_empty_body",
+                      what=f"playlist '{mbid}'"))
+        return []
+    try:
+        data = resp.json()
+    except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
+        logger.warning(t("recommend.lb.createdfor_invalid_json",
+                         what=f"playlist '{mbid}'", error=e))
+        return []
     playlist = data.get("playlist", {}) if isinstance(data, dict) else {}
     tracks = playlist.get("track", []) if isinstance(playlist, dict) else []
 

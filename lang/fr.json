@@ -702,6 +702,8 @@
   "recommend.lb.retry": "Échec de la récupération ListenBrainz (tentative {attempt}/{attempts}) : {error} - nouvelle tentative dans {backoff}s",
   "recommend.lb.createdfor_none": "createdfor : aucune playlist pour « {user} » ({status}) - ListenBrainz n'en a pas encore généré.",
   "recommend.lb.createdfor_empty": "ListenBrainz : pas encore de playlists « createdfor » pour « {user} » (trop peu d'historique d'écoute ?).",
+  "recommend.lb.createdfor_empty_body": "createdfor : corps de réponse vide pour {what} - traité comme pas encore de données.",
+  "recommend.lb.createdfor_invalid_json": "createdfor : la réponse pour {what} n'est pas du JSON valide ({error}) - traité comme aucune donnée.",
   "recommend.lb.kind_not_found": "ListenBrainz : aucune playlist « {kind} » trouvée.",
   "recommend.lb.kind_no_mbid": "ListenBrainz : playlist « {kind} » sans MBID.",
   "recommend.lb.kind_tracks": "ListenBrainz : « {kind} » -> {count} titres ({title})",

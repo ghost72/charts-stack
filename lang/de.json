@@ -702,6 +702,8 @@
   "recommend.lb.retry": "ListenBrainz-Abruf fehlgeschlagen (Versuch {attempt}/{attempts}): {error} - neuer Versuch in {backoff}s",
   "recommend.lb.createdfor_none": "createdfor: keine Playlists für '{user}' ({status}) - ListenBrainz hat noch keine generiert.",
   "recommend.lb.createdfor_empty": "ListenBrainz: noch keine 'createdfor'-Playlists für '{user}' (zu wenig Hörverlauf?).",
+  "recommend.lb.createdfor_empty_body": "createdfor: leere Antwort für {what} - als noch keine Daten behandelt.",
+  "recommend.lb.createdfor_invalid_json": "createdfor: Antwort für {what} ist kein gültiges JSON ({error}) - als keine Daten behandelt.",
   "recommend.lb.kind_not_found": "ListenBrainz: keine '{kind}'-Playlist gefunden.",
   "recommend.lb.kind_no_mbid": "ListenBrainz: '{kind}'-Playlist ohne MBID.",
   "recommend.lb.kind_tracks": "ListenBrainz: '{kind}' -> {count} Tracks ({title})",

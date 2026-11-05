@@ -27,6 +27,11 @@ deployed together, so a single stack version is the honest unit.
   wrong artist name and re-downloaded correctly, leaving a duplicate to remove.
 
 ### Fixed
+- **charts-recommend: a transient empty or non-JSON (HTML) 200 body on the
+  ListenBrainz `createdfor` source no longer crashes the run** (`Expecting value:
+  line 1 column 1 (char 0)`, `status=error`). Both createdfor JSON parses now
+  short-circuit an empty body and catch a decode error, treating it as "no data"
+  (empty result) - the same guard the `stats` source already had.
 - `strip_provenance_tags.py` no longer scans or rewrites `.charts-trash`,
   `@eaDir`, `#recycle` or dot-folders; `--apply-list` refuses paths inside them.
 
