@@ -432,9 +432,10 @@ body.login {
 .badge-stack { background: #4a2a12; color: #f0b57a; }
 .badge-curated { background: #1d3350; color: #9cc3ff; }
 /* Path chip: the file path inside a delete/restore success message, framed in a
-   subtle neutral-gray bordered box (same border family as the legend/hint boxes
-   on the dark theme) instead of plain inline text. Monospace + wrapping so a
-   long path stays readable and breaks across lines rather than overflowing. */
+   bordered box (label style, like the legend badges) instead of plain inline
+   text. Neutral gray border by default; the delete/restore variants tint only
+   the border (see below). Chip TEXT stays normal white regardless. Monospace +
+   wrapping so a long path stays readable and breaks across lines. */
 .te-pathchip {
   display: inline-block;
   margin: 2px 0; padding: 2px 7px;
@@ -444,6 +445,12 @@ body.login {
   font-size: .82em; color: var(--fg);
   overflow-wrap: anywhere; word-break: break-word;
 }
+/* Action-tinted chip borders for the success messages: only the BORDER colour
+   differs, reusing the exact red/green of the delete button (.te-delete-btn /
+   .te-trash-empty-btn, #7a2a2a) and the restore button (.te-trash-restore,
+   #2a7a3a) so the chip reads as the same family. Text/shape unchanged. */
+.te-pathchip-del { border-color: #7a2a2a; }
+.te-pathchip-restore { border-color: #2a7a3a; }
 /* Select-a-song hint ("Wähle oben einen Song…"): give it a little breathing
    room below so it does not cling to the first input row of the form. */
 #te-hint { margin-bottom: 14px; }

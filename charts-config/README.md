@@ -244,8 +244,10 @@ read-only und TTL-gecacht. Zwei Aktionen:
   lehnt mit einer klaren „keine Restore-Daten"-Meldung ab. Nach dem
   Wiederherstellen wird die Papierkorb-Liste sofort neu geladen (die Zeile
   verschwindet, Zähler/Grösse aktualisiert), analog zum Löschen.
-  Die Erfolgsmeldungen von Löschen und Wiederherstellen zeigen den Dateipfad in
-  einem grau umrandeten Chip (`.te-pathchip`) statt als blossen Inline-Text.
+  Die Erfolgsmeldungen von Löschen und Wiederherstellen zeigen den Satztext
+  normal weiss und den Dateipfad in einem umrandeten Chip (`.te-pathchip`,
+  Label-Stil); nur die Chip-Umrandung ist nach Aktion eingefärbt – rot beim
+  Löschen, grün beim Wiederherstellen (Chip-Text bleibt normal weiss).
 
 **Sicherheit:** Liste **und** Löschen/Leeren/Wiederherstellen liegen hinter demselben Auth-Gate
 wie jede andere `/api/tageditor/*`-Route (401 anonym). Das Löschen ist **streng

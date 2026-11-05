@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config16">
+<link rel="stylesheet" href="/static/style.css?v=config17">
 </head>
 <body>
 <header>
@@ -1009,27 +1009,32 @@ function initTagEditor() {
   }
 
   // Render a delete/restore SUCCESS message into #te-msg with NEUTRAL styling:
-  // the path sits in the gray .te-pathchip (via pathMsgHtml), and the sentence
-  // text is normal white (.te-success-neutral), not the green .ok color. Used
-  // for the restore success message (the delete one goes through resetEditor,
-  // which tags #te-hint neutral the same way). The message is transient: it is
-  // cleared on the next tab-switch or Tag-Editor interaction.
-  function setSuccessPathMsg(key, path) {
+  // the sentence text is normal white (.te-success-neutral) and the path sits
+  // in a bordered .te-pathchip whose border is tinted by action (red delete /
+  // green restore) via the `variant` modifier. Used for the restore success
+  // message (the delete one goes through resetEditor, which tags #te-hint
+  // neutral the same way). The message is transient: it is cleared on the next
+  // tab-switch or Tag-Editor interaction.
+  function setSuccessPathMsg(key, path, variant) {
     const msg = document.getElementById("te-msg");
-    msg.innerHTML = pathMsgHtml(key, path);
+    msg.innerHTML = pathMsgHtml(key, path, variant);
     msg.className = "te-msg te-success-neutral";
   }
 
   // Build a success message HTML fragment from an i18n template that contains a
-  // {path} placeholder, rendering the substituted path inside a gray-bordered
-  // .te-pathchip span. SECURITY: the path is a filesystem path from the server,
-  // so it is HTML-escaped before injection; the template's own literal segments
-  // are escaped too, and only the chip markup is trusted. Split/join on {path}
-  // mirrors the t() substitution so the human sentence stays intact.
-  function pathMsgHtml(key, path) {
+  // {path} placeholder, rendering the substituted path inside a bordered
+  // .te-pathchip span. `variant` ("del" | "restore") adds a modifier class that
+  // tints only the chip BORDER (red for delete, green for restore); the chip
+  // text and the surrounding sentence stay normal white. SECURITY: the path is
+  // a filesystem path from the server, so it is HTML-escaped before injection;
+  // the template's own literal segments are escaped too, and only the chip
+  // markup is trusted. Split/join on {path} mirrors the t() substitution so the
+  // human sentence stays intact.
+  function pathMsgHtml(key, path, variant) {
     const tmpl = t(key);                       // raw template, {path} unexpanded
     const parts = tmpl.split("{path}");
-    const chip = `<span class="te-pathchip">${esc(path)}</span>`;
+    const mod = variant ? " te-pathchip-" + variant : "";
+    const chip = `<span class="te-pathchip${mod}">${esc(path)}</span>`;
     return parts.map(esc).join(chip);
   }
 
@@ -1174,9 +1179,9 @@ function initTagEditor() {
           // now-deleted song is no longer offered. The success message goes into
           // the (visible) select-hint line, because #te-msg lives inside the
           // #te-form that resetEditor() hides.
-          // Neutral success message (gray .te-pathchip path + white text) and
-          // a smooth audio fade-out if the deleted song was playing.
-          resetEditor(pathMsgHtml("tageditor.delete.ok", d.trashed_to || ""),
+          // Success message: normal white sentence + red-bordered .te-pathchip
+          // path, and a smooth audio fade-out if the deleted song was playing.
+          resetEditor(pathMsgHtml("tageditor.delete.ok", d.trashed_to || "", "del"),
                       true, true);
           // The file was moved into the trash, so refresh the trash list too.
           loadTrash();
@@ -1452,8 +1457,8 @@ function initTagEditor() {
           {method: "POST", body: fd, cache: "no-store"});
         const d = await r.json();
         if (r.ok && d && d.ok) {
-          // Neutral success message: gray .te-pathchip path + normal white text.
-          setSuccessPathMsg("tageditor.trash.restore.ok", d.restored || "");
+          // Success message: normal white sentence + green-bordered .te-pathchip.
+          setSuccessPathMsg("tageditor.trash.restore.ok", d.restored || "", "restore");
         } else {
           setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
         }

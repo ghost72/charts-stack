@@ -16,9 +16,10 @@ deployed together, so a single stack version is the honest unit.
 - **charts-config Tag-Editor / Trash-Manager: UX refinements + no "(2)"
   duplicates on delete.** A batch of refinements on top of the delete/restore
   flow:
-  - Delete/restore success messages are NEUTRAL again: the file path sits in the
-    gray-bordered `.te-pathchip`, the sentence text is normal white (not the
-    green/red colouring a recent tweak had introduced).
+  - Delete/restore success messages: the sentence text is normal white and the
+    file path sits in a bordered `.te-pathchip` (label style) whose BORDER is
+    tinted by action — red for delete, green for restore (reusing the delete /
+    restore button colours) — while the chip text stays normal white.
   - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
     volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
     refresh, form reset) is not delayed by the fade tail. Nothing audible happens
