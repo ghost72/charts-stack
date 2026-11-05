@@ -31,6 +31,18 @@ deployed together, so a single stack version is the honest unit.
   `@eaDir`, `#recycle` or dot-folders; `--apply-list` refuses paths inside them.
 
 ### Changed
+- **charts-watchdog Pushover alerts are now emoji-rich and readable**, matching
+  the polished style of the other services instead of the former plain
+  `OK:`/`Problem:` wording. Recovery alerts lead with `✅` (title) and `🎉`
+  (body); a container that goes down is `🚨 <service> down`; an unreachable
+  external dependency is `📡 <service> not reachable`; a service that writes
+  `status=error` is `⚠️ <service> source broken`. The source-error body no longer
+  dumps the raw `HTTPConnectionPool(...) / Max retries exceeded ...`
+  urllib3/requests noise: a new shell helper `_clean_error` keeps the human
+  cause (e.g. "Verbindung zu slskd fehlgeschlagen") on its own line and drops
+  the connection-pool tail, hard-capping pathologically long messages. All
+  watchdog strings stay in `lang/{en,de,fr}.json` (key set unchanged, 40
+  `watchdog.*` keys per language); only their emoji/wording changed.
 - **Every listed song/file line in the Pushover messages now leads with a music
   note (`♪ `)**, matching the per-song style charts-digest already used. Applies
   to the song/file lists of charts-sync (new + missing), charts-hitparade,

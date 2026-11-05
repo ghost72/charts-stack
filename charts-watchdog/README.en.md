@@ -76,6 +76,24 @@ the container (`${MUSIC_ROOT}/Charts/.charts-status` → `/charts/.charts-status
   `<service>.json` basenames) to watch; the default is the ten status-writing
   services.
 
+## What the messages look like
+
+The Pushover messages follow the same emoji-rich style as the other services
+(no longer the plain `OK:`/`Problem:` wording of old):
+
+- **Recovery:** title with `✅` (e.g. `✅ charts-dashboard back online`), body
+  with `🎉`.
+- **Container down:** `🚨 <service> down`.
+- **External dependency unreachable:** `📡 <service> not reachable`.
+- **Service reports `status=error`:** `⚠️ <service> source broken`. The body
+  shows the **readable** cause (e.g. "Verbindung zu slskd fehlgeschlagen") on its
+  own line – the raw `HTTPConnectionPool(...) / Max retries exceeded …`
+  urllib3/requests dump is trimmed so the push does not become a wall of text
+  (pathologically long messages are hard-capped).
+
+All visible texts live in `lang/{en,de,fr}.json` (see "Language") – the
+emojis/wording are kept there, the code contains no hardcoded messages.
+
 ## No notification spam
 
 Per problem episode there is guaranteed to be **one** problem message and **one**

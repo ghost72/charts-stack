@@ -121,6 +121,38 @@ _status_field() {
     's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null || true
 }
 
+# _clean_error MESSAGE -> a readable, phone-friendly one-liner of a raw status
+# message. Service status messages can embed raw urllib3/requests dumps (e.g.
+# "Verbindung zu slskd fehlgeschlagen: HTTPConnectionPool(host='slskd',
+# port=5030): Max retries exceeded with url: /api/... (Caused by
+# NewConnectionError('<...>: Failed to establish a new connection: [Errno 111]
+# Connection refused'))"). That giant string is unreadable in a Pushover push.
+# This keeps the essential human cause and drops the noise:
+#   - cut everything from "HTTPConnectionPool"/"HTTPSConnectionPool" onwards
+#     (the host:port lives in the human prefix already, e.g. "... zu slskd ...");
+#   - else cut from "Max retries exceeded" onwards;
+#   - as a last resort, hard-truncate very long strings to ~160 chars + an
+#     ellipsis so no single push becomes a wall of text.
+# The leading human sentence (the part BEFORE the raw dump) is always kept, so
+# the user still sees WHAT broke. set -eu-safe (every step `|| true`); an empty
+# input yields an empty output. Collapses trailing separators/whitespace left
+# behind by the cut so the line does not end on ": " or " -".
+_clean_error() {
+  _ce="$1"
+  [ -n "$_ce" ] || { echo ""; return 0; }
+  # Drop the urllib3 connection-pool dump and everything after it.
+  _ce="$(printf '%s' "$_ce" | sed 's/HTTP[S]\{0,1\}ConnectionPool.*$//' 2>/dev/null || printf '%s' "$_ce")"
+  # Drop a "Max retries exceeded ..." tail if it survived (no pool prefix).
+  _ce="$(printf '%s' "$_ce" | sed 's/Max retries exceeded.*$//' 2>/dev/null || printf '%s' "$_ce")"
+  # Trim trailing separator/whitespace left by the cut (": ", " - ", spaces).
+  _ce="$(printf '%s' "$_ce" | sed 's/[[:space:]]*[:-][[:space:]]*$//; s/[[:space:]]*$//' 2>/dev/null || printf '%s' "$_ce")"
+  # Last-resort hard cap so a pathological message never floods the push.
+  if [ "$(printf '%s' "$_ce" | wc -c 2>/dev/null || echo 0)" -gt 160 ]; then
+    _ce="$(printf '%s' "$_ce" | cut -c1-160 2>/dev/null || printf '%s' "$_ce")…"
+  fi
+  printf '%s' "$_ce"
+}
+
 # t KEY [arg ...] -> translated string filled with %s, on stdout.
 # NEVER crashes (set -eu-safe). Fallback chain: chosen language -> en -> key name.
 t() {
@@ -630,7 +662,7 @@ main_loop() {
           # cooldown since the last message expired.
           if [ "$bad" -ge "$DEBOUNCE" ] && [ "$alarmed" != "1" ]; then
             last="$(read_num "/tmp/wd/st-$svc.last")"
-            _msg="$(_status_field message "$_stfile")"
+            _msg="$(_clean_error "$(_status_field message "$_stfile")")"
             if [ "$last" -eq 0 ] || [ "$((now - last))" -ge "$COOLDOWN" ]; then
               log "$(t watchdog.log.status_problem "$svc" "$bad")"
               notify "$(t watchdog.notify.status_problem_title "$svc")" "$(t watchdog.notify.status_problem_msg "$svc" "$_msg")"

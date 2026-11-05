@@ -75,6 +75,25 @@ Host-Quelle, die auch Dashboard und charts-energy nutzen.
   überwachenden Dienstnamen (die `<dienst>.json`-Basisnamen); Default sind die
   zehn Status-schreibenden Dienste.
 
+## Wie die Meldungen aussehen
+
+Die Pushover-Meldungen sind im gleichen emoji-reichen Stil wie die der übrigen
+Dienste gehalten (nicht mehr das nüchterne `OK:`/`Problem:` von früher):
+
+- **Erholung:** Titel mit `✅` (z. B. `✅ charts-dashboard wieder online`), Text
+  mit `🎉`.
+- **Container ausgefallen:** `🚨 <dienst> ausgefallen`.
+- **Externer Dienst nicht erreichbar:** `📡 <dienst> nicht erreichbar`.
+- **Dienst meldet `status=error`:** `⚠️ Quelle von <dienst> defekt`. Der Text
+  zeigt die **lesbare** Ursache (z. B. „Verbindung zu slskd fehlgeschlagen") auf
+  einer eigenen Zeile – der rohe `HTTPConnectionPool(...) / Max retries
+  exceeded …`-Dump von urllib3/requests wird gekürzt, damit die Push-Meldung
+  nicht zur Textwand wird (sehr lange Meldungen werden hart abgeschnitten).
+
+Alle sichtbaren Texte liegen in `lang/{en,de,fr}.json` (siehe „Sprache") – die
+Emojis/Formulierungen sind dort hinterlegt, der Code enthält keine
+fest verdrahteten Nachrichten.
+
 ## Kein Melde-Spam
 
 Pro Problem-Episode gibt es garantiert **eine** Problem-Meldung und **eine**
