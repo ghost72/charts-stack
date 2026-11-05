@@ -47,6 +47,20 @@ deployed together, so a single stack version is the honest unit.
     manually (click each header toggles asc/desc, default date desc).
 
 ### Fixed
+- **charts-config Tag-Editor delete no longer lets charts-import re-import the
+  song.** YouTube/Upload songs are recorded in the manifest under the download
+  file name (`<Artist> - <Title>.mp3`), but delete looked the entry up by the
+  library file name (`<Title>.mp3`), so the entry and the source file in the
+  download dir survived and the song came back on the next import. Delete now
+  also clears every manifest entry that matches the song by artist + title and
+  moves the matching download-dir source file(s) into the song's trash entry
+  (`.charts-sources/`, hidden from the list, removed with the entry); restore
+  puts the library file, the source file(s) and all manifest entries back
+  (nothing is overwritten). The restore sidecar now carries lists (old sidecars
+  still restore). Songs deleted with the OLD version have no source sidecar and
+  may need a manual clean-up (remove the manifest entry and the file in the
+  Charts folder). `compose.yml`: `/charts` is now mounted read-write for
+  charts-config (it was `:ro`, so manifest updates could not be written).
 - **charts-config Tag-Editor / Trash-Manager: UX refinements + no "(2)"
   duplicates on delete.** A batch of refinements on top of the delete/restore
   flow:

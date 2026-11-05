@@ -862,8 +862,11 @@ services:
     ports:
       - "${CONFIG_PORT:-5058}:5058"
     volumes:
-      # Nur die Status-JSONs read-only (fuer den Energy-Live-Status).
-      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro
+      # Status-JSONs (Energy-Live-Status) + Manifest/Quelldateien: der Tag-Editor-
+      # Delete muss Manifest-Eintraege entfernen und Download-Quelldateien in den
+      # Papierkorb verschieben (sonst importiert charts-import den Song neu).
+      # Darum read-write (frueher :ro, dann schlug das Manifest-Update still fehl).
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
       # Zentrale Sprachdateien (en/de/fr), geteilt wie die .env.
       - ./lang:/lang:ro
       # Musik-Library read-write fuer den manuellen Tag-Editor (In-place-Edits).

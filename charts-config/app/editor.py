@@ -27,7 +27,10 @@ import base64
 import errno
 import logging
 import os
+import shutil
+import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import config, cover, library, manifest, tags
 from .i18n import t
@@ -309,23 +312,47 @@ def delete_song(path: str) -> dict:
     # Manifest FIRST so we can capture the removed value: pop_entry returns both
     # the cleared flag and the value, which the sidecar stores so a later restore
     # can re-insert the exact entry (keyed by the lowercased basename).
-    manifest_cleared = False
-    manifest_key = os.path.basename(real).lower()
-    manifest_value = None
+    #
+    # The manifest is keyed by the DOWNLOAD file's basename, which for
+    # YouTube/upload songs ("<Artist> - <Title>.mp3") differs from the library
+    # basename ("<Title>.mp3"). So find EVERY entry that belongs to this song
+    # (basename key first, then artist+title), remove them all, and move their
+    # source files out of the download dir - otherwise charts-import re-imports
+    # the song as soon as the library copy is gone.
+    removed_entries: dict = {}
+    matched_keys: list = []
     try:
-        manifest_cleared, manifest_value = manifest.pop_entry(
-            config.MANIFEST_FILE, os.path.basename(real))
+        matched_keys = _find_manifest_keys(base, real)
+        removed_entries = manifest.pop_entries(config.MANIFEST_FILE, matched_keys)
     except Exception:
-        manifest_cleared, manifest_value = False, None
+        removed_entries = {}
+    manifest_cleared = bool(removed_entries)
+    if not matched_keys:
+        try:
+            if len(Path(rel).parts) >= 3 and library._is_movable_single(base, real):
+                logger.warning("tag editor delete: no manifest entry matched %s "
+                               "(stack layout); charts-import may re-import it "
+                               "if a source file remains", rel)
+        except Exception:
+            pass
+
+    # Neutralize the source files in the download dir (best-effort).
+    source_files: list = []
+    try:
+        source_files = _move_sources_to_trash(matched_keys, trash_dir)
+    except Exception as e:
+        logger.warning("tag editor delete: moving source files failed: %s", e)
 
     # Restore sidecar: a tiny JSON co-located with the trashed file as
     # "<dest>.trashinfo.json". It captures exactly what a scoped restore needs -
     # the original MUSIC_DIR-relative path (so restore puts the file back at the
-    # same spot without parsing the trash path) and the removed manifest entry
-    # (so restore re-inserts it). Best-effort: a sidecar write failure never
-    # fails the delete; the row simply becomes non-restorable (no sidecar).
+    # same spot without parsing the trash path), the removed manifest entries
+    # (so restore re-inserts them) and the moved source files (so restore puts
+    # them back). Best-effort: a sidecar write failure never fails the delete;
+    # the row simply becomes non-restorable (no sidecar).
     try:
-        _write_restore_sidecar(dest, rel, manifest_key, manifest_value)
+        _write_restore_sidecar(dest, rel, list(removed_entries.items()),
+                               source_files)
     except Exception:
         pass
 
@@ -358,20 +385,139 @@ def delete_song(path: str) -> dict:
 RESTORE_SIDECAR_SUFFIX = ".trashinfo.json"
 
 
-def _write_restore_sidecar(dest: str, original_rel_path: str, manifest_key: str,
-                           manifest_entry) -> None:
+# Name of the dot-subfolder inside a tageditor-delete-<ts>/ trash folder that holds
+# the download-dir source files moved out by the delete. The trash scan hides it
+# (not independent rows); permanent delete / empty-trash remove it with the song.
+SOURCES_SUBDIR = ".charts-sources"
+
+
+def _fold_name(name: str) -> str:
+    """Case- and Unicode-normalization-insensitive file name for matching a
+    lowercased manifest key to the real file name in the download dir."""
+    return unicodedata.normalize("NFC", name or "").lower()
+
+
+def _find_manifest_keys(base: str, real: str) -> list:
+    """
+    Return every manifest key that belongs to the library file `real` (under
+    `base` = realpath of MUSIC_DIR).
+
+    1. The library basename key (lowercased) - how Soulseek/charts-download songs
+       are recorded.
+    2. Entries whose artist AND title both match the file's library location: the
+       first path component is the artist folder, the file name (without
+       extension, also with a leading track number / "(n)" suffix stripped) is
+       the title. Match = folded keys equal (library._artist_key/_title_key) OR
+       the cleaned components equal exactly. BOTH must match; a different artist
+       with the same title is never touched.
+    """
+    entries = manifest.load_entries(config.MANIFEST_FILE)
+    if not entries:
+        return []
+    keys = []
+    own = os.path.basename(real).lower()
+    if own in entries:
+        keys.append(own)
+
+    parts = Path(os.path.relpath(real, base)).parts
+    if len(parts) >= 2:
+        artist_dir = parts[0]
+        stem = os.path.splitext(parts[-1])[0]
+        title_keys = {library._title_key(stem),
+                      library._title_key(library._extract_title_from_filename(parts[-1]))}
+        title_keys.discard("")
+        artist_key = library._artist_key(artist_dir)
+        for key, value in entries.items():
+            if key in keys or not isinstance(value, dict):
+                continue
+            e_artist = str(value.get("artist") or "")
+            e_title = str(value.get("title") or "")
+            if not e_artist or not e_title:
+                continue
+            artist_ok = (bool(artist_key) and library._artist_key(e_artist) == artist_key) \
+                or library._clean_component(e_artist, "Unknown Artist") == artist_dir
+            title_ok = (library._title_key(e_title) in title_keys) \
+                or library._clean_component(e_title, "Unknown Title") == stem
+            if artist_ok and title_ok:
+                keys.append(key)
+    return keys
+
+
+def _charts_dir() -> str:
+    """The download dir: the directory that holds the manifest file."""
+    return os.path.realpath(os.path.dirname(os.path.abspath(config.MANIFEST_FILE)))
+
+
+def _move_across(src: str, dst: str) -> None:
+    """
+    Move a file between the download dir and the trash. Uses library._move_file
+    (os.rename, mtime kept); when the two sit on different mounts (EXDEV) falls
+    back to copy2 + size check + unlink of the source, so it stays a MOVE (never
+    a leftover copy, never a hard delete of the only copy). Raises OSError.
+    """
+    try:
+        library._move_file(src, dst)
+    except OSError as e:
+        if e.errno != errno.EXDEV:
+            raise
+        shutil.copy2(src, dst)
+        if os.path.getsize(src) != os.path.getsize(dst):
+            os.remove(dst)
+            raise OSError(errno.EIO, "size mismatch after cross-device copy")
+        os.remove(src)
+
+
+def _move_sources_to_trash(keys: list, trash_dir: str) -> list:
+    """
+    Move the download-dir source files of the removed manifest `keys` into
+    `<trash_dir>/.charts-sources/<name>`. Returns [{"original_name", "trash_rel"}]
+    for each file moved. Only regular files that resolve INSIDE the download dir
+    are touched (symlinks are skipped, never followed). Best-effort per file.
+    """
+    charts = _charts_dir()
+    if not keys or not os.path.isdir(charts):
+        return []
+    wanted = {_fold_name(k) for k in keys}
+    moved = []
+    for name in sorted(os.listdir(charts)):
+        if _fold_name(name) not in wanted:
+            continue
+        src = os.path.join(charts, name)
+        if os.path.islink(src) or not os.path.isfile(src):
+            continue
+        real_src = os.path.realpath(src)
+        if os.path.dirname(real_src) != charts:
+            continue
+        rel = f"{SOURCES_SUBDIR}/{name}"
+        dst = os.path.join(trash_dir, SOURCES_SUBDIR, name)
+        if os.path.exists(dst):
+            continue
+        try:
+            _move_across(real_src, dst)
+        except OSError as e:
+            logger.warning("tag editor delete: could not move source %s: %s", src, e)
+            continue
+        moved.append({"original_name": name, "trash_rel": rel})
+    return moved
+
+
+def _write_restore_sidecar(dest: str, original_rel_path: str,
+                           manifest_entries: list, source_files: list) -> None:
     """
     Write the restore sidecar for a Tag-Editor-trashed file atomically (temp +
     os.replace) as "<dest>.trashinfo.json". Captures the original MUSIC_DIR-
-    relative path, the manifest key + removed value, and a timestamp. Raises
-    OSError on write failure (the caller treats it as best-effort).
+    relative path, the LIST of removed manifest entries ([(key, value), ...]),
+    the LIST of moved download-dir source files, and a timestamp. Old sidecars
+    (single manifest_key/manifest_entry) stay readable: trash.restore_file
+    understands both formats. Raises OSError on write failure (the caller treats
+    it as best-effort).
     """
     import json
     sidecar = dest + RESTORE_SIDECAR_SUFFIX
     payload = {
         "original_rel_path": original_rel_path.replace(os.sep, "/"),
-        "manifest_key": manifest_key,
-        "manifest_entry": manifest_entry,
+        "manifest_entries": [{"key": k, "entry": v} for k, v in manifest_entries],
+        "source_files": list(source_files),
         "deleted_utc": datetime.now(timezone.utc).isoformat(),
     }
     tmp = sidecar + ".tmp"

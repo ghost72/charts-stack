@@ -229,10 +229,11 @@ def test_delete_writes_restore_sidecar(library_dir, monkeypatch):
     assert sidecar.is_file()
     info = json.loads(sidecar.read_text(encoding="utf-8"))
     assert info["original_rel_path"] == "Wrong Artist/My Song/My Song.mp3"
-    assert info["manifest_key"] == "my song.mp3"
+    assert [e["key"] for e in info["manifest_entries"]] == ["my song.mp3"]
     # The FULL removed manifest value is preserved for re-insertion.
-    assert info["manifest_entry"]["artist"] == "Wrong Artist"
-    assert info["manifest_entry"]["source"] == "youtube"
+    assert info["manifest_entries"][0]["entry"]["artist"] == "Wrong Artist"
+    assert info["manifest_entries"][0]["entry"]["source"] == "youtube"
+    assert info["source_files"] == []
     assert info["deleted_utc"]
 
 
@@ -469,6 +470,270 @@ def test_delete_drops_song_from_search_index_immediately(library_dir, monkeypatc
     # Immediately gone from search (no TTL wait).
     hits2 = library_mod.search("My Song", limit=20)
     assert not any(h["path"] == mp3 for h in hits2)
+
+
+# --- re-import bug: YouTube/upload manifest keys + download-dir sources ------
+# The manifest key of a YouTube/upload song is the DOWNLOAD basename
+# "<artist> - <title>.mp3", NOT the library basename "<Title>.mp3". Delete must
+# find the entry by artist+title and move the source file out of the download
+# dir, otherwise charts-import re-imports the song.
+
+_YT_ARTIST = "Güschä Güsche & Knackeboul"
+_YT_TITLE = "Geil Wids Machsch"
+_YT_KEY = "güschä güsche & knackeboul - geil wids machsch.mp3"
+_YT_KEY2 = "güschä güsche & knackeboul - geil wids machsch (2).mp3"
+_WRONG_KEY = "güsche & knackeboul - geil wids machsch.mp3"
+_OTHER_KEY = "someone else - geil wids machsch.mp3"
+
+
+def _yt_entry(artist, title, **extra):
+    d = {"artist": artist, "title": title, "album": title, "source": "youtube",
+         "accept_anyway": True}
+    d.update(extra)
+    return d
+
+
+@pytest.fixture
+def yt_env(tmp_path):
+    """Library song + YouTube-style manifest keys + source files in a download
+    dir that also holds the manifest. Returns a dict of paths."""
+    root = tmp_path / "Music"
+    lib_dir = root / _YT_ARTIST / _YT_TITLE
+    lib_dir.mkdir(parents=True)
+    mp3 = lib_dir / f"{_YT_TITLE}.mp3"
+    _write_min_mp3(str(mp3))
+    charts = tmp_path / "Charts"
+    charts.mkdir()
+    manifest = charts / ".charts-manifest.json"
+    manifest.write_text(json.dumps({"entries": {
+        _YT_KEY: _yt_entry(_YT_ARTIST, _YT_TITLE),
+        _WRONG_KEY: _yt_entry("Güsche & Knackeboul", _YT_TITLE),
+        _OTHER_KEY: _yt_entry("Someone Else", _YT_TITLE),
+        "other.mp3": {"artist": "Keep", "title": "Keep", "album": "Keep"},
+    }}, ensure_ascii=False), encoding="utf-8")
+    # Source files keep their ORIGINAL (mixed) case; the keys are lowercased.
+    names = {
+        "src": f"{_YT_ARTIST} - {_YT_TITLE}.mp3",
+        "wrong": f"Güsche & Knackeboul - {_YT_TITLE}.mp3",
+        "other": f"Someone Else - {_YT_TITLE}.mp3",
+    }
+    for n in names.values():
+        _write_min_mp3(str(charts / n))
+    return {"root": root, "mp3": str(mp3), "charts": charts,
+            "manifest": manifest, "names": names}
+
+
+def _entries(manifest):
+    return json.loads(manifest.read_text(encoding="utf-8"))["entries"]
+
+
+def _restore_all(client):
+    rows = [e for e in client.get("/api/tageditor/trash").json()["entries"]
+            if e["restorable"]]
+    assert len(rows) == 1
+    return client.post("/api/tageditor/trash/restore", data={"path": rows[0]["path"]})
+
+
+def test_delete_youtube_clears_entry_and_moves_source(yt_env, monkeypatch):
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    old = 1_000_000_000.0
+    os.utime(e["charts"] / e["names"]["src"], (old, old))
+
+    r = client.post("/api/tageditor/delete", data={"path": e["mp3"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["manifest_cleared"] is True
+
+    entries = _entries(e["manifest"])
+    assert _YT_KEY not in entries
+    # Wrong-artist copy, different artist, unrelated entry: untouched.
+    assert _WRONG_KEY in entries and _OTHER_KEY in entries and "other.mp3" in entries
+
+    # Source moved (not copied) into <delete-folder>/.charts-sources/, mtime kept.
+    assert not (e["charts"] / e["names"]["src"]).exists()
+    moved = _only_delete_dir(e["root"]) / ".charts-sources" / e["names"]["src"]
+    assert moved.is_file() and int(os.stat(moved).st_mtime) == int(old)
+    # The other songs' sources stay where they are.
+    assert (e["charts"] / e["names"]["wrong"]).is_file()
+    assert (e["charts"] / e["names"]["other"]).is_file()
+
+    lib_trashed = (_only_delete_dir(e["root"]) / _YT_ARTIST / _YT_TITLE
+                   / f"{_YT_TITLE}.mp3")
+    info = json.loads(pathlib.Path(str(lib_trashed) + ".trashinfo.json")
+                      .read_text(encoding="utf-8"))
+    assert [x["key"] for x in info["manifest_entries"]] == [_YT_KEY]
+    assert info["manifest_entries"][0]["entry"]["source"] == "youtube"
+    assert info["source_files"] == [{
+        "original_name": e["names"]["src"],
+        "trash_rel": f".charts-sources/{e['names']['src']}"}]
+
+
+def test_deleted_source_basename_no_longer_in_manifest(yt_env, monkeypatch):
+    """Original bug at unit level: charts-import looks the manifest up by the
+    SOURCE basename. After the delete that lookup finds nothing (so
+    REQUIRE_MANIFEST skips it) and the source file is gone from the charts dir."""
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    import app.manifest as manifest_mod
+    entries = manifest_mod.load_entries(str(e["manifest"]))
+    assert entries.get(e["names"]["src"].lower()) is None
+    assert not (e["charts"] / e["names"]["src"]).exists()
+
+
+def test_restore_puts_library_source_and_entry_back(yt_env, monkeypatch):
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    before = _entries(e["manifest"])[_YT_KEY]
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    r = _restore_all(client)
+    assert r.status_code == 200, r.text
+    assert os.path.isfile(e["mp3"])
+    assert (e["charts"] / e["names"]["src"]).is_file()
+    assert _entries(e["manifest"])[_YT_KEY] == before
+    # Emptied timestamped folder (incl. .charts-sources) is cleaned up.
+    assert _delete_dirs(e["root"]) == []
+
+
+def test_restore_source_collision_does_not_overwrite(yt_env, monkeypatch):
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    blocker = e["charts"] / e["names"]["src"]
+    blocker.write_bytes(b"newer download")
+    r = _restore_all(client)
+    assert r.status_code == 200, r.text            # library restore still succeeds
+    assert os.path.isfile(e["mp3"])
+    assert blocker.read_bytes() == b"newer download"   # never overwritten
+    assert _YT_KEY in _entries(e["manifest"])
+
+
+def test_delete_removes_all_matching_entries_only(yt_env, monkeypatch):
+    e = yt_env
+    # Extra "(2)" collision key + a re-download under a differently decorated
+    # title, both for the SAME artist+title.
+    data = json.loads(e["manifest"].read_text(encoding="utf-8"))
+    data["entries"][_YT_KEY2] = _yt_entry(_YT_ARTIST, _YT_TITLE)
+    data["entries"]["x - y.mp3"] = _yt_entry(_YT_ARTIST.upper(),
+                                             _YT_TITLE + " (320 Kbps)")
+    e["manifest"].write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    _write_min_mp3(str(e["charts"] / f"{_YT_ARTIST} - {_YT_TITLE} (2).mp3"))
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    entries = _entries(e["manifest"])
+    assert set(entries) == {_WRONG_KEY, _OTHER_KEY, "other.mp3"}
+    srcs = _only_delete_dir(e["root"]) / ".charts-sources"
+    assert sorted(p.name for p in srcs.iterdir()) == sorted([
+        e["names"]["src"], f"{_YT_ARTIST} - {_YT_TITLE} (2).mp3"])
+    # Wrong-artist + different-artist sources untouched.
+    assert (e["charts"] / e["names"]["wrong"]).is_file()
+    assert (e["charts"] / e["names"]["other"]).is_file()
+
+    # Restore brings every removed entry back.
+    assert _restore_all(client).status_code == 200
+    assert {_YT_KEY, _YT_KEY2, "x - y.mp3"} <= set(_entries(e["manifest"]))
+
+
+def test_delete_soulseek_style_basename_key_still_works(tmp_path, monkeypatch):
+    """Old behaviour: the entry keyed by the library basename is removed; no
+    source file in the charts dir is fine."""
+    root = tmp_path / "Music"
+    (root / "Band" / "Tune").mkdir(parents=True)
+    mp3 = root / "Band" / "Tune" / "Tune.mp3"
+    _write_min_mp3(str(mp3))
+    charts = tmp_path / "Charts"
+    charts.mkdir()
+    manifest = charts / ".charts-manifest.json"
+    manifest.write_text(json.dumps({"entries": {
+        "tune.mp3": {"artist": "Somebody Else", "title": "Other"}}}),
+        encoding="utf-8")
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/delete", data={"path": str(mp3)})
+    assert r.status_code == 200, r.text
+    assert r.json()["manifest_cleared"] is True
+    assert _entries(manifest) == {}
+    assert not (_only_delete_dir(root) / ".charts-sources").exists()
+
+
+def test_restore_old_format_sidecar(tmp_path, monkeypatch):
+    """A sidecar written by the first shipped version (single manifest_key /
+    manifest_entry, no source list) still restores and re-inserts the entry."""
+    root = tmp_path / "Music"
+    root.mkdir()
+    folder = root / ".charts-trash" / "tageditor-delete-2026-11-05_16-26-44"
+    trashed = folder / "Band" / "Tune" / "Tune.mp3"
+    trashed.parent.mkdir(parents=True)
+    _write_min_mp3(str(trashed))
+    pathlib.Path(str(trashed) + ".trashinfo.json").write_text(json.dumps({
+        "original_rel_path": "Band/Tune/Tune.mp3",
+        "manifest_key": "tune.mp3",
+        "manifest_entry": {"artist": "Band", "title": "Tune"},
+        "deleted_utc": "2026-11-05T16:26:44+00:00"}), encoding="utf-8")
+    charts = tmp_path / "Charts"
+    charts.mkdir()
+    manifest = charts / ".charts-manifest.json"
+    manifest.write_text(json.dumps({"entries": {}}), encoding="utf-8")
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+    r = _restore_all(client)
+    assert r.status_code == 200, r.text
+    assert (root / "Band" / "Tune" / "Tune.mp3").is_file()
+    assert _entries(manifest)["tune.mp3"]["artist"] == "Band"
+
+
+def test_sources_not_listed_and_removed_with_trash_entry(yt_env, monkeypatch):
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    listing = client.get("/api/tageditor/trash").json()
+    assert [x["rel_path"] for x in listing["entries"]] == [
+        f"{_only_delete_dir(e['root']).name}/{_YT_ARTIST}/{_YT_TITLE}/{_YT_TITLE}.mp3"]
+    assert listing["count"] == 1
+    assert listing["entries"][0]["restorable"] is True
+    assert listing["total_bytes"] == listing["entries"][0]["bytes"]
+    folder = _only_delete_dir(e["root"])
+    assert (folder / ".charts-sources" / e["names"]["src"]).is_file()
+
+    # Permanent delete of the song's trash row removes the sources, too.
+    r = client.post("/api/tageditor/trash/delete",
+                    data={"path": listing["entries"][0]["path"]})
+    assert r.status_code == 200, r.text
+    assert not folder.exists()
+
+
+def test_empty_trash_removes_sources(yt_env, monkeypatch):
+    e = yt_env
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    assert client.post("/api/tageditor/delete",
+                       data={"path": e["mp3"]}).status_code == 200
+    r = client.post("/api/tageditor/trash/empty", data={"confirm": "empty"})
+    assert r.status_code == 200, r.text
+    assert list((e["root"] / ".charts-trash").iterdir()) == []
+
+
+def test_delete_succeeds_when_manifest_missing(yt_env, monkeypatch):
+    e = yt_env
+    e["manifest"].unlink()
+    main_mod = _reload_app(monkeypatch, e["root"], e["manifest"])
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/delete", data={"path": e["mp3"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["manifest_cleared"] is False
+    assert not os.path.exists(e["mp3"])
 
 
 # Restore import-time i18n state so test ordering never leaks a language.

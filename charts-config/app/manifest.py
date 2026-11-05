@@ -109,6 +109,49 @@ def pop_entry(path: str, filename: str):
     return True, value
 
 
+def pop_entries(path: str, keys) -> dict:
+    """
+    Remove SEVERAL manifest entries (exact, already-lowercased keys) in ONE atomic
+    rewrite and return {key: removed_value} for the keys that were present.
+
+    Used by the Tag-Editor delete, which can match more than one entry for a song
+    (YouTube/upload key, "(2)" collision names, re-downloads). Same contract as
+    pop_entry: loads the full document, keeps everything else, writes via temp +
+    os.replace, and is fail-open - any read/parse/write error logs a warning and
+    returns {} without raising.
+    """
+    wanted = [k for k in (keys or []) if k]
+    if not wanted:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    entries = data.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    removed = {}
+    for k in wanted:
+        if k in entries and k not in removed:
+            removed[k] = entries.pop(k)
+    if not removed:
+        return {}
+    data["entries"] = entries
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.warning("tag editor manifest remove failed for %s: %s", path, e)
+        return {}
+    return removed
+
+
 def add_entry(path: str, key: str, value) -> bool:
     """
     (Re-)insert `value` under the lowercased basename `key` into the manifest at

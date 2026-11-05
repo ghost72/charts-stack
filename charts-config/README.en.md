@@ -175,9 +175,18 @@ format the editor can load (not MP3-only). After a confirm step it does **both**
 (1) the audio file is moved **reversibly** into the trash bin
 `/music/Music/.charts-trash/tageditor-delete-<date>/` (same convention as
 convert/dedup – **not** hard-deleted, mtime preserved; restorable from the
-trash), and (2) the song's **manifest entry** (key = file basename, lowercased)
-is removed so **charts-import does not re-import it on its next run** (manifest
-entries are persistent – without this step the song would come back). If the
+trash), and (2) the song's **manifest entries** are removed (key = file
+basename, lowercased; for YouTube/Upload songs the download name
+`<Artist> - <Title>.mp3`, found by matching artist + title – every matching
+entry) and the matching **source files in the Charts folder** are moved into the
+song's trash entry (hidden `.charts-sources/` subfolder, not listed as its own
+row, removed together with the entry), so **charts-import does not re-import it
+on its next run** (manifest entries are persistent – without this step the song
+would come back). Restore puts the library file, the source files and all
+manifest entries back (nothing is overwritten). Songs deleted with the OLD
+version have no source sidecar and may need a manual clean-up (remove the
+manifest entry and the file in the Charts folder). This needs `/charts` mounted
+read-write in the container (`compose.yml`). If the
 song sits in its own stack-single `<Artist>/<Title>/` folder and that folder
 becomes empty, the empty folder is cleaned up; a folder that still holds other
 files is left intact. The editor then returns to the empty "pick a song" state.

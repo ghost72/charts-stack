@@ -191,9 +191,19 @@ gelöscht, mit erhaltener mtime, aus dem Papierkorb wiederherstellbar. Der eigen
 Ordner pro Löschung sorgt dafür, dass die Datei **immer ihren Originalnamen
 behält** (nie eine `(2)`-Dublette, auch beim mehrfachen Löschen/Wiederherstellen
 desselben Songs). Und (2) der **Manifest-Eintrag** des Songs
-(Schlüssel = Datei-Basename, kleingeschrieben) wird entfernt, damit
+(Schlüssel = Datei-Basename, kleingeschrieben; bei YouTube-/Upload-Songs der
+Download-Name `<Artist> - <Titel>.mp3`, gefunden über Artist + Titel – alle
+passenden Einträge) wird entfernt, und die zugehörigen **Quelldateien im
+Charts-Ordner** wandern in den Papierkorb-Eintrag (versteckter Unterordner
+`.charts-sources/`, nicht als eigene Zeile gelistet, wird beim endgültigen
+Löschen mitentfernt), damit
 **charts-import den Song beim nächsten Lauf nicht erneut importiert** (die
 Manifest-Einträge sind persistent – ohne diesen Schritt käme der Song zurück).
+Wiederherstellen legt Bibliotheksdatei, Quelldateien und alle Manifest-Einträge
+zurück (nichts wird überschrieben). Mit der **alten** Version gelöschte Songs
+haben keine Quellen-Sidecar und brauchen ggf. eine manuelle Bereinigung
+(Manifest-Eintrag + Datei im Charts-Ordner entfernen). Dafür muss `/charts` im
+Container schreibbar gemountet sein (`compose.yml`).
 Liegt der Song in seinem eigenen Stack-Single-Ordner `<Artist>/<Titel>/` und ist
 dieser danach leer, wird der leere Ordner aufgeräumt; ein Ordner mit weiteren
 Dateien bleibt unangetastet. Danach kehrt der Editor in den leeren

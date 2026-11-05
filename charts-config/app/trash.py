@@ -256,6 +256,10 @@ def _build_scan() -> dict:
         return {"entries": [], "total_bytes": 0, "count": 0, "truncated": False}
     try:
         for dirpath, _dirs, files in os.walk(root, followlinks=False):
+            # The download-dir source files moved out by a Tag-Editor delete live
+            # in a hidden .charts-sources subfolder: part of the song's trash
+            # entry, never independent rows (and not counted/summed).
+            _dirs[:] = [d for d in _dirs if d != editor.SOURCES_SUBDIR]
             for name in files:
                 # Internal restore sidecars are never a trash row of their own.
                 if name.endswith(editor.RESTORE_SIDECAR_SUFFIX):
@@ -347,6 +351,7 @@ def delete_file(path: str) -> dict:
         raise editor.EditorError("not_found", 404)
     root = _trash_root()
     rel = os.path.relpath(real, root).replace(os.sep, "/")
+    sources_dir = _sources_dir(real, root)
     try:
         os.remove(real)
     except OSError as e:
@@ -361,6 +366,8 @@ def delete_file(path: str) -> dict:
             os.remove(sidecar)
     except OSError:
         pass
+    # The song's moved download-dir source files go with it (no orphans).
+    _remove_sources_dir(sources_dir)
     invalidate()
     _prune_up_to_root(os.path.dirname(real), root)
     return {"deleted": rel}
@@ -434,13 +441,18 @@ def restore_file(path: str) -> dict:
 
     # Best-effort post-move: re-insert the manifest entry, drop the sidecar,
     # invalidate the cache, prune the emptied trash folder, refresh the index.
-    manifest_key = (info.get("manifest_key") or "").lower()
-    manifest_entry = info.get("manifest_entry")
-    if manifest_key and manifest_entry is not None:
-        try:
-            manifest.add_entry(config.MANIFEST_FILE, manifest_key, manifest_entry)
-        except Exception:
-            pass
+    try:
+        existing = manifest.load_entries(config.MANIFEST_FILE)
+        for key, entry in _sidecar_manifest_items(info):
+            if key in existing:
+                continue           # never clobber a key that exists again
+            manifest.add_entry(config.MANIFEST_FILE, key, entry)
+    except Exception:
+        pass
+    try:
+        _restore_sources(info, _sources_dir(real, root))
+    except Exception:
+        pass
     try:
         if os.path.isfile(sidecar):
             os.remove(sidecar)
@@ -459,6 +471,94 @@ def restore_file(path: str) -> dict:
     except Exception:
         pass
     return {"restored": os.path.relpath(target, base).replace(os.sep, "/")}
+
+
+def _sources_dir(real: str, root: str) -> str | None:
+    """
+    The hidden .charts-sources folder belonging to the Tag-Editor delete that
+    holds the trashed file `real` (<root>/tageditor-delete-<ts>/.charts-sources),
+    or None for any other trash origin.
+    """
+    rel = os.path.relpath(real, root)
+    top = rel.split(os.sep, 1)[0]
+    if not top.startswith(_RESTORE_LABEL_PREFIX):
+        return None
+    return os.path.join(root, top, editor.SOURCES_SUBDIR)
+
+
+def _remove_sources_dir(sources_dir: str | None) -> None:
+    """Best-effort rmtree of a .charts-sources folder (never follows a symlink
+    out of the trash; a symlinked folder is just unlinked)."""
+    if not sources_dir:
+        return
+    try:
+        if os.path.islink(sources_dir):
+            os.remove(sources_dir)
+        elif os.path.isdir(sources_dir):
+            real = os.path.realpath(sources_dir)
+            if real.startswith(_trash_root() + os.sep):
+                shutil.rmtree(real)
+    except OSError:
+        pass
+
+
+def _sidecar_manifest_items(info: dict) -> list:
+    """
+    Manifest entries recorded in a restore sidecar as [(key, entry), ...].
+    Understands the current format (manifest_entries list) AND the old one
+    written by the first shipped version (single manifest_key/manifest_entry).
+    """
+    items = []
+    lst = info.get("manifest_entries")
+    if isinstance(lst, list):
+        for it in lst:
+            if isinstance(it, dict) and it.get("key") and it.get("entry") is not None:
+                items.append((str(it["key"]).lower(), it["entry"]))
+        return items
+    key = (info.get("manifest_key") or "").lower()
+    entry = info.get("manifest_entry")
+    if key and entry is not None:
+        items.append((key, entry))
+    return items
+
+
+def _restore_sources(info: dict, sources_dir: str | None) -> None:
+    """
+    Move the recorded source files from <delete-folder>/.charts-sources back into
+    the download dir. Never overwrites: a file already sitting at the original
+    path is skipped (and stays in the trash). Each name is reduced to a plain
+    basename and both ends are containment-checked. Best-effort per file.
+    """
+    lst = info.get("source_files")
+    if not sources_dir or not isinstance(lst, list):
+        return
+    charts = editor._charts_dir()
+    sroot = os.path.realpath(sources_dir)
+    for it in lst:
+        if not isinstance(it, dict):
+            continue
+        name = os.path.basename(str(it.get("original_name") or ""))
+        if not name:
+            continue
+        src = os.path.join(sroot, os.path.basename(str(it.get("trash_rel") or name)))
+        dst = os.path.join(charts, name)
+        try:
+            if os.path.islink(src) or not os.path.isfile(src):
+                continue
+            if os.path.dirname(os.path.realpath(src)) != sroot:
+                continue
+            if os.path.lexists(dst):
+                logger.warning("tag editor restore: %s already exists, source "
+                               "file left in the trash", dst)
+                continue
+            editor._move_across(src, dst)
+        except OSError as e:
+            logger.warning("tag editor restore: could not move source %s: %s",
+                           name, e)
+    try:
+        os.rmdir(sources_dir)      # only succeeds once empty
+    except OSError:
+        pass
 
 
 def _read_restore_sidecar(sidecar: str) -> dict | None:
