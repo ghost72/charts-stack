@@ -1098,7 +1098,6 @@
   "config.ui.tageditor.trash.hint": "The reversible bin under .charts-trash: files moved aside by the upgrade/replace path, the dedup runs and the FLAC→MP3 convert land here instead of being deleted. Note: the automatic cleanup (TRASH_RETENTION_DAYS in charts-import) purges by file mtime, so a file that was already old when trashed can be swept on the next cleanup run — review and delete here deliberately.",
   "config.ui.tageditor.trash.total": "Total: {size} · {count} files",
   "config.ui.tageditor.trash.col.path": "Path",
-  "config.ui.tageditor.trash.col.format": "Format",
   "config.ui.tageditor.trash.col.size": "Size",
   "config.ui.tageditor.trash.col.origin": "Origin",
   "config.ui.tageditor.trash.col.date": "Date",

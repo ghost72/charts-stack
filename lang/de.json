@@ -1098,7 +1098,6 @@
   "config.ui.tageditor.trash.hint": "Der reversible Papierkorb unter .charts-trash: Dateien, die vom Upgrade/Replace-Pfad, von den Dedup-Läufen und von der FLAC→MP3-Umwandlung beiseitegelegt wurden, landen hier statt gelöscht zu werden. Hinweis: Die automatische Bereinigung (TRASH_RETENTION_DAYS in charts-import) löscht nach Datei-mtime, eine beim Verschieben bereits alte Datei kann also schon beim nächsten Lauf weggeräumt werden — hier bewusst prüfen und löschen.",
   "config.ui.tageditor.trash.total": "Gesamt: {size} · {count} Dateien",
   "config.ui.tageditor.trash.col.path": "Pfad",
-  "config.ui.tageditor.trash.col.format": "Format",
   "config.ui.tageditor.trash.col.size": "Grösse",
   "config.ui.tageditor.trash.col.origin": "Herkunft",
   "config.ui.tageditor.trash.col.date": "Datum",

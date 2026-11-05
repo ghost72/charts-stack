@@ -1098,7 +1098,6 @@
   "config.ui.tageditor.trash.hint": "La corbeille réversible sous .charts-trash : les fichiers mis de côté par le chemin upgrade/replace, les passes de dédoublonnage et la conversion FLAC→MP3 y atterrissent au lieu d'être supprimés. Remarque : le nettoyage automatique (TRASH_RETENTION_DAYS dans charts-import) purge selon la mtime du fichier, un fichier déjà ancien au moment de sa mise à la corbeille peut donc être balayé dès la prochaine passe — à examiner et supprimer ici délibérément.",
   "config.ui.tageditor.trash.total": "Total : {size} · {count} fichiers",
   "config.ui.tageditor.trash.col.path": "Chemin",
-  "config.ui.tageditor.trash.col.format": "Format",
   "config.ui.tageditor.trash.col.size": "Taille",
   "config.ui.tageditor.trash.col.origin": "Origine",
   "config.ui.tageditor.trash.col.date": "Date",
