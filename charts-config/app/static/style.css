@@ -433,29 +433,39 @@ body.login {
 .badge-curated { background: #1d3350; color: #9cc3ff; }
 /* Path chip: the file path inside a delete/restore confirm dialog or success
    message, framed in a bordered box (label style, like the legend badges)
-   instead of plain inline text. Neutral gray border by default; the
-   delete/restore variants tint only the border (see below). Chip TEXT stays
-   normal white regardless. It flows INLINE within the running sentence (not a
-   block on its own line) and wraps together WITH the surrounding text; a long
-   filesystem path still breaks across lines. box-decoration-break:clone keeps
-   the rounded corners + padding on every wrapped line fragment. Border-radius
-   999px matches the legend badges (.badge). */
+   instead of plain inline text. Neutral gray by default (Trash-row path); the
+   delete/restore variants carry the full button colour trio (bg + border + text,
+   see below) so each action's chip matches its button. It flows INLINE within
+   the running sentence (not a block on its own line) and wraps together WITH the
+   surrounding text; a long filesystem path still breaks across lines. Without
+   box-decoration-break:clone the chip is ONE continuous band (slice default),
+   rounded only at the outer start/end. Border-radius 999px matches .badge. */
 .te-pathchip {
   display: inline;
   padding: 2px 8px;
   border: 1px solid #5a5172; border-radius: 999px;
-  box-decoration-break: clone; -webkit-box-decoration-break: clone;
+  /* No box-decoration-break: clone here. The default `slice` renders the chip
+     as ONE continuous band, rounding only the true start of the first line
+     fragment and the end of the last fragment, leaving the mid-line break edges
+     flat/open. So a path that wraps across lines reads as a single label that
+     happens to wrap, not as two separate rounded pills (= two files). */
   background: rgba(255, 255, 255, .04);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .82em; color: var(--fg);
   overflow-wrap: anywhere; word-break: break-word;
 }
-/* Action-tinted chip borders for the success messages: only the BORDER colour
-   differs, reusing the exact red/green of the delete button (.te-delete-btn /
-   .te-trash-empty-btn, #7a2a2a) and the restore button (.te-trash-restore,
-   #2a7a3a) so the chip reads as the same family. Text/shape unchanged. */
-.te-pathchip-del { border-color: #7a2a2a; }
-.te-pathchip-restore { border-color: #2a7a3a; }
+/* Action-tinted chips for the confirm dialogs + success messages. Each variant
+   carries the FULL colour trio of its button (background + border + text) so it
+   reads as the same family, overriding the base chip's neutral gray bg/fg:
+     delete  -> .te-delete-btn / .te-trash-empty-btn (#3a1616 / #7a2a2a / #ffb4b4)
+     restore -> .te-trash-restore                    (#16321f / #2a7a3a / var(--ok))
+   The base .te-pathchip keeps the neutral look for the Trash-row path. */
+.te-pathchip-del {
+  background: #3a1616; border-color: #7a2a2a; color: #ffb4b4;
+}
+.te-pathchip-restore {
+  background: #16321f; border-color: #2a7a3a; color: var(--ok);
+}
 /* Select-a-song hint ("Wähle oben einen Song…"): give it a little breathing
    room below so it does not cling to the first input row of the form. */
 #te-hint { margin-bottom: 14px; }
@@ -734,6 +744,12 @@ body.login {
    overrides both the .te-msg.ok green and the #te-hint .muted-txt gray. */
 .te-msg.te-success-neutral,
 #te-hint.te-success-neutral { color: var(--fg); }
+/* When the success message carries a bordered .te-pathchip, loosen the line
+   spacing so a wrapped two-line chip has a clear gap between the top/bottom
+   borders of adjacent line fragments (the tight 1.2 made them touch/overlap).
+   Scoped to these path-bearing elements, not applied globally. */
+.te-msg.te-success-neutral,
+#te-hint.te-success-neutral { line-height: 1.8; }
 /* The red "delete song" button shares the Trash-Manager's red .te-trash-empty-btn
    treatment (no new ad-hoc red). It now lives on the .te-fileinfo row (flex,
    nowrap); flex:0 0 auto keeps its size and it sits at the RIGHT end because the
@@ -777,6 +793,10 @@ body.login {
 }
 .te-modal-card h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
 .te-modal-q { margin: 0 0 1rem; font-size: .9rem; line-height: 1.4; }
+/* Delete/restore confirm dialogs embed the path in a bordered .te-pathchip. Give
+   those two warn paragraphs extra line spacing so a wrapped two-line chip does
+   not collide its fragment borders. Scoped to these IDs, not all .te-modal-q. */
+#te-delete-warn, #te-trash-restore-warn { line-height: 1.8; }
 .te-modal-buttons { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
 .te-modal-btn {
   padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--border, #3a3d45);

@@ -27,6 +27,12 @@ deployed together, so a single stack version is the honest unit.
     together with the text) instead of forcing its own line, and is rounded
     like the legend badges (`border-radius: 999px`, `box-decoration-break:
     clone` to keep rounded corners on each wrapped fragment).
+  - Refined the `.te-pathchip` further: a wrapped path now reads as ONE
+    continuous label rounded only at the outer start/end (dropped
+    `box-decoration-break: clone` for the default `slice`), the delete/restore
+    variants carry the full button colour trio (background + border + text)
+    instead of only a tinted border, and the confirm-dialog + success-message
+    text gets more line-height so a two-line chip's borders no longer overlap.
   - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
     volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
     refresh, form reset) is not delayed by the fade tail. Nothing audible happens
