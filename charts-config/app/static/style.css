@@ -716,6 +716,12 @@ body.login {
 .te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
 .te-msg.err { color: var(--err); font-weight: 600; }
+/* Delete/restore success message: NEUTRAL look. The path sits in the gray
+   .te-pathchip; the surrounding sentence text is normal white (var(--fg)),
+   NOT green/red and NOT grayed. Applied on top of #te-msg and #te-hint so it
+   overrides both the .te-msg.ok green and the #te-hint .muted-txt gray. */
+.te-msg.te-success-neutral,
+#te-hint.te-success-neutral { color: var(--fg); }
 /* The red "delete song" button shares the Trash-Manager's red .te-trash-empty-btn
    treatment (no new ad-hoc red). It now lives on the .te-fileinfo row (flex,
    nowrap); flex:0 0 auto keeps its size and it sits at the RIGHT end because the
@@ -925,6 +931,15 @@ body.login {
   border: 1px solid #3a3048; background: var(--tile);
 }
 .te-trash-path { flex: 1 1 200px; min-width: 0; word-break: break-all; font-size: .85rem; }
+/* Trash-row path rendered as a neutral label chip (same gray-bordered look as
+   the delete/restore success message .te-pathchip and the Tag-Editor badges),
+   per the user's "make the path look like a label" request. Neutral for ALL
+   rows (never colored per origin). It still flexes/wraps like the plain path so
+   a long path breaks across lines instead of overflowing the row. */
+.te-trash-path.te-pathchip {
+  flex: 1 1 200px; min-width: 0;
+  word-break: break-word; overflow-wrap: anywhere;
+}
 .te-trash-fmt { margin-left: 0; }
 .te-trash-size { flex: 0 0 auto; font-size: .82rem; color: var(--muted); min-width: 70px; text-align: right; }
 .te-trash-trunc { margin-top: 4px; }

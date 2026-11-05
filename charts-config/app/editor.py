@@ -262,9 +262,11 @@ def delete_song(path: str) -> dict:
       1. realpath guard inside MUSIC_DIR (path_outside) - identical to every
          other /api/tageditor/* path (no traversal/absolute escape);
       2. require an existing regular file (not_found, 404);
-      3. move it to MUSIC_DIR/.charts-trash/tageditor-delete-<YYYY-MM-DD>/<rel>
-         via library._move_file (os.rename, mtime preserved, same filesystem so
-         no EXDEV); a unique suffix avoids clobbering a same-day re-delete.
+      3. move it to MUSIC_DIR/.charts-trash/
+         tageditor-delete-<YYYY-MM-DD_HH-MM-SS>/<rel> via library._move_file
+         (os.rename, mtime preserved, same filesystem so no EXDEV). Each delete
+         gets its OWN unique timestamped folder, so the file always keeps its
+         original name (never a "(2)" suffix) and each deletion is isolated.
          A move OSError -> EditorError (write_failed, 500) and NOTHING else runs;
       4. ONLY AFTER a successful move: clean up a now-empty stack-single
          <Artist>/<Title>/ folder (never a folder that still holds other files),
@@ -280,13 +282,19 @@ def delete_song(path: str) -> dict:
     if not os.path.isfile(real):
         raise EditorError("not_found", 404)
 
-    # Step 3: move the file into the trash (reversible). Mirror the convert
-    # path's convention: MUSIC_DIR/.charts-trash/<label>-<date>/<library-rel>.
+    # Step 3: move the file into the trash (reversible). Each delete gets its OWN
+    # unique, TIMESTAMPED subfolder: MUSIC_DIR/.charts-trash/
+    # tageditor-delete-<YYYY-MM-DD_HH-MM-SS>[-<n>]/<library-rel>. A date-only
+    # folder meant a second delete of the same song landed in the same folder as
+    # a leftover first copy, so the file was renamed "<name> (2).mp3". A unique
+    # per-delete folder keeps the ORIGINAL filename every time (delete -> restore
+    # -> delete always yields the same name, never a numbered suffix), isolates
+    # each deletion with its own restore sidecar, and lets restore/empty operate
+    # on one deletion unambiguously.
     base = os.path.realpath(config.MUSIC_DIR)
     rel = os.path.relpath(real, base)
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    trash_dir = os.path.join(base, ".charts-trash", f"tageditor-delete-{day}")
-    dest = _unique_trash_dest(os.path.join(trash_dir, rel))
+    trash_dir = _unique_delete_dir(os.path.join(base, ".charts-trash"))
+    dest = os.path.join(trash_dir, rel)
     try:
         library._move_file(real, dest)            # os.rename, mtime preserved
     except OSError as e:
@@ -372,21 +380,26 @@ def _write_restore_sidecar(dest: str, original_rel_path: str, manifest_key: str,
     os.replace(tmp, sidecar)
 
 
-def _unique_trash_dest(dest: str) -> str:
+def _unique_delete_dir(trash_root: str) -> str:
     """
-    Return a trash destination path that does not yet exist: `dest` if free, else
-    `name (2).ext`, `name (3).ext`, ... so a same-day re-delete of a re-created
-    file never overwrites an earlier trashed copy. Mirrors convert._unique.
+    Return (and create) a fresh, UNIQUE per-delete trash subfolder under
+    `trash_root`, named tageditor-delete-<YYYY-MM-DD_HH-MM-SS>. Each deletion
+    lands in its own folder, so the trashed file keeps its ORIGINAL basename
+    (never a "<name> (2).ext" numbered suffix) and the normal delete -> restore
+    -> delete cycle always yields the same filename. If two deletes happen within
+    the same second (folder already exists), a short "-<n>" counter is appended
+    (tageditor-delete-<ts>-2, -3, ...) to guarantee uniqueness. Returns the
+    created directory path.
     """
-    if not os.path.exists(dest):
-        return dest
-    root, ext = os.path.splitext(dest)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    base_name = f"tageditor-delete-{ts}"
+    candidate = os.path.join(trash_root, base_name)
     n = 2
-    while True:
-        candidate = f"{root} ({n}){ext}"
-        if not os.path.exists(candidate):
-            return candidate
+    while os.path.exists(candidate):
+        candidate = os.path.join(trash_root, f"{base_name}-{n}")
         n += 1
+    os.makedirs(candidate, exist_ok=True)
+    return candidate
 
 
 # --- save (the 9-step algorithm) --------------------------------------------

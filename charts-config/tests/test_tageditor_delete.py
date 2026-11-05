@@ -23,6 +23,7 @@ and a tmp manifest and assert OUR orchestration:
 """
 
 import datetime
+import glob
 import importlib
 import json
 import os
@@ -35,6 +36,24 @@ from app import i18n
 
 
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
+
+
+def _delete_dirs(root):
+    """All tageditor-delete-<timestamp> subfolders under the trash root, sorted.
+
+    Each delete now lands in its OWN unique timestamped folder, so tests locate
+    the trashed file dynamically instead of hardcoding a date-only folder name.
+    """
+    trash = pathlib.Path(root) / ".charts-trash"
+    return sorted(p for p in glob.glob(str(trash / "tageditor-delete-*"))
+                  if os.path.isdir(p))
+
+
+def _only_delete_dir(root):
+    """The single tageditor-delete-<timestamp> folder (assert exactly one)."""
+    dirs = _delete_dirs(root)
+    assert len(dirs) == 1, f"expected one delete folder, got {dirs}"
+    return pathlib.Path(dirs[0])
 
 
 def _reload_app(monkeypatch, music_dir, manifest_file):
@@ -179,11 +198,12 @@ def test_delete_happy_path(library_dir, monkeypatch):
 
     # The original is gone from the library...
     assert not os.path.exists(mp3)
-    # ...and present under .charts-trash/tageditor-delete-<today>/...
-    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    trashed = (root / ".charts-trash" / f"tageditor-delete-{day}"
+    # ...and present under .charts-trash/tageditor-delete-<timestamp>/...
+    trashed = (_only_delete_dir(root)
                / "Wrong Artist" / "My Song" / "My Song.mp3")
     assert trashed.is_file()   # moved, not deleted
+    # The file keeps its ORIGINAL name (no "(2)" numbered suffix).
+    assert trashed.name == "My Song.mp3"
     assert body["trashed_to"].endswith("My Song.mp3")
     # mtime preserved (date added kept in the trash copy).
     assert int(os.stat(trashed).st_mtime) == int(old)
@@ -203,8 +223,7 @@ def test_delete_writes_restore_sidecar(library_dir, monkeypatch):
     client = _authed_client(main_mod)
     r = client.post("/api/tageditor/delete", data={"path": mp3})
     assert r.status_code == 200, r.text
-    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    trashed = (root / ".charts-trash" / f"tageditor-delete-{day}"
+    trashed = (_only_delete_dir(root)
                / "Wrong Artist" / "My Song" / "My Song.mp3")
     sidecar = pathlib.Path(str(trashed) + ".trashinfo.json")
     assert sidecar.is_file()
@@ -262,8 +281,7 @@ def test_delete_non_mp3_flac(tmp_path, monkeypatch):
     r = client.post("/api/tageditor/delete", data={"path": str(flac)})
     assert r.status_code == 200, r.text
     assert not flac.exists()
-    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    trashed = (root / ".charts-trash" / f"tageditor-delete-{day}"
+    trashed = (_only_delete_dir(root)
                / "Artist" / "Tune" / "Tune.flac")
     assert trashed.is_file()
 
@@ -308,8 +326,8 @@ def test_delete_shows_in_trash_listing_immediately(library_dir, monkeypatch):
 
     # The very next listing shows the nested tageditor-delete entry, restorable.
     second = client.get("/api/tageditor/trash").json()
-    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    expected_rel = (f"tageditor-delete-{day}/Wrong Artist/My Song/My Song.mp3")
+    delete_folder = _only_delete_dir(root).name
+    expected_rel = (f"{delete_folder}/Wrong Artist/My Song/My Song.mp3")
     by_rel = {e["rel_path"]: e for e in second["entries"]}
     assert expected_rel in by_rel
     row = by_rel[expected_rel]
@@ -319,6 +337,118 @@ def test_delete_shows_in_trash_listing_immediately(library_dir, monkeypatch):
     assert not any(rel.endswith(".trashinfo.json") for rel in by_rel)
     assert second["count"] == 1
     assert second["total_bytes"] == row["bytes"] > 0
+
+
+# --- BUG 5b: unique timestamped delete folder, no "(2)" numbered duplicates ---
+
+def _recreate_song(mp3_path: str) -> None:
+    """Re-create the same library song at its original path (as a re-download
+    would), so it can be deleted a second time."""
+    os.makedirs(os.path.dirname(mp3_path), exist_ok=True)
+    _write_min_mp3(mp3_path)
+
+
+def test_second_delete_same_song_goes_to_distinct_folder(library_dir, monkeypatch):
+    """A second deletion of the SAME song (re-created at its original path) must
+    land in a DISTINCT timestamped folder and keep its ORIGINAL basename - never
+    a "<name> (2).mp3" numbered duplicate in a shared date folder."""
+    root, mp3, manifest = library_dir
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+
+    # First delete.
+    r1 = client.post("/api/tageditor/delete", data={"path": mp3})
+    assert r1.status_code == 200, r1.text
+    dirs1 = _delete_dirs(root)
+    assert len(dirs1) == 1
+
+    # Re-create the song and delete it again. Force a distinct timestamp-folder
+    # name even if both deletes land in the same wall-clock second: a leftover
+    # folder with the base-second name makes _unique_delete_dir append "-2".
+    _recreate_song(mp3)
+    r2 = client.post("/api/tageditor/delete", data={"path": mp3})
+    assert r2.status_code == 200, r2.text
+    dirs2 = _delete_dirs(root)
+    assert len(dirs2) == 2, f"expected two distinct delete folders, got {dirs2}"
+
+    # Each folder holds the file under its ORIGINAL name - no "(2)" anywhere.
+    for d in dirs2:
+        f = pathlib.Path(d) / "Wrong Artist" / "My Song" / "My Song.mp3"
+        assert f.is_file(), f"missing original-named file in {d}"
+    assert not any("(2)" in p.name
+                   for p in pathlib.Path(root / ".charts-trash").rglob("*.mp3"))
+
+
+def test_delete_restore_delete_cycle_keeps_same_name(tmp_path, monkeypatch):
+    """The normal cycle delete -> restore -> delete the same song must always
+    yield the same filename twice, with NO numbered suffix. Each delete gets its
+    own timestamped folder, so the second trashed file is "My Song.mp3", not
+    "My Song (2).mp3"."""
+    root = tmp_path / "Music"
+    (root / "Wrong Artist" / "My Song").mkdir(parents=True)
+    mp3 = root / "Wrong Artist" / "My Song" / "My Song.mp3"
+    _write_min_mp3(str(mp3))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"entries": {
+        "my song.mp3": {"artist": "Wrong Artist", "title": "My Song",
+                        "album": "My Song", "source": "youtube"},
+    }}), encoding="utf-8")
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+
+    # Delete #1.
+    assert client.post("/api/tageditor/delete",
+                       data={"path": str(mp3)}).status_code == 200
+    first = _only_delete_dir(root)
+    first_file = first / "Wrong Artist" / "My Song" / "My Song.mp3"
+    assert first_file.is_file() and first_file.name == "My Song.mp3"
+
+    # Restore it (via the listing) - back to the original path, folder pruned.
+    lr = client.get("/api/tageditor/trash").json()
+    trashed_abs = [e for e in lr["entries"] if e["restorable"]][0]["path"]
+    assert client.post("/api/tageditor/trash/restore",
+                       data={"path": trashed_abs}).status_code == 200
+    assert mp3.is_file()
+    assert not first.exists()    # emptied timestamped folder pruned by restore
+
+    # Delete #2 of the SAME song: a fresh timestamped folder, SAME filename.
+    assert client.post("/api/tageditor/delete",
+                       data={"path": str(mp3)}).status_code == 200
+    second = _only_delete_dir(root)
+    second_file = second / "Wrong Artist" / "My Song" / "My Song.mp3"
+    assert second_file.is_file() and second_file.name == "My Song.mp3"
+    # No numbered duplicate was ever created in the whole trash tree.
+    assert not any("(2)" in p.name
+                   for p in (root / ".charts-trash").rglob("*.mp3"))
+
+
+def test_two_deletes_same_second_use_counter_suffix(tmp_path, monkeypatch):
+    """Two deletes within the same wall-clock second must still get DISTINCT
+    folders: the second reuses the base timestamp name, so _unique_delete_dir
+    appends a "-<n>" counter. Simulated by pre-creating the base-second folder so
+    the real delete is forced onto the "-2" variant."""
+    root = tmp_path / "Music"
+    (root / "A" / "S").mkdir(parents=True)
+    mp3 = root / "A" / "S" / "S.mp3"
+    _write_min_mp3(str(mp3))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"entries": {}}), encoding="utf-8")
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    import app.editor as editor_mod
+
+    # Pre-create the folder _unique_delete_dir would pick for "now" so the
+    # helper must fall through to a counter-suffixed name.
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    base = root / ".charts-trash" / f"tageditor-delete-{ts}"
+    base.mkdir(parents=True)
+
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/delete", data={"path": str(mp3)})
+    assert r.status_code == 200, r.text
+    # The delete landed in a distinct counter-suffixed folder, original name kept.
+    counter_dir = root / ".charts-trash" / f"tageditor-delete-{ts}-2"
+    assert (counter_dir / "A" / "S" / "S.mp3").is_file()
+    assert not base.joinpath("A").exists()   # the pre-created base stayed empty
 
 
 def test_delete_drops_song_from_search_index_immediately(library_dir, monkeypatch):

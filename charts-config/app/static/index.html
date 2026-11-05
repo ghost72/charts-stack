@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config15">
+<link rel="stylesheet" href="/static/style.css?v=config16">
 </head>
 <body>
 <header>
@@ -844,11 +844,17 @@ function initTagEditor() {
   }
 
   input.addEventListener("input", () => {
+    // A fresh Tag-Editor interaction clears a lingering delete/restore success
+    // message (the user is back working in the editor).
+    clearTagEditorSuccessMsg();
     const q = (input.value || "").trim();
     if (debounce) clearTimeout(debounce);
     if (q.length < 2) { results.innerHTML = ""; return; }
     debounce = setTimeout(() => doSearch(q), 250);
   });
+  // Also clear the transient success message when the user focuses the search
+  // box again (clicks back into the Tag-Editor) even before typing.
+  input.addEventListener("focus", () => clearTagEditorSuccessMsg());
 
   results.addEventListener("click", (e) => {
     const row = e.target.closest(".te-row");
@@ -857,6 +863,9 @@ function initTagEditor() {
   });
 
   async function loadSong(path) {
+    // Picking a song is a fresh Tag-Editor interaction: drop a lingering
+    // delete/restore success message before loading the new song.
+    clearTagEditorSuccessMsg();
     try {
       const r = await fetch("/api/tageditor/song?path=" + encodeURIComponent(path),
         {cache: "no-store"});
@@ -999,13 +1008,16 @@ function initTagEditor() {
     msg.className = "te-msg" + (isErr ? " err" : " ok");
   }
 
-  // Like setMsg but renders a pre-built, already-escaped HTML fragment (used for
-  // the delete/restore success message, which wraps the file path in a gray
-  // .te-pathchip). Callers MUST pass HTML built via pathMsgHtml (path escaped).
-  function setMsgHtml(html, isErr) {
+  // Render a delete/restore SUCCESS message into #te-msg with NEUTRAL styling:
+  // the path sits in the gray .te-pathchip (via pathMsgHtml), and the sentence
+  // text is normal white (.te-success-neutral), not the green .ok color. Used
+  // for the restore success message (the delete one goes through resetEditor,
+  // which tags #te-hint neutral the same way). The message is transient: it is
+  // cleared on the next tab-switch or Tag-Editor interaction.
+  function setSuccessPathMsg(key, path) {
     const msg = document.getElementById("te-msg");
-    msg.innerHTML = html;
-    msg.className = "te-msg" + (isErr ? " err" : " ok");
+    msg.innerHTML = pathMsgHtml(key, path);
+    msg.className = "te-msg te-success-neutral";
   }
 
   // Build a success message HTML fragment from an i18n template that contains a
@@ -1162,8 +1174,10 @@ function initTagEditor() {
           // now-deleted song is no longer offered. The success message goes into
           // the (visible) select-hint line, because #te-msg lives inside the
           // #te-form that resetEditor() hides.
-          // Render the path inside a gray .te-pathchip (path HTML-escaped).
-          resetEditor(pathMsgHtml("tageditor.delete.ok", d.trashed_to || ""), true);
+          // Neutral success message (gray .te-pathchip path + white text) and
+          // a smooth audio fade-out if the deleted song was playing.
+          resetEditor(pathMsgHtml("tageditor.delete.ok", d.trashed_to || ""),
+                      true, true);
           // The file was moved into the trash, so refresh the trash list too.
           loadTrash();
         } else {
@@ -1175,29 +1189,75 @@ function initTagEditor() {
     });
   }
 
+  // Holds the active fade-out interval id so a rapid second stop cancels the
+  // first ramp instead of racing it.
+  let _fadeTimer = null;
+
+  // Stop in-browser playback and release the <audio> buffer. With {fade:true}
+  // AND a song currently playing, the volume is ramped from its current level
+  // to 0 over ~500 ms (plain setInterval on HTMLAudioElement.volume, no Web
+  // Audio, dependency-free) BEFORE the pause/clear, so a deleted song fades out
+  // smoothly instead of cutting off abruptly. The fade is purely the audio
+  // tail: the caller's UI work (list refresh, form reset) is NOT delayed - the
+  // ramp runs on its own timer. Volume is restored to 1 afterwards for the next
+  // song. Without a fade (tab switch / picking another song) it stops at once.
+  function stopAudio(opts) {
+    const fade = !!(opts && opts.fade);
+    const audioEl = document.getElementById("te-audio");
+    const playBtn = document.getElementById("te-play");
+    const finish = () => {
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.removeAttribute("src");
+        audioEl.load();            // release the buffered stream
+        audioEl.volume = 1;        // reset for the next song
+      }
+      if (playBtn) setPlayGlyph(playBtn, "▶");
+    };
+    if (_fadeTimer) { clearInterval(_fadeTimer); _fadeTimer = null; }
+    // Only fade when something is actually audible; otherwise stop immediately.
+    if (fade && audioEl && !audioEl.paused && audioEl.volume > 0) {
+      const steps = 20;                 // ~25 ms per step -> ~500 ms total
+      const start = audioEl.volume;
+      const dv = start / steps;
+      let i = 0;
+      _fadeTimer = setInterval(() => {
+        i += 1;
+        const v = start - dv * i;
+        audioEl.volume = v > 0 ? v : 0;
+        if (i >= steps || audioEl.volume <= 0) {
+          clearInterval(_fadeTimer); _fadeTimer = null;
+          finish();
+        }
+      }, 25);
+    } else {
+      finish();
+    }
+  }
+
   // Return the editor to the empty "pick a song" state after a delete: hide the
   // form, clear the search input + results, and re-show the select-hint line
   // (which also carries the success message, since #te-msg lives inside the now
   // hidden form). `message` is the status text to show; falls back to the
   // default select hint. Defensive null-checks so it never throws.
   // `message` is the status text (or, when isHtml is true, a pre-built escaped
-  // HTML fragment from pathMsgHtml) shown in the select-hint line.
-  function resetEditor(message, isHtml) {
+  // HTML fragment from pathMsgHtml) shown in the select-hint line. `fade` fades
+  // out the audio tail (used by delete) instead of an abrupt stop.
+  function resetEditor(message, isHtml, fade) {
     // Stop in-browser playback: if the just-deleted (or just-unloaded) song was
     // playing via the cover play button, the <audio> would otherwise keep
-    // playing from its buffer after the file was moved to the trash. Pause,
-    // clear the src and .load() to release the buffer, and reset the play/pause
-    // overlay to the non-playing (▶) state. The src here is a server URL (no
-    // object URL is created for playback), so there is nothing to revokeURL.
-    const audioEl = document.getElementById("te-audio");
-    const playBtn = document.getElementById("te-play");
-    if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); }
-    if (playBtn) setPlayGlyph(playBtn, "▶");
+    // playing from its buffer after the file was moved to the trash. On delete
+    // the stop fades out smoothly (fade:true); other resets stop immediately.
+    stopAudio({fade: !!fade});
     form.hidden = true;
     if (input) input.value = "";
     if (results) results.innerHTML = "";
     if (hint) {
       hint.hidden = false;
+      // A success message (isHtml) is a transient neutral-styled line that the
+      // next navigation/interaction clears; the default hint is the plain gray
+      // muted prompt. Tag/untag the neutral class accordingly.
+      hint.classList.toggle("te-success-neutral", !!(isHtml && message));
       if (isHtml && message) hint.innerHTML = message;   // escaped chip fragment
       else hint.textContent = message || t("tageditor.select_hint");
     }
@@ -1288,7 +1348,7 @@ function initTagEditor() {
           ? `<button type="button" class="btn-sm te-trash-restore">${esc(t("tageditor.trash.restore.btn"))}</button>`
           : "";
         return `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.rel_path)}">` +
-          `<span class="te-trash-path">${esc(e.rel_path)}</span>` +
+          `<span class="te-trash-path te-pathchip">${esc(e.rel_path)}</span>` +
           `<span class="badge te-trash-fmt">${esc(e.format)}</span>` +
           `<span class="te-trash-size">${esc(e.size_human)}</span>` +
           restoreBtn +
@@ -1392,8 +1452,8 @@ function initTagEditor() {
           {method: "POST", body: fd, cache: "no-store"});
         const d = await r.json();
         if (r.ok && d && d.ok) {
-          // Render the restored path inside a gray .te-pathchip (path escaped).
-          setMsgHtml(pathMsgHtml("tageditor.trash.restore.ok", d.restored || ""), false);
+          // Neutral success message: gray .te-pathchip path + normal white text.
+          setSuccessPathMsg("tageditor.trash.restore.ok", d.restored || "");
         } else {
           setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
         }
@@ -1590,11 +1650,37 @@ const configTabs = document.querySelectorAll(".tabs .tab");
 // Reused by the tab-bar click handler AND the Non-MP3 "open in tag editor"
 // button so the two paths cannot diverge.
 function activateTab(target) {
+  // A lingering delete/restore success message is transient: clear it on any
+  // tab switch (the user navigated away from the action's context).
+  clearTagEditorSuccessMsg();
   configTabs.forEach(b => b.classList.toggle("active", b.dataset.tab === target));
   document.querySelectorAll("[data-pane]").forEach(p => {
     p.hidden = p.dataset.pane !== target;
   });
   setPaneHead(target);
+}
+
+// Clear a transient delete/restore SUCCESS message (fixes the message
+// "lingering" after the action). Called on tab-switch and on a fresh Tag-Editor
+// interaction (new search / picking a song). Only clears the neutral success
+// line, identified by the .te-success-neutral class, so it never wipes an error
+// message or the plain select-hint. #te-hint falls back to its default prompt;
+// #te-msg is emptied. Module-scope + getElementById so both activateTab and the
+// in-editor handlers can call it. Defensive: never throws if an element is
+// absent. NOTE: not called on render - the message is shown after the action
+// and only cleared on the NEXT navigation/interaction.
+function clearTagEditorSuccessMsg() {
+  const hint = document.getElementById("te-hint");
+  if (hint && hint.classList.contains("te-success-neutral")) {
+    hint.classList.remove("te-success-neutral");
+    hint.textContent = t("tageditor.select_hint");
+  }
+  const msg = document.getElementById("te-msg");
+  if (msg && msg.classList.contains("te-success-neutral")) {
+    msg.classList.remove("te-success-neutral");
+    msg.innerHTML = "";
+    msg.className = "te-msg";
+  }
 }
 
 applyStaticI18n();   // populate the static head/body markup once on load

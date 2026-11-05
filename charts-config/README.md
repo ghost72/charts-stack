@@ -183,10 +183,14 @@ Datei-Info-Zeile („Datei … · 261 kbps") sitzt ein **roter** Button
 **Song löschen** (gleiche rote Papierkorb-Optik wie die Trash-Verwaltung). Er erscheint nur, wenn ein Song
 geladen ist, und funktioniert für **jedes** vom Editor ladbare Audioformat
 (nicht nur MP3). Nach einer Bestätigung passiert **beides**: (1) die Audiodatei
-wird **reversibel** in den Papierkorb
-`/music/Music/.charts-trash/tageditor-delete-<Datum>/` verschoben (gleiche
-Konvention wie Convert/Dedup – **nicht** hart gelöscht, mit erhaltener mtime; aus
-dem Papierkorb wiederherstellbar), und (2) der **Manifest-Eintrag** des Songs
+wird **reversibel** in den Papierkorb verschoben – jede Löschung in einen
+**eigenen, zeitgestempelten** Unterordner
+`/music/Music/.charts-trash/tageditor-delete-<JJJJ-MM-TT_HH-MM-SS>/` (mit kurzem
+`-<n>`-Zähler, falls zwei Löschungen in dieselbe Sekunde fallen) – **nicht** hart
+gelöscht, mit erhaltener mtime, aus dem Papierkorb wiederherstellbar. Der eigene
+Ordner pro Löschung sorgt dafür, dass die Datei **immer ihren Originalnamen
+behält** (nie eine `(2)`-Dublette, auch beim mehrfachen Löschen/Wiederherstellen
+desselben Songs). Und (2) der **Manifest-Eintrag** des Songs
 (Schlüssel = Datei-Basename, kleingeschrieben) wird entfernt, damit
 **charts-import den Song beim nächsten Lauf nicht erneut importiert** (die
 Manifest-Einträge sind persistent – ohne diesen Schritt käme der Song zurück).
@@ -222,7 +226,7 @@ read-only und TTL-gecacht. Zwei Aktionen:
   gelöscht wird, ist endgültig weg.
 - **Einzelnen Song wiederherstellen (grüner Button)** – erscheint **nur** auf
   Zeilen, die über den „Song löschen"-Button des Tag-Editors gelöscht wurden
-  (unter `tageditor-delete-<Datum>/`); Convert-/Dedup- und charts-import-
+  (unter `tageditor-delete-<JJJJ-MM-TT_HH-MM-SS>/`); Convert-/Dedup- und charts-import-
   Upgrade/Replace-Zeilen behalten nur den roten Löschen-Button (ihr Ursprungsort
   ist mehrdeutig, daher ausserhalb des Umfangs). Nach einer leichten Bestätigung
   (Wiederherstellen ist nicht destruktiv) wandert die Datei zurück an ihren

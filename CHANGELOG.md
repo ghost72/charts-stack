@@ -13,6 +13,38 @@ deployed together, so a single stack version is the honest unit.
 ## [Unreleased]
 
 ### Fixed
+- **charts-config Tag-Editor / Trash-Manager: UX refinements + no "(2)"
+  duplicates on delete.** A batch of refinements on top of the delete/restore
+  flow:
+  - Delete/restore success messages are NEUTRAL again: the file path sits in the
+    gray-bordered `.te-pathchip`, the sentence text is normal white (not the
+    green/red colouring a recent tweak had introduced).
+  - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
+    volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
+    refresh, form reset) is not delayed by the fade tail. Nothing audible happens
+    when no song is playing.
+  - The delete/restore success message is CLEARED on the next navigation: a
+    tab-switch, or a fresh Tag-Editor interaction (focusing/typing in the search
+    box, picking another song). It is still shown right after the action, only
+    cleared on the next move.
+  - Papierkorb rows render the file path inside the same neutral label chip
+    (`.te-pathchip`) used by the success message, for consistency; long paths
+    still wrap.
+  - **Robustness:** each Tag-Editor delete now moves the file into its OWN
+    unique, timestamped subfolder
+    `.charts-trash/tageditor-delete-<YYYY-MM-DD_HH-MM-SS>/` (with a short `-<n>`
+    counter if two deletes hit the same second) instead of a date-only folder. A
+    second delete of the same song therefore keeps its ORIGINAL filename (the old
+    date-only folder caused `<name> (2).mp3` duplicates and double trash rows);
+    the normal delete → restore → delete cycle always yields the same filename,
+    no numbered suffix. Restore still finds the sidecar in the timestamped folder
+    and prunes the emptied folder; other trash origins (`flac2mp3-<date>`,
+    `dedup-<date>`, bare-dated upgrade) are untouched and remain non-restorable.
+    Tests pin the distinct-folder/no-"(2)" behaviour and the delete → restore →
+    delete cycle.
+  - Static cache token `config15` → `config16`. i18n unchanged (reuses existing
+    message templates; parity 1205×3). The audio fade, message-clear and chip
+    styling are frontend-only; verified manually (JS syntax-checked).
 - **charts-config Trash-Manager: the trash list refreshes after a RESTORE.**
   After a successful green "Wiederherstellen", the restored row stayed in the
   Papierkorb list (even across a page reload) although the file had really been
