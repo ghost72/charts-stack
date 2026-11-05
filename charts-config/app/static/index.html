@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config10">
+<link rel="stylesheet" href="/static/style.css?v=config11">
 </head>
 <body>
 <header>
@@ -169,6 +169,16 @@
                      auth-gated, not flag-gated. -->
                 <button type="button" id="te-convert" class="te-convert" hidden
                         data-i18n="tageditor.convert.btn">Convert to MP3</button>
+                <!-- Red "delete this song" button at the RIGHT end of the
+                     file-info row (the flex:1 value column absorbs the free space
+                     before it). It lives inside #te-form, so it only appears once
+                     a song is loaded (the form is hidden until then). It reuses the Trash-Manager's red .te-trash-empty-btn
+                     treatment (no new ad-hoc red); the red is re-asserted under
+                     #te-form so it beats the generic blue `.finder-box form button`
+                     rule on specificity. type=button so it never submits the Save
+                     form; its confirm dialog + route are unchanged. -->
+                <button type="button" id="te-delete" class="te-trash-empty-btn te-delete-btn"
+                        data-i18n="tageditor.delete.btn">Delete song</button>
               </div>
             </div>
             <div class="te-cover">
@@ -227,18 +237,11 @@
                    placeholder="…or image URL">
             <button type="submit" class="te-save" data-i18n="tageditor.btn.save">Save</button>
           </div>
-          <!-- Save-status line (the Convert button moved up onto the file-info
-               row). Kept as its own always-on row so a short status never
-               shifts the layout above it. The red "delete this song" button
-               sits on the RIGHT of the same row: it is inside #te-form, so it
-               only appears once a song is loaded (the form is hidden until
-               then). It reuses the Trash-Manager's red .te-trash-empty-btn
-               treatment (no new ad-hoc red) and opens a confirm dialog before
-               anything is moved. type=button so it never submits the Save form. -->
+          <!-- Save-status line (the Convert button and the red delete button both
+               moved up onto the file-info row). Kept as its own always-on row so a
+               short status never shifts the layout above it. -->
           <div class="te-actions">
             <span id="te-msg" class="te-msg"></span>
-            <button type="button" id="te-delete" class="te-trash-empty-btn te-delete-btn"
-                    data-i18n="tageditor.delete.btn">Delete song</button>
           </div>
           <!-- Label legend: explains the two result badges shown on the right
                of each search row. Reuses the exact badge markup/classes

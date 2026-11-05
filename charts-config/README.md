@@ -178,9 +178,9 @@ Convert-Button ist **nur auth-geschützt** (wie alle `/api/tageditor/*`-Routen),
 Abspiel-/Download-Endpoint. Der bewusste Klick pro Song verstößt nicht gegen die
 Regel „die Automatik fasst den handgepflegten Bestand nicht an".
 
-**Song löschen (roter Button, bei geladenem Song).** In der Aktionszeile des
-Editors sitzt rechts ein **roter** Button **Song löschen** (gleiche rote
-Papierkorb-Optik wie die Trash-Verwaltung). Er erscheint nur, wenn ein Song
+**Song löschen (roter Button, bei geladenem Song).** Rechts am Ende der
+Datei-Info-Zeile („Datei … · 261 kbps") sitzt ein **roter** Button
+**Song löschen** (gleiche rote Papierkorb-Optik wie die Trash-Verwaltung). Er erscheint nur, wenn ein Song
 geladen ist, und funktioniert für **jedes** vom Editor ladbare Audioformat
 (nicht nur MP3). Nach einer Bestätigung passiert **beides**: (1) die Audiodatei
 wird **reversibel** in den Papierkorb
