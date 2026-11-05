@@ -956,24 +956,51 @@ body.login {
   margin-bottom: .6rem;
 }
 .te-trash-total { font-size: .85rem; font-weight: 600; margin-right: auto; }
-.te-trash-list { display: flex; flex-direction: column; gap: 5px; }
+.te-trash-list { display: block; }
+/* Trash list as a 5-column CSS-grid table (PFAD | HERKUNFT | DATUM | GRÖSSE |
+   AKTION). The header row shares the same template so columns line up. PFAD
+   takes the flexible remaining width (long paths wrap inside it); the other
+   columns size to content. On a narrow viewport the whole table scrolls
+   horizontally rather than squashing (min-width floor), so the phone Tag-Editor
+   layout stays untouched. */
+.te-trash-table { display: block; overflow-x: auto; }
+.te-trash-head, .te-trash-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) max-content max-content max-content max-content;
+  align-items: center; gap: 8px;
+  min-width: 540px;
+}
+.te-trash-head {
+  padding: 4px 10px; margin-bottom: 5px;
+  font-size: .78rem; font-weight: 600; color: var(--muted);
+  border-bottom: 1px solid #3a3048;
+}
 .te-trash-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 8px;
+  padding: 7px 10px; margin-bottom: 5px; border-radius: 8px;
   border: 1px solid #3a3048; background: var(--tile);
 }
-.te-trash-path { flex: 1 1 200px; min-width: 0; word-break: break-all; font-size: .85rem; }
+/* Sortable column headers: clickable, with a hover affordance and a focus ring
+   for keyboard sorting. The ▲/▼ indicator is appended in the row text. */
+.te-trash-th { white-space: nowrap; }
+.te-trash-th-sort { cursor: pointer; user-select: none; }
+.te-trash-th-sort:hover { color: var(--fg); }
+.te-trash-th-sort:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.te-trash-c-origin, .te-trash-c-date,
+.te-trash-c-size { white-space: nowrap; }
+.te-trash-c-date { font-size: .82rem; color: var(--muted); }
+.te-trash-c-size { font-size: .82rem; color: var(--muted); text-align: right; }
+.te-trash-c-action { display: flex; gap: 8px; justify-content: flex-end; }
+.te-trash-path { min-width: 0; word-break: break-all; font-size: .85rem; }
 /* Trash-row path rendered as a neutral label chip (same gray-bordered look as
    the delete/restore success message .te-pathchip and the Tag-Editor badges),
    per the user's "make the path look like a label" request. Neutral for ALL
-   rows (never colored per origin). It still flexes/wraps like the plain path so
-   a long path breaks across lines instead of overflowing the row. */
+   rows (never colored per origin). It wraps inside its grid cell so a long path
+   breaks across lines instead of overflowing the column. */
 .te-trash-path.te-pathchip {
-  flex: 1 1 200px; min-width: 0;
+  min-width: 0;
   word-break: break-word; overflow-wrap: anywhere;
 }
 .te-trash-fmt { margin-left: 0; }
-.te-trash-size { flex: 0 0 auto; font-size: .82rem; color: var(--muted); min-width: 70px; text-align: right; }
 .te-trash-trunc { margin-top: 4px; }
 /* Danger buttons (empty-trash + the modal delete/empty confirms). Red to make
    the permanent, irreversible nature unmistakable. */

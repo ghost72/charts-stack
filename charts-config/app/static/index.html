@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config21">
+<link rel="stylesheet" href="/static/style.css?v=config22">
 </head>
 <body>
 <header>
@@ -1325,6 +1325,112 @@ function initTagEditor() {
   // paths are confirmed by a modal; the server additionally enforces the
   // trash-root scoping and (for empty) an explicit confirm sentinel. Fail-open.
   let _trashPendingPath = null;   // absolute path queued for a per-file delete
+  let _trashEntries = [];         // last fetched entries (structured fields)
+  let _trashTruncated = false;    // last fetched truncation flag
+  // Sort state: column key + direction. Default DATUM descending (newest first).
+  let _trashSort = {key: "date", dir: "desc"};
+
+  // Columns rendered in the trash table, in display order. `key` drives both
+  // the header data-attr and the sort; `sort` is the comparison kind used by
+  // _sortTrashEntries ("str" alphabetical, "ts" chronological by real
+  // timestamp, "num" numeric by byte size). AKTION is not sortable.
+  const TRASH_COLS = [
+    {key: "path",   label: "tageditor.trash.col.path",   sort: "str"},
+    {key: "origin", label: "tageditor.trash.col.origin", sort: "str"},
+    {key: "date",   label: "tageditor.trash.col.date",   sort: "ts"},
+    {key: "size",   label: "tageditor.trash.col.size",   sort: "num"},
+    {key: "action", label: "tageditor.trash.col.action", sort: null},
+  ];
+
+  // Parse an ISO timestamp ("2026-11-02" or "2026-11-05 16:26:44") to epoch ms
+  // for chronological sorting. null/unparseable -> NaN so it sorts LAST in both
+  // directions (handled in the comparator).
+  function _trashTs(entry) {
+    const ts = entry.timestamp;
+    if (!ts) return NaN;
+    const v = Date.parse(ts.replace(" ", "T"));
+    return Number.isNaN(v) ? NaN : v;
+  }
+
+  function _originLabel(origin) {
+    return t("tageditor.trash.origin." + (origin || "unknown"));
+  }
+
+  // Sort a COPY of the entries by the active column + direction. unparseable
+  // timestamps always sink to the bottom, independent of the direction.
+  function _sortTrashEntries(entries) {
+    const col = TRASH_COLS.find(c => c.key === _trashSort.key);
+    const kind = col ? col.sort : "ts";
+    const sign = _trashSort.dir === "asc" ? 1 : -1;
+    const out = entries.slice();
+    out.sort((a, b) => {
+      if (kind === "num") {
+        return sign * ((a.bytes || 0) - (b.bytes || 0));
+      }
+      if (kind === "ts") {
+        const ta = _trashTs(a), tb = _trashTs(b);
+        const na = Number.isNaN(ta), nb = Number.isNaN(tb);
+        if (na && nb) return 0;
+        if (na) return 1;    // nulls last regardless of direction
+        if (nb) return -1;
+        return sign * (ta - tb);
+      }
+      // "str": PFAD by display_path, HERKUNFT by localized label.
+      let va, vb;
+      if (_trashSort.key === "origin") {
+        va = _originLabel(a.origin); vb = _originLabel(b.origin);
+      } else {
+        va = a.display_path || ""; vb = b.display_path || "";
+      }
+      return sign * va.toLowerCase().localeCompare(vb.toLowerCase());
+    });
+    return out;
+  }
+
+  function _renderTrash() {
+    const listEl = document.getElementById("te-trash-list");
+    if (!listEl) return;
+    if (!_trashEntries.length) {
+      listEl.innerHTML = `<div class="muted-txt">${t("tageditor.trash.empty_state")}</div>`;
+      return;
+    }
+    // Header row: each sortable column is a clickable button toggling asc/desc
+    // with a ▲/▼ indicator on the active column.
+    const header = TRASH_COLS.map(c => {
+      const active = _trashSort.key === c.key;
+      const ind = (c.sort && active) ? (_trashSort.dir === "asc" ? " ▲" : " ▼") : "";
+      const sortable = c.sort ? " te-trash-th-sort" : "";
+      const attr = c.sort ? ` data-sort="${c.key}" role="button" tabindex="0"` : "";
+      return `<span class="te-trash-th te-trash-c-${c.key}${sortable}"${attr}>` +
+        `${esc(t(c.label))}${ind}</span>`;
+    }).join("");
+    const rows = _sortTrashEntries(_trashEntries).map(e => {
+      // The GREEN restore button renders ONLY for a backend-flagged restorable
+      // row (a Tag-Editor-delete entry with its restore sidecar); every other
+      // row keeps only the red delete button.
+      const restoreBtn = e.restorable
+        ? `<button type="button" class="btn-sm te-trash-restore">${esc(t("tageditor.trash.restore.btn"))}</button>`
+        : "";
+      // data-path is the REAL full trash path used by delete/restore (never the
+      // stripped display path); data-rel is the display path shown in confirms.
+      return `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.display_path)}">` +
+        `<span class="te-trash-c-path te-trash-path te-pathchip">${esc(e.display_path)}</span>` +
+        `<span class="te-trash-c-origin"><span class="badge te-trash-origin">${esc(_originLabel(e.origin))}</span></span>` +
+        `<span class="te-trash-c-date">${esc(e.timestamp || "—")}</span>` +
+        `<span class="te-trash-c-size">${esc(e.size_human)}</span>` +
+        `<span class="te-trash-c-action">${restoreBtn}` +
+        `<button type="button" class="btn-sm te-trash-del">${esc(t("tageditor.trash.delete.btn"))}</button>` +
+        `</span>` +
+        `</div>`;
+    }).join("");
+    let html = `<div class="te-trash-table">` +
+      `<div class="te-trash-head">${header}</div>${rows}</div>`;
+    if (_trashTruncated) {
+      html += `<div class="muted-txt te-trash-trunc">` +
+        `${esc(t("tageditor.trash.truncated", {n: _trashEntries.length}))}</div>`;
+    }
+    listEl.innerHTML = html;
+  }
 
   async function loadTrash() {
     const listEl = document.getElementById("te-trash-list");
@@ -1342,30 +1448,9 @@ function initTagEditor() {
         totalEl.textContent = t("tageditor.trash.total",
           {size: d.total_human, count: d.count});
       }
-      if (!d.entries.length) {
-        listEl.innerHTML = `<div class="muted-txt">${t("tageditor.trash.empty_state")}</div>`;
-        return;
-      }
-      let html = d.entries.map(e => {
-        // The GREEN restore button renders ONLY for a backend-flagged restorable
-        // row (a Tag-Editor-delete entry with its restore sidecar); every other
-        // row keeps only the red delete button.
-        const restoreBtn = e.restorable
-          ? `<button type="button" class="btn-sm te-trash-restore">${esc(t("tageditor.trash.restore.btn"))}</button>`
-          : "";
-        return `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.rel_path)}">` +
-          `<span class="te-trash-path te-pathchip">${esc(e.rel_path)}</span>` +
-          `<span class="badge te-trash-fmt">${esc(e.format)}</span>` +
-          `<span class="te-trash-size">${esc(e.size_human)}</span>` +
-          restoreBtn +
-          `<button type="button" class="btn-sm te-trash-del">${esc(t("tageditor.trash.delete.btn"))}</button>` +
-          `</div>`;
-      }).join("");
-      if (d.truncated) {
-        html += `<div class="muted-txt te-trash-trunc">` +
-          `${esc(t("tageditor.trash.truncated", {n: d.entries.length}))}</div>`;
-      }
-      listEl.innerHTML = html;
+      _trashEntries = d.entries || [];
+      _trashTruncated = !!d.truncated;
+      _renderTrash();
     } catch (e6) {
       listEl.innerHTML = `<div class="s-err">${t("tageditor.trash.error")}</div>`;
       if (totalEl) totalEl.textContent = "";
@@ -1373,6 +1458,32 @@ function initTagEditor() {
   }
 
   const trashList = document.getElementById("te-trash-list");
+
+  // Column-header sorting: click (or Enter/Space) a sortable header to sort by
+  // that column; clicking the active column toggles asc/desc. Re-renders from
+  // the cached entries (no refetch). Delegated so it survives each re-render.
+  if (trashList) {
+    const _trashSortClick = (th) => {
+      const key = th.getAttribute("data-sort");
+      if (!key) return;
+      if (_trashSort.key === key) {
+        _trashSort.dir = _trashSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        _trashSort = {key: key, dir: "asc"};
+      }
+      _renderTrash();
+    };
+    trashList.addEventListener("click", (e) => {
+      const th = e.target.closest(".te-trash-th-sort");
+      if (th) _trashSortClick(th);
+    });
+    trashList.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const th = e.target.closest(".te-trash-th-sort");
+      if (th) { e.preventDefault(); _trashSortClick(th); }
+    });
+  }
+
   const trashDelDialog = document.getElementById("te-trash-delete-dialog");
   const trashDelWarn = document.getElementById("te-trash-delete-warn");
   const trashDelConfirm = document.getElementById("te-trash-delete-confirm");

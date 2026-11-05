@@ -385,6 +385,107 @@ def test_trash_cache_invalidated_after_delete(env, monkeypatch):
     assert not any(e["rel_path"].endswith("a.mp3") for e in d2["entries"])
 
 
+# --- prefix parsing: display_path / origin / timestamp ----------------------
+
+def test_parse_prefix_dedup(env, monkeypatch):
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix("dedup-2026-11-02/When in Rome/The Promise/The Promise.mp3")
+    assert p["display_path"] == "When in Rome/The Promise/The Promise.mp3"
+    assert p["origin"] == "dedup"
+    assert p["timestamp"] == "2026-11-02"
+
+
+def test_parse_prefix_flac2mp3(env, monkeypatch):
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix("flac2mp3-2026-11-03/B/Al/y.mp3")
+    assert p["display_path"] == "B/Al/y.mp3"
+    assert p["origin"] == "flac2mp3"
+    assert p["timestamp"] == "2026-11-03"
+
+
+def test_parse_prefix_tageditor_with_time(env, monkeypatch):
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix(
+        "tageditor-delete-2026-11-05_16-26-44/Güschä/Geil/Geil.mp3")
+    assert p["display_path"] == "Güschä/Geil/Geil.mp3"
+    assert p["origin"] == "tageditor"
+    assert p["timestamp"] == "2026-11-05 16:26:44"
+
+
+def test_parse_prefix_tageditor_date_only(env, monkeypatch):
+    """A tageditor-delete folder without the _HH-MM-SS part yields date only."""
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix("tageditor-delete-2026-11-06/Artist/Song/Song.mp3")
+    assert p["display_path"] == "Artist/Song/Song.mp3"
+    assert p["origin"] == "tageditor"
+    assert p["timestamp"] == "2026-11-06"
+
+
+def test_parse_prefix_upgrade_bare_date(env, monkeypatch):
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix("20260930/Overkill.mp3")
+    assert p["display_path"] == "Overkill.mp3"
+    assert p["origin"] == "upgrade"
+    assert p["timestamp"] == "2026-09-30"
+
+
+def test_parse_prefix_unknown(env, monkeypatch):
+    """An unparseable top segment keeps the FULL path, origin unknown, ts null."""
+    root, _trash, manifest = env
+    _main, trash_mod = _reload_app(monkeypatch, root, manifest)
+    p = trash_mod._parse_prefix("weird-folder/sub/x.mp3")
+    assert p["display_path"] == "weird-folder/sub/x.mp3"
+    assert p["origin"] == "unknown"
+    assert p["timestamp"] is None
+
+
+def test_trash_list_structured_fields(env, monkeypatch):
+    """The list route exposes display_path (prefix stripped), origin, timestamp
+    and size_bytes per entry, while the real 'path' stays the full trash path
+    used by delete/restore."""
+    root, trash_root, manifest = env
+    _write(trash_root / "dedup-2026-11-02" / "When in Rome" / "The Promise"
+           / "The Promise.mp3", b"\x00" * 1000)
+    _write(trash_root / "tageditor-delete-2026-11-05_16-26-44" / "A" / "B"
+           / "C.mp3", b"\x00" * 50)
+    _write(trash_root / "20260930" / "Overkill.mp3", b"\x00" * 10)
+    _write(trash_root / "weird" / "x.mp3", b"\x00" * 5)
+    main_mod, _ = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+    r = client.get("/api/tageditor/trash")
+    assert r.status_code == 200, r.text
+    by_rel = {e["rel_path"]: e for e in r.json()["entries"]}
+
+    dd = by_rel["dedup-2026-11-02/When in Rome/The Promise/The Promise.mp3"]
+    assert dd["display_path"] == "When in Rome/The Promise/The Promise.mp3"
+    assert dd["origin"] == "dedup"
+    assert dd["timestamp"] == "2026-11-02"
+    assert dd["bytes"] == 1000
+    # The real path used by delete/restore keeps the full trash path (unchanged).
+    assert dd["path"].endswith(
+        "/.charts-trash/dedup-2026-11-02/When in Rome/The Promise/The Promise.mp3")
+
+    tde = by_rel["tageditor-delete-2026-11-05_16-26-44/A/B/C.mp3"]
+    assert tde["display_path"] == "A/B/C.mp3"
+    assert tde["origin"] == "tageditor"
+    assert tde["timestamp"] == "2026-11-05 16:26:44"
+
+    up = by_rel["20260930/Overkill.mp3"]
+    assert up["display_path"] == "Overkill.mp3"
+    assert up["origin"] == "upgrade"
+    assert up["timestamp"] == "2026-09-30"
+
+    wd = by_rel["weird/x.mp3"]
+    assert wd["display_path"] == "weird/x.mp3"
+    assert wd["origin"] == "unknown"
+    assert wd["timestamp"] is None
+
+
 # --- unit: _human_size ------------------------------------------------------
 
 def test_human_size(env, monkeypatch):

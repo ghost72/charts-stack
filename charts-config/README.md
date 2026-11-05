@@ -212,12 +212,31 @@ den Library-relativen Pfad + das Format und bietet **Im Tag-Editor öffnen**, um
 den Song oben zu laden (z. B. um ihn in MP3 umzuwandeln).
 
 **Papierkorb-Verwaltung (unterhalb der Nicht-MP3-Liste).** Der ganze Baum unter
-`/music/Music/.charts-trash/` wird aufgelistet – mit **Pfad** (relativ zum
-Papierkorb, inkl. Quell-Unterordner `dedup-<Datum>/…` oder `flac2mp3-<Datum>/…`),
-**Format** und **Grösse pro Datei** sowie – ganz oben – der **Gesamtgrösse** und
-der **Dateianzahl** des Papierkorbs. Aufgelistet werden **alle** Dateien (auch
-Nicht-Audio wie `cover.jpg`, die beim Verschieben mitwandern). Die Liste ist
-read-only und TTL-gecacht. Zwei Aktionen:
+`/music/Music/.charts-trash/` wird als **sortierbare Tabelle** mit fünf Spalten
+aufgelistet – **PFAD · HERKUNFT · DATUM · GRÖSSE · AKTION** – sowie – ganz oben –
+der **Gesamtgrösse** und der **Dateianzahl** des Papierkorbs:
+
+- **PFAD** zeigt nur den bibliotheks­relativen Pfad **ohne** den internen
+  Quell-Unterordner-Präfix: `dedup-2026-11-02/When in Rome/The Promise/The
+  Promise.mp3` erscheint als `When in Rome/The Promise/The Promise.mp3` (weiter
+  im neutralen Label-Chip, umbricht innerhalb der Spalte). Das ist **nur
+  Anzeige** – Löschen/Wiederherstellen arbeiten unverändert mit dem echten,
+  vollen Papierkorb-Pfad.
+- **HERKUNFT** ist ein kleines Badge, aus dem Präfix abgeleitet: `dedup`,
+  `Tag-Editor` (tageditor-delete), `FLAC→MP3` (flac2mp3), `Upgrade` (die
+  nackten `<JJJJMMTT>/`-Einträge) oder `—`, wenn das Präfix nicht erkannt wird.
+- **DATUM** ist das aus dem Präfix geparste Datum (bei Tag-Editor-Löschungen
+  inkl. Uhrzeit, z. B. `2026-11-05 16:26:44`) in einer eigenen Spalte.
+- **GRÖSSE** die Dateigrösse, **AKTION** die Buttons (Löschen / nur bei
+  wiederherstellbaren Zeilen auch Wiederherstellen).
+
+Ein **Klick auf einen Spaltenkopf** sortiert nach dieser Spalte und schaltet
+auf-/absteigend um (▲/▼-Anzeige): PFAD/HERKUNFT alphabetisch, DATUM
+chronologisch (nach dem echten Zeitstempel; nicht erkennbare Einträge ganz
+unten), GRÖSSE numerisch (nach Bytes). Standard-Sortierung: **DATUM absteigend**
+(neueste zuerst). Aufgelistet werden **alle** Dateien (auch Nicht-Audio wie
+`cover.jpg`, die beim Verschieben mitwandern). Die Liste ist read-only und
+TTL-gecacht. Drei Aktionen:
 
 - **Einzelne Datei endgültig löschen** (harter Löschvorgang) – mit Bestätigung
   pro Datei.

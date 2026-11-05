@@ -195,12 +195,29 @@ Each entry shows the library-relative path + the format and offers **Open in tag
 editor** to load the song above (e.g. to convert it to MP3).
 
 **Trash manager (below the non-MP3 list).** The whole
-`/music/Music/.charts-trash/` tree is listed – with each file's **path**
-(relative to the trash, including the source subfolder `dedup-<date>/…` or
-`flac2mp3-<date>/…`), **format** and **size**, plus – at the top – the **total
-size** the trash occupies and the **file count**. **All** files are listed (also
+`/music/Music/.charts-trash/` tree is listed as a **sortable five-column table**
+– **PATH · ORIGIN · DATE · SIZE · ACTION** – plus – at the top – the **total
+size** the trash occupies and the **file count**:
+
+- **PATH** shows only the library-relative path **without** the internal source
+  subfolder prefix: `dedup-2026-11-02/When in Rome/The Promise/The Promise.mp3`
+  displays as `When in Rome/The Promise/The Promise.mp3` (still in the neutral
+  label chip, wrapping inside its column). This is **display-only** –
+  delete/restore still operate on the real full trash path.
+- **ORIGIN** is a small badge derived from the prefix: `dedup`, `Tag Editor`
+  (tageditor-delete), `FLAC→MP3` (flac2mp3), `Upgrade` (the bare `<YYYYMMDD>/`
+  entries), or `—` when the prefix does not parse.
+- **DATE** is the date parsed out of the prefix (incl. time for Tag-Editor
+  deletes, e.g. `2026-11-05 16:26:44`) in its own column.
+- **SIZE** is the file size; **ACTION** holds the buttons (Delete / Restore on
+  restorable rows only).
+
+**Clicking a column header** sorts by that column and toggles asc/desc (▲/▼
+indicator): PATH/ORIGIN alphabetically, DATE chronologically (by the real
+timestamp; unparseable entries sink to the bottom), SIZE numerically (by bytes).
+Default sort: **DATE descending** (newest first). **All** files are listed (also
 non-audio sidecars like `cover.jpg` that were moved alongside). The list is
-read-only and TTL-cached. Two actions:
+read-only and TTL-cached. Three actions:
 
 - **Permanently delete a single file** (hard delete) – with a per-file confirm.
 - **Empty the whole trash** – with a prominent confirm. This is

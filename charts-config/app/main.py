@@ -373,7 +373,10 @@ async def api_tageditor_trash(request: Request):
     # Strip the internal absolute 'path' off each entry for the client (the UI
     # only displays rel_path; the absolute path rides in a data-attribute built
     # client-side from the delete route's echo, never leaked in the list body).
-    entries = [{"rel_path": e["rel_path"], "ext": e["ext"], "format": e["format"],
+    entries = [{"rel_path": e["rel_path"],
+                "display_path": e["display_path"], "origin": e["origin"],
+                "timestamp": e["timestamp"],
+                "ext": e["ext"], "format": e["format"],
                 "bytes": e["bytes"], "size_human": e["size_human"],
                 "restorable": e["restorable"],
                 "path": e["path"]}

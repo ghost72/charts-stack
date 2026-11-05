@@ -38,6 +38,7 @@ repo-root shared-helper parity test needs no change.
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -65,6 +66,80 @@ _CLEANUP_IGNORE = {"@eaDir", "#recycle", ".DS_Store"}
 # (<YYYYMMDD>/<basename>) rows are deliberately NOT restorable (ambiguous target
 # and/or no sidecar) and keep only their red delete button.
 _RESTORE_LABEL_PREFIX = "tageditor-delete-"
+
+
+# --- prefix parsing (origin + timestamp + display path) ---------------------
+# Every trashed file lives under a top-folder segment that records which flow
+# moved it here:
+#   dedup-<YYYY-MM-DD>/...                  -> origin "dedup",      date only
+#   flac2mp3-<YYYY-MM-DD>/...               -> origin "flac2mp3",   date only
+#   tageditor-delete-<YYYY-MM-DD[_HH-MM-SS]>/... -> origin "tageditor", date (+time)
+#   <YYYYMMDD>/...                          -> origin "upgrade",    date only
+# The display path strips this top segment so the UI shows the library-relative
+# path alone (e.g. "When in Rome/The Promise/The Promise.mp3"). Parsing lives
+# here (Python, testable); the frontend only renders + sorts the structured
+# fields. real_path (the absolute delete/restore target) is NEVER derived from
+# the display path — it stays the untouched full trash path.
+
+_DEDUP_RE = re.compile(r"^dedup-(\d{4})-(\d{2})-(\d{2})$")
+_FLAC2MP3_RE = re.compile(r"^flac2mp3-(\d{4})-(\d{2})-(\d{2})$")
+_TAGEDITOR_RE = re.compile(
+    r"^tageditor-delete-(\d{4})-(\d{2})-(\d{2})(?:_(\d{2})-(\d{2})-(\d{2}))?$")
+_UPGRADE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
+
+
+def _parse_prefix(rel: str) -> dict:
+    """
+    Parse the top-folder segment of a trash rel_path into structured fields.
+
+    Returns a dict with:
+      * display_path: the rel_path WITHOUT the leading top segment (the
+        library-relative path alone). If the top segment does not parse as a
+        known prefix, the full rel_path is kept (nothing is stripped).
+      * origin: one of "dedup" | "flac2mp3" | "tageditor" | "upgrade" |
+        "unknown".
+      * timestamp: ISO-8601 string parsed from the prefix ("2026-11-02" for
+        date-only origins, "2026-11-05 16:26:44" for a tageditor-delete entry
+        that carries a time), or None when the prefix does not parse (sorts
+        last in the UI).
+
+    Pure; never raises. DISPLAY ONLY — callers keep the real full path for the
+    delete/restore routes.
+    """
+    top, _, remainder = rel.partition("/")
+    if not remainder:
+        # A loose file directly under the trash root: no library path to show.
+        remainder = top
+
+    m = _TAGEDITOR_RE.match(top)
+    if m:
+        y, mo, d, hh, mm, ss = m.groups()
+        if hh is not None:
+            ts = f"{y}-{mo}-{d} {hh}:{mm}:{ss}"
+        else:
+            ts = f"{y}-{mo}-{d}"
+        return {"display_path": remainder, "origin": "tageditor", "timestamp": ts}
+
+    m = _DEDUP_RE.match(top)
+    if m:
+        y, mo, d = m.groups()
+        return {"display_path": remainder, "origin": "dedup",
+                "timestamp": f"{y}-{mo}-{d}"}
+
+    m = _FLAC2MP3_RE.match(top)
+    if m:
+        y, mo, d = m.groups()
+        return {"display_path": remainder, "origin": "flac2mp3",
+                "timestamp": f"{y}-{mo}-{d}"}
+
+    m = _UPGRADE_RE.match(top)
+    if m:
+        y, mo, d = m.groups()
+        return {"display_path": remainder, "origin": "upgrade",
+                "timestamp": f"{y}-{mo}-{d}"}
+
+    # Unknown / unparseable prefix: keep the full path, no origin/timestamp.
+    return {"display_path": rel, "origin": "unknown", "timestamp": None}
 
 
 def _is_restorable(rel: str, full: str) -> bool:
@@ -197,8 +272,16 @@ def _build_scan() -> dict:
                     continue  # keep summing totals, stop appending rows
                 rel = os.path.relpath(full, root).replace(os.sep, "/")
                 ext = os.path.splitext(name)[1].lower()
+                prefix = _parse_prefix(rel)
                 entries.append({
                     "rel_path": rel,
+                    # Display-only fields parsed from the top-folder prefix: the
+                    # library-relative path (prefix stripped), the origin flow
+                    # and the parsed timestamp. The delete/restore routes still
+                    # use the real full "path" below, never these.
+                    "display_path": prefix["display_path"],
+                    "origin": prefix["origin"],
+                    "timestamp": prefix["timestamp"],
                     "ext": ext,
                     "format": ext[1:].upper() if ext else "?",
                     "bytes": size,

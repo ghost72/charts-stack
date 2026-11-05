@@ -12,6 +12,37 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+### Changed
+- **charts-config Trash-Manager: sortable column layout.** The Papierkorb list
+  is now a five-column table (PFAD · HERKUNFT · DATUM · GRÖSSE · AKTION) instead
+  of a single flex row per file:
+  - **PFAD** shows only the library-relative path with the internal top-folder
+    prefix stripped (e.g. `dedup-2026-11-02/When in Rome/The Promise/The
+    Promise.mp3` now displays as `When in Rome/The Promise/The Promise.mp3`),
+    still rendered in the neutral `.te-pathchip` label style and wrapping inside
+    its column. This is DISPLAY-only — delete/restore still operate on the real
+    full trash path.
+  - **HERKUNFT** is a small badge derived from the stripped prefix: `dedup`,
+    `Tag-Editor` (tageditor-delete), `FLAC→MP3` (flac2mp3), `Upgrade` (the bare
+    `<YYYYMMDD>/` entries), or `—` when the prefix does not parse.
+  - **DATUM** is the date (and time for tageditor-delete, e.g.
+    `2026-11-05 16:26:44`) parsed out of the prefix into its own column.
+  - **GRÖSSE** and **AKTION** (Löschen / restorable-only Wiederherstellen) are
+    now proper columns; actions unchanged.
+  - Clicking a column header sorts by that column and toggles asc/desc with a
+    ▲/▼ indicator; PFAD/HERKUNFT sort alphabetically, DATUM chronologically (by
+    the real parsed timestamp, unparseable entries sink to the bottom), GRÖSSE
+    numerically (by byte size). Default sort is DATUM descending (newest first).
+    Sorting is client-side on the structured fields (no refetch).
+  - The backend (`app/trash.py`) now returns `display_path`, `origin` and
+    `timestamp` per entry alongside the unchanged `path`/`bytes`; parsing lives
+    in Python (`_parse_prefix`) and is unit-tested per prefix type incl. the
+    unparseable case. Total count + size summary line unchanged.
+  - Static cache token `config21` → `config22`. i18n: added column header +
+    origin labels under `config.ui.tageditor.trash.col.*` / `.origin.*`
+    (en/de/fr, parity 1213×3). The sort/header UI is frontend; verified
+    manually (click each header toggles asc/desc, default date desc).
+
 ### Fixed
 - **charts-config Tag-Editor / Trash-Manager: UX refinements + no "(2)"
   duplicates on delete.** A batch of refinements on top of the delete/restore
