@@ -23,6 +23,10 @@ deployed together, so a single stack version is the honest unit.
   - Delete/restore CONFIRM dialogs now use the same treatment: normal white
     warning sentence with the path in a red-bordered (delete) / green-bordered
     (restore) `.te-pathchip`, instead of the whole path being coloured inline.
+  - The `.te-pathchip` now flows INLINE within the running sentence (and wraps
+    together with the text) instead of forcing its own line, and is rounded
+    like the legend badges (`border-radius: 999px`, `box-decoration-break:
+    clone` to keep rounded corners on each wrapped fragment).
   - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
     volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
     refresh, form reset) is not delayed by the fade tail. Nothing audible happens

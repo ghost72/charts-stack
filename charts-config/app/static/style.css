@@ -431,15 +431,20 @@ body.login {
 }
 .badge-stack { background: #4a2a12; color: #f0b57a; }
 .badge-curated { background: #1d3350; color: #9cc3ff; }
-/* Path chip: the file path inside a delete/restore success message, framed in a
-   bordered box (label style, like the legend badges) instead of plain inline
-   text. Neutral gray border by default; the delete/restore variants tint only
-   the border (see below). Chip TEXT stays normal white regardless. Monospace +
-   wrapping so a long path stays readable and breaks across lines. */
+/* Path chip: the file path inside a delete/restore confirm dialog or success
+   message, framed in a bordered box (label style, like the legend badges)
+   instead of plain inline text. Neutral gray border by default; the
+   delete/restore variants tint only the border (see below). Chip TEXT stays
+   normal white regardless. It flows INLINE within the running sentence (not a
+   block on its own line) and wraps together WITH the surrounding text; a long
+   filesystem path still breaks across lines. box-decoration-break:clone keeps
+   the rounded corners + padding on every wrapped line fragment. Border-radius
+   999px matches the legend badges (.badge). */
 .te-pathchip {
-  display: inline-block;
-  margin: 2px 0; padding: 2px 7px;
-  border: 1px solid #5a5172; border-radius: 6px;
+  display: inline;
+  padding: 2px 8px;
+  border: 1px solid #5a5172; border-radius: 999px;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
   background: rgba(255, 255, 255, .04);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .82em; color: var(--fg);
