@@ -963,20 +963,26 @@ body.login {
    columns size to content. On a narrow viewport the whole table scrolls
    horizontally rather than squashing (min-width floor), so the phone Tag-Editor
    layout stays untouched. */
-.te-trash-table { display: block; overflow-x: auto; }
-.te-trash-head, .te-trash-row {
+.te-trash-table {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) max-content max-content max-content max-content;
-  align-items: center; gap: 8px;
-  min-width: 540px;
+  column-gap: 8px; row-gap: 5px; align-content: start;
+  overflow-x: auto;
+}
+/* Head and rows are subgrids of the table, so all of them share ONE set of
+   column widths (the header labels sit exactly above the data cells). */
+.te-trash-head, .te-trash-row {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: subgrid;
+  align-items: center; column-gap: 8px;
 }
 .te-trash-head {
-  padding: 4px 10px; margin-bottom: 5px;
+  padding: 4px 10px;
   font-size: .78rem; font-weight: 600; color: var(--muted);
-  border-bottom: 1px solid #3a3048;
+  border: 1px solid transparent; border-bottom-color: #3a3048;
 }
 .te-trash-row {
-  padding: 7px 10px; margin-bottom: 5px; border-radius: 8px;
+  padding: 7px 10px; border-radius: 8px;
   border: 1px solid #3a3048; background: var(--tile);
 }
 /* Sortable column headers: clickable, with a hover affordance and a focus ring

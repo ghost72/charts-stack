@@ -13,6 +13,9 @@ deployed together, so a single stack version is the honest unit.
 ## [Unreleased]
 
 ### Changed
+- **charts-config Trash-Manager: column headers now line up.** Header and rows
+  are subgrids of one grid table so they share the same column widths; static
+  cache token `config22` → `config23`.
 - **charts-config Trash-Manager: sortable column layout.** The Papierkorb list
   is now a five-column table (PFAD · HERKUNFT · DATUM · GRÖSSE · AKTION) instead
   of a single flex row per file:
