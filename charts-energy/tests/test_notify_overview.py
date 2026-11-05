@@ -172,7 +172,7 @@ def test_library_present_list_cut_with_exact_more_count(monkeypatch):
     main._notify([], [], _library(0, 120))
     msg = sent["msg"]
     lines = msg.split("\n")
-    shown = sum(1 for ln in lines if ln.startswith("PArt"))
+    shown = sum(1 for ln in lines if ln.startswith("\u266a "))
     assert 0 < shown < 120
     assert notify_budget.measure([msg]) <= 1024
     assert lines[-1] == t("notify.more", count=120 - shown)

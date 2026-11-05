@@ -319,7 +319,9 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
             rel = os.path.relpath(path, config.MUSIC_DIR)
         except ValueError:
             rel = os.path.basename(path)
-        groups.setdefault(label, []).append(rel)
+        # Prefix each listed file with the music note, matching charts-digest's
+        # "\u266a " per-song style (shared across all song-listing services).
+        groups.setdefault(label, []).append(f"\u266a {rel}")
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
     # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"). It is the

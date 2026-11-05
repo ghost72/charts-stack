@@ -74,8 +74,8 @@ def test_missing_limit_zero_none_listed_last(monkeypatch):
     msg = _send(monkeypatch, _matched(3), _missing(5), limit=0)
     lines = msg.split("\n")
     assert lines[-1] == i18n.t("notify.missing.none_listed", count=5)
-    assert "#1 Artist 1 - Song 1" in lines
-    assert lines.index("#1 Artist 1 - Song 1") < len(lines) - 1
+    assert "♪ #1 Artist 1 - Song 1" in lines
+    assert lines.index("♪ #1 Artist 1 - Song 1") < len(lines) - 1
     assert "more" not in msg
 
 

@@ -68,7 +68,7 @@ def test_retried_list_respects_cap_and_more_tail(monkeypatch):
     # The group header reflects the FULL retried total even when truncated.
     assert i18n.t("download.notify.retried_group", count=18) in msg
     # Exactly 15 song lines are shown, then the "... and 3 more" tail.
-    shown = [line for line in msg.splitlines() if line.startswith("Artist")]
+    shown = [line for line in msg.splitlines() if line.startswith("\u266a ")]
     assert len(shown) == 15
     assert i18n.t("download.notify.more", count=3) in msg
 

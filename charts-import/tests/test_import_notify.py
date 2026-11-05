@@ -173,7 +173,8 @@ def _old_imported(imported):
         for rel in songs:
             if shown >= 10:
                 break
-            lines.append(rel)
+            # Mirror production: each listed file carries the music-note prefix.
+            lines.append(f"\u266a {rel}")
             shown += 1
             remaining -= 1
     if remaining > 0:

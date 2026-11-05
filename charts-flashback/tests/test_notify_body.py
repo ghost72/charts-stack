@@ -96,7 +96,7 @@ def test_notify_truncates_large_batch(captured, de_lang):
     msg = captured["message"]
     assert len(msg) <= 1024
     lines = msg.split("\n")
-    shown = sum(1 for ln in lines if ln.startswith("Artist Number"))
+    shown = sum(1 for ln in lines if ln.startswith("\u266a "))
     assert 0 < shown < 50
     assert lines[-1] == i18n.t("notify.more", count=50 - shown)
     assert not hasattr(main, "_truncate_for_pushover")

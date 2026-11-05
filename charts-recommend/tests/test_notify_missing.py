@@ -75,7 +75,7 @@ def test_missing_list_respects_cap_and_more_tail(monkeypatch):
 
     msg = captured["message"]
     assert i18n.t("recommend.notify.to_load_header", count=18) in msg
-    shown = [line for line in msg.splitlines() if line.startswith("Artist")]
+    shown = [line for line in msg.splitlines() if line.startswith("\u266a ")]
     assert len(shown) == 15
     assert i18n.t("recommend.notify.more", count=3) in msg
 

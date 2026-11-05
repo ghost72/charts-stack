@@ -17,6 +17,14 @@ deployed together, so a single stack version is the honest unit.
   `@eaDir`, `#recycle` or dot-folders; `--apply-list` refuses paths inside them.
 
 ### Changed
+- **Every listed song/file line in the Pushover messages now leads with a music
+  note (`♪ `)**, matching the per-song style charts-digest already used. Applies
+  to the song/file lists of charts-sync (new + missing), charts-hitparade,
+  charts-energy (missing + library present/to-load), charts-download (enqueued +
+  dry-run + re-downloaded), charts-import (per-source imported files),
+  charts-flashback and charts-recommend, and the upgraded-song list of
+  charts-upgrade. Only the individual list lines get the note; the header and
+  overview/summary lines are unchanged. charts-digest itself is unchanged.
 - **All list-shaped Pushover messages** (charts-digest, -sync, -energy,
   -flashback, -hitparade, -import, -download, -recommend, -upgrade) now lead
   with a header and, where there is more than one category, **one overview

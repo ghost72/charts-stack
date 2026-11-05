@@ -114,7 +114,7 @@ def test_chart_two_visible_when_chart_one_has_40_missing(monkeypatch):
     assert notify_budget.measure([msg]) <= 1024
     assert "Chart Two ✅77 ⬇3" in msg.split("\n")[1]
     lines = msg.split("\n")
-    shown = sum(1 for ln in lines if ln.startswith("#"))
+    shown = sum(1 for ln in lines if ln.startswith("\u266a "))
     assert lines[-1] == t("notify.more", count=43 - shown)
 
 
