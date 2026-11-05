@@ -303,6 +303,25 @@ async def api_tageditor_convert(request: Request, path: str = Form("")):
         return _editor_error(err)
 
 
+@app.post("/api/tageditor/delete")
+async def api_tageditor_delete(request: Request, path: str = Form("")):
+    # Delete the loaded song REVERSIBLY: move it into MUSIC_DIR/.charts-trash/
+    # and clear its manifest entry (so charts-import does not re-import it).
+    # Behind the SAME _current_user auth gate (401 anon) as every other
+    # /api/tageditor/* route; NOT behind TAGEDITOR_AUDIO_ENABLED (that flag gates
+    # only the audio stream/download endpoint). The path guard (realpath inside
+    # MUSIC_DIR) + existence check live in editor.delete_song, so a traversal /
+    # absolute path outside the library is refused (path_outside) and nothing is
+    # moved or removed.
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({"ok": True, **editor.delete_song(path)})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
 @app.get("/api/tageditor/nonmp3")
 async def api_tageditor_nonmp3(request: Request):
     # Read-only list of the non-MP3 AUDIO files in the library (Feature B).

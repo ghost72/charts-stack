@@ -720,6 +720,22 @@ def move_index_entry(old_path: str, new_path: str, artist: str,
             _index.append(rec)
 
 
+def remove_index_entry(path: str) -> None:
+    """
+    Drop the cached index record for `path` after the file was deleted (moved to
+    the trash) so a search right after the delete no longer surfaces it. No-op
+    when no index is built yet (the next search builds a fresh one anyway) or the
+    path is not present. Thread-safe. Mirrors the removal half of
+    move_index_entry without re-adding anything.
+    """
+    with _INDEX_LOCK:
+        if _index is None:
+            return
+        for i in range(len(_index) - 1, -1, -1):
+            if _index[i]["path"] == path:
+                del _index[i]
+
+
 def search(query: str, limit: int = 20) -> list[dict]:
     """
     Case-insensitive, accent-folded SUBSTRING search over the index.

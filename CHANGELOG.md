@@ -12,6 +12,20 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+### Added
+- **charts-config Manual Tag-Editor: a red "Delete song" button.** When a song
+  is loaded, a red button (same treatment as the Trash-Manager delete buttons)
+  deletes it after a confirm step. The delete is **reversible**: the audio file
+  is moved into `MUSIC_DIR/.charts-trash/tageditor-delete-<date>/` (mtime
+  preserved, restorable – not hard-deleted) and the song's manifest entry (key =
+  lowercased basename) is removed so charts-import does not re-import it. An
+  emptied stack-single `<Artist>/<Title>/` folder is cleaned up; a folder still
+  holding other files is left intact. Works for any audio format the editor can
+  load (not MP3-only). New route `POST /api/tageditor/delete`, behind the same
+  `_current_user` auth gate and `MUSIC_DIR` realpath guard as the other
+  `/api/tageditor/*` routes. Use case: a YouTube download imported with the
+  wrong artist name and re-downloaded correctly, leaving a duplicate to remove.
+
 ### Fixed
 - `strip_provenance_tags.py` no longer scans or rewrites `.charts-trash`,
   `@eaDir`, `#recycle` or dot-folders; `--apply-list` refuses paths inside them.

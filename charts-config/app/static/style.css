@@ -696,6 +696,10 @@ body.login {
 .te-msg { font-size: .85rem; line-height: 1.2; }
 .te-msg.ok { color: var(--ok); }
 .te-msg.err { color: var(--err); font-weight: 600; }
+/* The red "delete song" button shares the Trash-Manager's red .te-trash-empty-btn
+   treatment (no new ad-hoc red); margin-left:auto pins it to the RIGHT end of
+   the .te-actions flex row, past the status message. */
+.te-delete-btn { margin-left: auto; }
 /* Pre-save hint under the Artist field (shown only while the artist value
    differs from the loaded one): the file will be moved into the new artist's
    folder on save. Spans the full width of the two-column .te-grid so it does

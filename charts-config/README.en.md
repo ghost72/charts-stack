@@ -168,6 +168,26 @@ only** (like every `/api/tageditor/*` route), **not** behind
 deliberate per-song click does not violate the "automation never touches the
 hand-added library" rule.
 
+**Delete song (red button, when a song is loaded).** A **red** **Delete song**
+button sits at the right of the editor's actions row (the same red Trash-Manager
+treatment). It only appears while a song is loaded and works for **any** audio
+format the editor can load (not MP3-only). After a confirm step it does **both**:
+(1) the audio file is moved **reversibly** into the trash bin
+`/music/Music/.charts-trash/tageditor-delete-<date>/` (same convention as
+convert/dedup – **not** hard-deleted, mtime preserved; restorable from the
+trash), and (2) the song's **manifest entry** (key = file basename, lowercased)
+is removed so **charts-import does not re-import it on its next run** (manifest
+entries are persistent – without this step the song would come back). If the
+song sits in its own stack-single `<Artist>/<Title>/` folder and that folder
+becomes empty, the empty folder is cleaned up; a folder that still holds other
+files is left intact. The editor then returns to the empty "pick a song" state.
+**Use case:** a YouTube download landed with a wrong artist name and was
+re-downloaded with the correct name – this button removes the resulting
+duplicate in one click. The delete endpoint (`POST /api/tageditor/delete`) is
+behind the same auth gate and the same `MUSIC_DIR` path guard (realpath, no
+traversal/outside path) as every other `/api/tageditor/*` route; it is **not**
+behind `TAGEDITOR_AUDIO_ENABLED`.
+
 **Non-MP3 list (below the editor).** A read-only list shows **only non-MP3 audio
 files** in the library (FLAC/M4A/OGG/… – no txt/cover.jpg/.m3u/.nfo). Trash,
 `@eaDir`, `#recycle` and dot-folders are skipped (same index pruning as search).

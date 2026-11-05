@@ -178,6 +178,28 @@ Convert-Button ist **nur auth-geschützt** (wie alle `/api/tageditor/*`-Routen),
 Abspiel-/Download-Endpoint. Der bewusste Klick pro Song verstößt nicht gegen die
 Regel „die Automatik fasst den handgepflegten Bestand nicht an".
 
+**Song löschen (roter Button, bei geladenem Song).** In der Aktionszeile des
+Editors sitzt rechts ein **roter** Button **Song löschen** (gleiche rote
+Papierkorb-Optik wie die Trash-Verwaltung). Er erscheint nur, wenn ein Song
+geladen ist, und funktioniert für **jedes** vom Editor ladbare Audioformat
+(nicht nur MP3). Nach einer Bestätigung passiert **beides**: (1) die Audiodatei
+wird **reversibel** in den Papierkorb
+`/music/Music/.charts-trash/tageditor-delete-<Datum>/` verschoben (gleiche
+Konvention wie Convert/Dedup – **nicht** hart gelöscht, mit erhaltener mtime; aus
+dem Papierkorb wiederherstellbar), und (2) der **Manifest-Eintrag** des Songs
+(Schlüssel = Datei-Basename, kleingeschrieben) wird entfernt, damit
+**charts-import den Song beim nächsten Lauf nicht erneut importiert** (die
+Manifest-Einträge sind persistent – ohne diesen Schritt käme der Song zurück).
+Liegt der Song in seinem eigenen Stack-Single-Ordner `<Artist>/<Titel>/` und ist
+dieser danach leer, wird der leere Ordner aufgeräumt; ein Ordner mit weiteren
+Dateien bleibt unangetastet. Danach kehrt der Editor in den leeren
+„Song auswählen"-Zustand zurück. **Anwendungsfall:** ein YouTube-Download kam mit
+falschem Artistnamen herein und wurde mit korrektem Namen neu geladen – die
+entstandene Dublette entfernt dieser Button mit einem Klick. Der Delete-Endpoint
+(`POST /api/tageditor/delete`) liegt hinter demselben Auth-Gate und demselben
+`MUSIC_DIR`-Pfad-Guard (Realpath, kein Traversal/Außen-Pfad) wie alle anderen
+`/api/tageditor/*`-Routen; er ist **nicht** hinter `TAGEDITOR_AUDIO_ENABLED`.
+
 **Nicht-MP3-Liste (unterhalb des Editors).** Eine schreibgeschützte Liste zeigt
 **nur Nicht-MP3-Audiodateien** der Library (FLAC/M4A/OGG/… – keine
 txt/cover.jpg/.m3u/.nfo). Papierkorb-, `@eaDir`-, `#recycle`- und Punkt-Ordner

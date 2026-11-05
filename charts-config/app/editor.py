@@ -27,6 +27,7 @@ import base64
 import errno
 import logging
 import os
+from datetime import datetime, timezone
 
 from . import config, cover, library, manifest, tags
 from .i18n import t
@@ -231,6 +232,110 @@ def cover_download(path: str) -> tuple[bytes, str]:
         raise EditorError("not_found", 404)
     data, mime = read
     return data, mime
+
+
+# --- delete a loaded song (reversible: move to trash + clear manifest) ------
+# Use case: a YouTube/import download landed with a wrong artist name and was
+# re-downloaded under the correct name, leaving a duplicate song/folder. The
+# Tag-Editor delete button removes that duplicate in ONE click, reversibly.
+#
+# This is deliberately NOT a hard delete: it mirrors convert.convert_to_mp3's
+# established trash convention (move the file into MUSIC_DIR/.charts-trash/
+# <label>-<YYYY-MM-DD>/ preserving its library-relative substructure) so the
+# original can be restored from the trash. It then clears the file's manifest
+# entry (keyed by the lowercased basename, exactly as manifest.record wrote it)
+# so charts-import does NOT re-import the just-trashed file on its next run -
+# without this step the persistent manifest entry would bring the song back.
+
+def delete_song(path: str) -> dict:
+    """
+    Move the loaded song at `path` into the trash (reversible) and clear its
+    manifest entry. Works for ANY audio file the editor can load (not MP3-only).
+
+    Order of operations, fail-closed before the move:
+      1. realpath guard inside MUSIC_DIR (path_outside) - identical to every
+         other /api/tageditor/* path (no traversal/absolute escape);
+      2. require an existing regular file (not_found, 404);
+      3. move it to MUSIC_DIR/.charts-trash/tageditor-delete-<YYYY-MM-DD>/<rel>
+         via library._move_file (os.rename, mtime preserved, same filesystem so
+         no EXDEV); a unique suffix avoids clobbering a same-day re-delete.
+         A move OSError -> EditorError (write_failed, 500) and NOTHING else runs;
+      4. ONLY AFTER a successful move: clean up a now-empty stack-single
+         <Artist>/<Title>/ folder (never a folder that still holds other files),
+         drop the file's manifest entry, and drop its cached index record.
+
+    Returns {"deleted": True, "trashed_to": "<rel path in library>",
+             "manifest_cleared": bool}. Raises EditorError on guard/existence/
+     move failure (steps 1-3); the post-move cleanup (step 4) is best-effort and
+    never turns a successful trash-move into a failure.
+    """
+    # Steps 1 + 2: guard + existence (fail-closed, before any mutation).
+    real = _guarded_realpath(path)
+    if not os.path.isfile(real):
+        raise EditorError("not_found", 404)
+
+    # Step 3: move the file into the trash (reversible). Mirror the convert
+    # path's convention: MUSIC_DIR/.charts-trash/<label>-<date>/<library-rel>.
+    base = os.path.realpath(config.MUSIC_DIR)
+    rel = os.path.relpath(real, base)
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    trash_dir = os.path.join(base, ".charts-trash", f"tageditor-delete-{day}")
+    dest = _unique_trash_dest(os.path.join(trash_dir, rel))
+    try:
+        library._move_file(real, dest)            # os.rename, mtime preserved
+    except OSError as e:
+        logger.warning(t("import.tags.write_failed", path=real, error=e))
+        raise EditorError("write_failed", 500)
+
+    # Step 4 (best-effort, post-move): prune an emptied stack-single folder,
+    # clear the manifest entry, drop the cached index record. None of these may
+    # turn the already-successful trash-move into an error.
+    #
+    # Folder cleanup: only for a stack-single <Artist>/<Title>/<Title>.<ext>
+    # layout, and only the inner <Title> album folder - never the <Artist> dir
+    # (it may legitimately hold other titles) and never a Lidarr/compilation
+    # folder (those are left in place). _cleanup_empty_dirs itself refuses to
+    # remove a folder that still holds real content, so a shared folder is safe.
+    try:
+        if library._is_movable_single(base, real):
+            library._cleanup_empty_dirs(os.path.dirname(real))
+    except Exception:
+        pass
+
+    manifest_cleared = False
+    try:
+        manifest_cleared = manifest.remove_entry(config.MANIFEST_FILE,
+                                                 os.path.basename(real))
+    except Exception:
+        manifest_cleared = False
+
+    try:
+        library.remove_index_entry(real)
+    except Exception:
+        pass
+
+    return {
+        "deleted": True,
+        "trashed_to": _rel_to_music(dest),
+        "manifest_cleared": manifest_cleared,
+    }
+
+
+def _unique_trash_dest(dest: str) -> str:
+    """
+    Return a trash destination path that does not yet exist: `dest` if free, else
+    `name (2).ext`, `name (3).ext`, ... so a same-day re-delete of a re-created
+    file never overwrites an earlier trashed copy. Mirrors convert._unique.
+    """
+    if not os.path.exists(dest):
+        return dest
+    root, ext = os.path.splitext(dest)
+    n = 2
+    while True:
+        candidate = f"{root} ({n}){ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        n += 1
 
 
 # --- save (the 9-step algorithm) --------------------------------------------

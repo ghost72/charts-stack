@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config9">
+<link rel="stylesheet" href="/static/style.css?v=config10">
 </head>
 <body>
 <header>
@@ -229,9 +229,16 @@
           </div>
           <!-- Save-status line (the Convert button moved up onto the file-info
                row). Kept as its own always-on row so a short status never
-               shifts the layout above it. -->
+               shifts the layout above it. The red "delete this song" button
+               sits on the RIGHT of the same row: it is inside #te-form, so it
+               only appears once a song is loaded (the form is hidden until
+               then). It reuses the Trash-Manager's red .te-trash-empty-btn
+               treatment (no new ad-hoc red) and opens a confirm dialog before
+               anything is moved. type=button so it never submits the Save form. -->
           <div class="te-actions">
             <span id="te-msg" class="te-msg"></span>
+            <button type="button" id="te-delete" class="te-trash-empty-btn te-delete-btn"
+                    data-i18n="tageditor.delete.btn">Delete song</button>
           </div>
           <!-- Label legend: explains the two result badges shown on the right
                of each search row. Reuses the exact badge markup/classes
@@ -278,6 +285,26 @@
                       data-i18n="tageditor.convert.confirm"></button>
               <button type="button" id="te-convert-cancel" class="te-modal-btn"
                       data-i18n="tageditor.convert.cancel"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delete-song confirm dialog. Mirrors the Trash-Manager per-file
+             delete modal (same .te-modal markup, .te-danger-text warning,
+             .te-modal-btn.danger red confirm). Opened by the #te-delete button;
+             only the confirming click POSTs to /api/tageditor/delete. The warn
+             line is filled per song (rel_path) and makes clear the file is moved
+             to the trash (reversible), not hard-deleted. -->
+        <div id="te-delete-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-delete-title">
+            <h3 id="te-delete-title" data-i18n="tageditor.delete.title"></h3>
+            <p id="te-delete-warn" class="te-modal-q te-danger-text"></p>
+            <div class="te-modal-buttons">
+              <button type="button" id="te-delete-confirm" class="te-modal-btn danger"
+                      data-i18n="tageditor.delete.confirm"></button>
+              <button type="button" id="te-delete-cancel" class="te-modal-btn"
+                      data-i18n="tageditor.delete.cancel"></button>
             </div>
           </div>
         </div>
@@ -928,6 +955,15 @@ function initTagEditor() {
                          (song.is_mp3 === undefined && convertExt === ".mp3");
     const convertBtn = document.getElementById("te-convert");
     if (convertBtn) convertBtn.hidden = convertIsMp3;
+    // Delete button: always available for a loaded song (any audio format, not
+    // MP3-only). Stash the current path + rel_path on its dataset so the confirm
+    // handler can show the honest rel_path and POST the absolute path. It is NOT
+    // disabled for read-only (non-MP3) files: delete works for whatever loaded.
+    const deleteBtn = document.getElementById("te-delete");
+    if (deleteBtn) {
+      deleteBtn.dataset.path = song.path || "";
+      deleteBtn.dataset.rel = song.rel_path == null ? "" : String(song.rel_path);
+    }
     [...TE_FIELDS.map(f => "te-" + f), "te-cover-file", "te-cover-url"].forEach(id => {
       document.getElementById(id).disabled = readOnly;
     });
@@ -1047,6 +1083,68 @@ function initTagEditor() {
         setMsg(t("tageditor.unreachable"), true);
       }
     });
+  }
+
+  // --- Delete song (reversible: move to trash + clear manifest) -------------
+  // The red #te-delete button (visible only while a song is loaded, since it
+  // lives inside the hidden #te-form) opens a confirm dialog. Only the
+  // confirming click POSTs to /api/tageditor/delete. On success the form is
+  // cleared back to the empty state, the search results are reset, and the
+  // trash list is refreshed (it now holds the moved file).
+  const deleteBtn = document.getElementById("te-delete");
+  const deleteDialog = document.getElementById("te-delete-dialog");
+  const deleteWarn = document.getElementById("te-delete-warn");
+  const deleteConfirm = document.getElementById("te-delete-confirm");
+  const deleteCancel = document.getElementById("te-delete-cancel");
+  if (deleteBtn && deleteDialog) {
+    deleteBtn.addEventListener("click", () => {
+      const rel = deleteBtn.dataset.rel || "";
+      if (deleteWarn) deleteWarn.textContent = t("tageditor.delete.warn", {path: rel});
+      deleteDialog.hidden = false;
+    });
+    if (deleteCancel) deleteCancel.addEventListener("click", () => {
+      deleteDialog.hidden = true;
+    });
+    if (deleteConfirm) deleteConfirm.addEventListener("click", async () => {
+      deleteDialog.hidden = true;
+      const path = deleteBtn.dataset.path || document.getElementById("te-path").value;
+      if (!path) return;
+      const fd = new FormData();
+      fd.append("path", path);
+      try {
+        const r = await fetch("/api/tageditor/delete",
+          {method: "POST", body: fd, cache: "no-store"});
+        const d = await r.json();
+        if (r.ok && d && d.ok) {
+          // Clear the editor back to the empty state and reset the search so the
+          // now-deleted song is no longer offered. The success message goes into
+          // the (visible) select-hint line, because #te-msg lives inside the
+          // #te-form that resetEditor() hides.
+          resetEditor(t("tageditor.delete.ok", {path: d.trashed_to || ""}));
+          // The file was moved into the trash, so refresh the trash list too.
+          loadTrash();
+        } else {
+          setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+        }
+      } catch (e5) {
+        setMsg(t("tageditor.unreachable"), true);
+      }
+    });
+  }
+
+  // Return the editor to the empty "pick a song" state after a delete: hide the
+  // form, clear the search input + results, and re-show the select-hint line
+  // (which also carries the success message, since #te-msg lives inside the now
+  // hidden form). `message` is the status text to show; falls back to the
+  // default select hint. Defensive null-checks so it never throws.
+  function resetEditor(message) {
+    form.hidden = true;
+    if (input) input.value = "";
+    if (results) results.innerHTML = "";
+    if (hint) {
+      hint.hidden = false;
+      hint.textContent = message || t("tageditor.select_hint");
+    }
   }
 
   // --- Non-MP3 audio file list (Feature B) ----------------------------------
