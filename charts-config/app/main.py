@@ -317,7 +317,15 @@ async def api_tageditor_delete(request: Request, path: str = Form("")):
         return JSONResponse(status_code=401,
                             content={"error": i18n.t("config.api.not_authed")})
     try:
-        return JSONResponse({"ok": True, **editor.delete_song(path)})
+        result = editor.delete_song(path)
+        # The delete moves a new file into the trash via editor.delete_song (it
+        # does not go through trash.delete_file), so the TTL-cached trash scan is
+        # now stale: without this the freshly trashed row would not appear in the
+        # Papierkorb tab until the TTL expired (not even on a page refresh), which
+        # also hid its green restore button. Invalidate here so the next trash
+        # list re-walks and shows the new tageditor-delete-<date>/ entry.
+        trash.invalidate()
+        return JSONResponse({"ok": True, **result})
     except editor.EditorError as err:
         return _editor_error(err)
 

@@ -12,6 +12,34 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+### Fixed
+- **charts-config Trash-Manager: Tag-Editor-deleted songs now appear in the
+  trash listing immediately.** A song deleted via the Tag-Editor delete button
+  did not show up in the Papierkorb tab afterwards (not even after a page
+  refresh), which also hid its green restore button, making restore unreachable.
+  Root cause: the Tag-Editor delete moves the file into the trash via
+  `editor.delete_song` (it does not go through `trash.delete_file`), so the
+  TTL-cached trash scan (~5 min) stayed stale. The delete route now invalidates
+  the trash cache, so the next listing re-walks and shows the new nested
+  `tageditor-delete-<date>/<Artist>/<Title>/<file>` row (full rel path,
+  `restorable=true`). Existing convert/dedup/bare-dated rows list unchanged and
+  stay `restorable=false`.
+- **charts-config Tag-Editor: playback stops when the playing song is deleted.**
+  If a song was playing via the cover play button and the user deleted it, the
+  in-browser `<audio>` kept playing from its buffer after the file was moved to
+  the trash. `resetEditor()` (reached on the delete success path and any editor
+  reset) now pauses the audio, clears its `src`/`.load()`s to release the buffer,
+  and resets the play/pause overlay to the non-playing state. Manual verification:
+  play a song → delete it → audio is paused, `src` cleared, overlay shows ▶.
+- **charts-config Tag-Editor search index reflects delete/restore immediately.**
+  A restored song was not findable in the Tag-Editor search until the path-based
+  index TTL (~5 min) expired: the delete had removed it from the cached index and
+  restore only called `update_index_entry` (a no-op for a path no longer indexed).
+  Restore now upserts the path back via the new `library.add_index_entry`, so a
+  search right after restore returns the song. Delete already busts the index
+  (`remove_index_entry`), so a deleted song drops out of search right away too.
+- Static cache token bumped `config13` → `config14`.
+
 ### Added
 - **charts-config Trash-Manager: a green "Wiederherstellen" (Restore) button.**
   A trash row shows a green restore button **only** for songs that were deleted

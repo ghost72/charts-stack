@@ -265,6 +265,41 @@ def test_restore_round_trip_from_real_delete(tmp_path, monkeypatch):
     assert data["entries"]["my song.mp3"]["source"] == "youtube"
 
 
+def test_restore_song_searchable_immediately(tmp_path, monkeypatch):
+    """After a delete+restore round trip the restored song is findable in a
+    Tag-Editor search right away - restore upserts (add_index_entry) the path
+    back into the cached path-based search index, not only after the TTL. The
+    delete first removed it from the index, so a plain update would have been a
+    no-op; this is the regression guard for that gap."""
+    root = tmp_path / "Music"
+    (root / "Wrong Artist" / "My Song").mkdir(parents=True)
+    mp3 = root / "Wrong Artist" / "My Song" / "My Song.mp3"
+    _write(mp3, b"\xff\xfb\x90\x40" + b"\x00" * 200)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"entries": {
+        "my song.mp3": {"artist": "Wrong Artist", "title": "My Song",
+                        "album": "My Song", "source": "youtube"},
+    }}), encoding="utf-8")
+    main_mod, _ = _reload_app(monkeypatch, root, manifest)
+    import app.library as library_mod
+    client = _authed_client(main_mod)
+
+    # Prime the search index, then delete: the song drops out of search.
+    assert any(h["path"] == str(mp3) for h in library_mod.search("My Song"))
+    dr = client.post("/api/tageditor/delete", data={"path": str(mp3)})
+    assert dr.status_code == 200, dr.text
+    assert not any(h["path"] == str(mp3) for h in library_mod.search("My Song"))
+
+    # Restore; the song is searchable again immediately (no TTL wait).
+    lr = client.get("/api/tageditor/trash").json()
+    trashed_abs = [e for e in lr["entries"] if e["restorable"]][0]["path"]
+    rr = client.post("/api/tageditor/trash/restore", data={"path": trashed_abs})
+    assert rr.status_code == 200, rr.text
+    assert mp3.is_file()
+    hits = library_mod.search("My Song")
+    assert any(h["path"] == str(mp3) for h in hits)
+
+
 # Restore import-time i18n state so test ordering never leaks a language.
 @pytest.fixture(autouse=True)
 def _restore_setup():

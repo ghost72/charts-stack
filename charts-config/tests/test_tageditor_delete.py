@@ -284,6 +284,63 @@ def test_delete_without_manifest_entry(tmp_path, monkeypatch):
     assert not mp3.exists()
 
 
+# --- BUG 1: trash listing reflects the Tag-Editor delete immediately --------
+
+def test_delete_shows_in_trash_listing_immediately(library_dir, monkeypatch):
+    """A song deleted via the Tag-Editor delete route appears in the trash
+    listing right away - the delete route invalidates the TTL-cached trash scan,
+    so the freshly trashed row (nested tageditor-delete-<date>/Artist/Title/file
+    path) is listed with its full rel_path and flagged restorable, without
+    waiting for the TTL. Regression test for the stale-cache bug where the new
+    row never appeared (not even after a page refresh)."""
+    root, mp3, manifest = library_dir
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+
+    # Prime the trash cache while the trash is still empty (as a user who opened
+    # the Papierkorb tab before deleting would).
+    first = client.get("/api/tageditor/trash").json()
+    assert first["count"] == 0
+
+    # Delete the song via the Tag-Editor route (NOT trash.delete_file).
+    r = client.post("/api/tageditor/delete", data={"path": mp3})
+    assert r.status_code == 200, r.text
+
+    # The very next listing shows the nested tageditor-delete entry, restorable.
+    second = client.get("/api/tageditor/trash").json()
+    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    expected_rel = (f"tageditor-delete-{day}/Wrong Artist/My Song/My Song.mp3")
+    by_rel = {e["rel_path"]: e for e in second["entries"]}
+    assert expected_rel in by_rel
+    row = by_rel[expected_rel]
+    assert row["restorable"] is True
+    assert row["rel_path"] == expected_rel
+    # The sidecar is hidden (not a row), count reflects just the one audio file.
+    assert not any(rel.endswith(".trashinfo.json") for rel in by_rel)
+    assert second["count"] == 1
+    assert second["total_bytes"] == row["bytes"] > 0
+
+
+def test_delete_drops_song_from_search_index_immediately(library_dir, monkeypatch):
+    """After a delete the song no longer surfaces in a Tag-Editor search right
+    away (the delete busts the cached path-based search index), not only after
+    the index TTL expires."""
+    root, mp3, manifest = library_dir
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    import app.library as library_mod
+    # Prime the search index; the song is findable.
+    hits = library_mod.search("My Song", limit=20)
+    assert any(h["path"] == mp3 for h in hits)
+
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/delete", data={"path": mp3})
+    assert r.status_code == 200, r.text
+
+    # Immediately gone from search (no TTL wait).
+    hits2 = library_mod.search("My Song", limit=20)
+    assert not any(h["path"] == mp3 for h in hits2)
+
+
 # Restore import-time i18n state so test ordering never leaks a language.
 @pytest.fixture(autouse=True)
 def _restore_setup():

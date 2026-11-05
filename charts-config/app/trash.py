@@ -367,8 +367,12 @@ def restore_file(path: str) -> dict:
     _prune_up_to_root(os.path.dirname(real), root)
     try:
         fields = tags.read_editable_tags(target)
-        library.update_index_entry(target, fields.get("artist", ""),
-                                   fields.get("title", ""))
+        # add_index_entry (not update_index_entry): the delete removed this path
+        # from the cached search index, so update would be a no-op (it only
+        # overlays an existing record). add upserts it back so a Tag-Editor
+        # search right after restore finds the song, not only after the TTL.
+        library.add_index_entry(target, fields.get("artist", ""),
+                                fields.get("title", ""))
     except Exception:
         pass
     return {"restored": os.path.relpath(target, base).replace(os.sep, "/")}

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config13">
+<link rel="stylesheet" href="/static/style.css?v=config14">
 </head>
 <body>
 <header>
@@ -1158,6 +1158,16 @@ function initTagEditor() {
   // hidden form). `message` is the status text to show; falls back to the
   // default select hint. Defensive null-checks so it never throws.
   function resetEditor(message) {
+    // Stop in-browser playback: if the just-deleted (or just-unloaded) song was
+    // playing via the cover play button, the <audio> would otherwise keep
+    // playing from its buffer after the file was moved to the trash. Pause,
+    // clear the src and .load() to release the buffer, and reset the play/pause
+    // overlay to the non-playing (▶) state. The src here is a server URL (no
+    // object URL is created for playback), so there is nothing to revokeURL.
+    const audioEl = document.getElementById("te-audio");
+    const playBtn = document.getElementById("te-play");
+    if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); }
+    if (playBtn) setPlayGlyph(playBtn, "▶");
     form.hidden = true;
     if (input) input.value = "";
     if (results) results.innerHTML = "";

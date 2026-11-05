@@ -736,6 +736,41 @@ def remove_index_entry(path: str) -> None:
                 del _index[i]
 
 
+def add_index_entry(path: str, artist: str, title: str) -> None:
+    """
+    Upsert a cached index record for `path` so a search right after a RESTORE
+    surfaces the song immediately (not only after the TTL expires).
+
+    Needed because a delete calls remove_index_entry, so the restored path is no
+    longer in the index; update_index_entry only overlays onto an EXISTING record
+    and would be a no-op here. This is the add half of move_index_entry: it builds
+    the same path-derived display record and overlays the authoritative
+    artist/title (and their folded keys). No-op when no index is built yet (the
+    next search builds a fresh one anyway). Thread-safe.
+    """
+    with _INDEX_LOCK:
+        if _index is None:
+            return
+        root = os.path.dirname(path)
+        album_dir = os.path.basename(root)
+        artist_dir = os.path.basename(os.path.dirname(root))
+        disp_title = _extract_title_from_filename(os.path.basename(path))
+        rec = {
+            "path": path,
+            "artist_key": _artist_key(artist or artist_dir),
+            "title_key": _title_key(title or disp_title),
+            "artist": artist or artist_dir,
+            "album": album_dir,
+            "title": title or disp_title,
+            "basename": os.path.basename(path).lower(),
+        }
+        for existing in _index:
+            if existing["path"] == path:
+                existing.update(rec)
+                return
+        _index.append(rec)
+
+
 def search(query: str, limit: int = 20) -> list[dict]:
     """
     Case-insensitive, accent-folded SUBSTRING search over the index.
