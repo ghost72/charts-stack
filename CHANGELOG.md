@@ -27,6 +27,11 @@ deployed together, so a single stack version is the honest unit.
   wrong artist name and re-downloaded correctly, leaving a duplicate to remove.
 
 ### Fixed
+- **charts-config Manual Tag-Editor: the empty editor form (including the red
+  "Delete song" button) no longer shows before a song is picked.** The form's
+  `[hidden]` attribute was overridden by `.te-form { display: flex }`; a compound
+  `.te-form[hidden] { display: none }` rule now makes `hidden` win. Static cache
+  token bumped `config11` → `config12`.
 - **charts-recommend: a transient empty or non-JSON (HTML) 200 body on the
   ListenBrainz `createdfor` source no longer crashes the run** (`Expecting value:
   line 1 column 1 (char 0)`, `status=error`). Both createdfor JSON parses now

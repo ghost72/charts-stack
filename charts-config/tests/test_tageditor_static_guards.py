@@ -76,6 +76,27 @@ def test_cache_busting_token_bumped():
     )
 
 
+# --- Root cause: empty #te-form stayed visible despite [hidden] ---------------
+
+def test_te_form_hidden_rule_present():
+    """The #te-form carries the [hidden] attribute until a song is loaded. The
+    global `[hidden] { display: none }` (0,1,0) loses to the `.te-form`
+    display:flex rule (also 0,1,0 but declared later), so the empty form - with
+    its red delete button - stayed visible with no song selected. A compound
+    `.te-form[hidden]` selector (0,2,0) must re-assert display:none so [hidden]
+    wins (mirrors .te-cover-img[hidden] / .te-download[hidden])."""
+    css = _read(_CSS)
+    m = re.search(r"\.te-form\[hidden\]\s*\{([^}]*)\}", css)
+    assert m, (
+        "missing `.te-form[hidden]` rule; empty form renders despite [hidden] "
+        "because `.te-form { display: flex }` overrides the global [hidden]"
+    )
+    assert "display: none" in m.group(1), (
+        ".te-form[hidden] must set display:none so the hidden attribute hides "
+        "the form"
+    )
+
+
 # --- Root cause 2: convert guard extension fallback ---------------------------
 
 def test_convert_guard_falls_back_to_ext():

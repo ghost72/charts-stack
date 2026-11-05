@@ -449,6 +449,13 @@ body.login {
   align-items: stretch;
   gap: 0;
 }
+/* The form carries the [hidden] attribute until a song is loaded. The global
+   `[hidden] { display: none }` (specificity 0,1,0) loses to the `.te-form`
+   display:flex rule above (also 0,1,0 but declared later), so the empty form -
+   including the red delete button - stayed visible with no song selected.
+   Re-assert the hidden state with a compound selector (0,2,0) so [hidden] wins,
+   mirroring the project's .te-cover-img[hidden] / .te-download[hidden] pattern. */
+.te-form[hidden] { display: none; }
 /* Clearance above the form so the cover column's -22px lift (see .te-cover)
    cannot pull the "Cover" head row + download pill UP into the bottom of the
    search-results dropdown once a song is loaded (loading a song hides #te-hint,
