@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config17">
+<link rel="stylesheet" href="/static/style.css?v=config18">
 </head>
 <body>
 <header>
@@ -302,7 +302,7 @@
           <div class="te-modal-card" role="dialog" aria-modal="true"
                aria-labelledby="te-delete-title">
             <h3 id="te-delete-title" data-i18n="tageditor.delete.title"></h3>
-            <p id="te-delete-warn" class="te-modal-q te-danger-text"></p>
+            <p id="te-delete-warn" class="te-modal-q"></p>
             <div class="te-modal-buttons">
               <button type="button" id="te-delete-confirm" class="te-modal-btn danger"
                       data-i18n="tageditor.delete.confirm"></button>
@@ -1158,7 +1158,8 @@ function initTagEditor() {
   if (deleteBtn && deleteDialog) {
     deleteBtn.addEventListener("click", () => {
       const rel = deleteBtn.dataset.rel || "";
-      if (deleteWarn) deleteWarn.textContent = t("tageditor.delete.warn", {path: rel});
+      // Normal white sentence with the path in a red-bordered .te-pathchip.
+      if (deleteWarn) deleteWarn.innerHTML = pathMsgHtml("tageditor.delete.warn", rel, "del");
       deleteDialog.hidden = false;
     });
     if (deleteCancel) deleteCancel.addEventListener("click", () => {
@@ -1437,7 +1438,8 @@ function initTagEditor() {
       _trashRestorePath = row.getAttribute("data-path");
       const rel = row.getAttribute("data-rel") || "";
       if (trashRestoreWarn) {
-        trashRestoreWarn.textContent = t("tageditor.trash.restore.warn", {path: rel});
+        // Normal white sentence with the path in a green-bordered .te-pathchip.
+        trashRestoreWarn.innerHTML = pathMsgHtml("tageditor.trash.restore.warn", rel, "restore");
       }
       trashRestoreDialog.hidden = false;
     });

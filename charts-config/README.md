@@ -247,7 +247,9 @@ read-only und TTL-gecacht. Zwei Aktionen:
   Die Erfolgsmeldungen von Löschen und Wiederherstellen zeigen den Satztext
   normal weiss und den Dateipfad in einem umrandeten Chip (`.te-pathchip`,
   Label-Stil); nur die Chip-Umrandung ist nach Aktion eingefärbt – rot beim
-  Löschen, grün beim Wiederherstellen (Chip-Text bleibt normal weiss).
+  Löschen, grün beim Wiederherstellen (Chip-Text bleibt normal weiss). Die
+  zugehörigen Bestätigungsdialoge (Löschen / Wiederherstellen) verwenden dieselbe
+  Darstellung: normal weisser Warntext, Pfad im rot- bzw. grün-umrandeten Chip.
 
 **Sicherheit:** Liste **und** Löschen/Leeren/Wiederherstellen liegen hinter demselben Auth-Gate
 wie jede andere `/api/tageditor/*`-Route (401 anonym). Das Löschen ist **streng

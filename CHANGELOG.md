@@ -20,6 +20,9 @@ deployed together, so a single stack version is the honest unit.
     file path sits in a bordered `.te-pathchip` (label style) whose BORDER is
     tinted by action — red for delete, green for restore (reusing the delete /
     restore button colours) — while the chip text stays normal white.
+  - Delete/restore CONFIRM dialogs now use the same treatment: normal white
+    warning sentence with the path in a red-bordered (delete) / green-bordered
+    (restore) `.te-pathchip`, instead of the whole path being coloured inline.
   - Deleting a currently-playing song now FADES the audio out smoothly (~500 ms
     volume ramp on the `<audio>` element) instead of an abrupt cut; the UI (list
     refresh, form reset) is not delayed by the fade tail. Nothing audible happens
