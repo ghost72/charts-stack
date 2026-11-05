@@ -206,8 +206,23 @@ read-only and TTL-cached. Two actions:
 - **Empty the whole trash** – with a prominent confirm. This is
   **irreversible**: the trash IS the last reversible stage, so deleting here is
   final.
+- **Restore a single song (green button)** – shown **only** on rows that were
+  deleted via the Tag-Editor's "Delete song" button (under
+  `tageditor-delete-<date>/`); convert/dedup and charts-import upgrade/replace
+  rows keep only the red delete button (their original location is ambiguous, so
+  they are out of scope). After a light confirm (restore is non-destructive) the
+  file is moved back to its **exact original library location**, its charts-import
+  **manifest entry is re-created** (so the stack recognizes the song again), and
+  a pruned `<Artist>/<Title>/` folder is recreated. **Collision = refuse:** if a
+  file already exists at the original location (e.g. the song was re-downloaded
+  under the correct name) the restore is refused and the existing file is **never
+  overwritten**. This works because the Tag-Editor **delete** writes a tiny
+  restore sidecar (`<trashed-file>.trashinfo.json`, hidden from the list)
+  recording the original path + removed manifest entry. **Only songs deleted with
+  the Tag-Editor AFTER this feature shipped are restorable** – older deletions
+  have no sidecar and the button refuses with a clear "no restore data" message.
 
-**Security:** both the list **and** the delete/empty actions sit behind the same
+**Security:** both the list **and** the delete/empty/restore actions sit behind the same
 auth gate as every other `/api/tageditor/*` route (401 anonymous). Deletion is
 **strictly confined to `.charts-trash`**: on top of the existing MUSIC_DIR
 guard, an additional realpath-containment check requires the resolved path to
@@ -215,6 +230,10 @@ sit **inside** the trash, so **no** library file outside the trash can ever be
 deleted through this endpoint (defense against traversal AND against a bug
 passing a non-trash path). **Symlinks are never followed out of the trash**, and
 emptying requires an **explicit confirm flag** server-side (not a single click).
+**Restore reuses the same guards** (the source must resolve strictly inside
+`.charts-trash`; the restore target is guarded inside `MUSIC_DIR` and may never
+land back in the trash), so it can neither read from outside the trash nor write
+outside the library.
 
 > **Why this manual visibility/control?** The automatic retention cleanup
 > (`TRASH_RETENTION_DAYS`, default 30, in **charts-import**) deletes trashed

@@ -246,6 +246,12 @@ def cover_download(path: str) -> tuple[bytes, str]:
 # entry (keyed by the lowercased basename, exactly as manifest.record wrote it)
 # so charts-import does NOT re-import the just-trashed file on its next run -
 # without this step the persistent manifest entry would bring the song back.
+#
+# To make a later GREEN "Wiederherstellen" (restore) from the Papierkorb reliable
+# AND manifest-correct, delete also writes a tiny per-file restore SIDECAR next
+# to the trashed file (see _write_restore_sidecar): it records the original
+# library-relative path and the removed manifest entry, so trash.restore_file can
+# put the file back at the exact same spot and re-insert the manifest entry.
 
 def delete_song(path: str) -> dict:
     """
@@ -287,10 +293,34 @@ def delete_song(path: str) -> dict:
         logger.warning(t("import.tags.write_failed", path=real, error=e))
         raise EditorError("write_failed", 500)
 
-    # Step 4 (best-effort, post-move): prune an emptied stack-single folder,
-    # clear the manifest entry, drop the cached index record. None of these may
-    # turn the already-successful trash-move into an error.
+    # Step 4 (best-effort, post-move): clear the manifest entry (capturing its
+    # value for the restore sidecar), write the restore sidecar, prune an emptied
+    # stack-single folder, drop the cached index record. None of these may turn
+    # the already-successful trash-move into an error.
     #
+    # Manifest FIRST so we can capture the removed value: pop_entry returns both
+    # the cleared flag and the value, which the sidecar stores so a later restore
+    # can re-insert the exact entry (keyed by the lowercased basename).
+    manifest_cleared = False
+    manifest_key = os.path.basename(real).lower()
+    manifest_value = None
+    try:
+        manifest_cleared, manifest_value = manifest.pop_entry(
+            config.MANIFEST_FILE, os.path.basename(real))
+    except Exception:
+        manifest_cleared, manifest_value = False, None
+
+    # Restore sidecar: a tiny JSON co-located with the trashed file as
+    # "<dest>.trashinfo.json". It captures exactly what a scoped restore needs -
+    # the original MUSIC_DIR-relative path (so restore puts the file back at the
+    # same spot without parsing the trash path) and the removed manifest entry
+    # (so restore re-inserts it). Best-effort: a sidecar write failure never
+    # fails the delete; the row simply becomes non-restorable (no sidecar).
+    try:
+        _write_restore_sidecar(dest, rel, manifest_key, manifest_value)
+    except Exception:
+        pass
+
     # Folder cleanup: only for a stack-single <Artist>/<Title>/<Title>.<ext>
     # layout, and only the inner <Title> album folder - never the <Artist> dir
     # (it may legitimately hold other titles) and never a Lidarr/compilation
@@ -302,13 +332,6 @@ def delete_song(path: str) -> dict:
     except Exception:
         pass
 
-    manifest_cleared = False
-    try:
-        manifest_cleared = manifest.remove_entry(config.MANIFEST_FILE,
-                                                 os.path.basename(real))
-    except Exception:
-        manifest_cleared = False
-
     try:
         library.remove_index_entry(real)
     except Exception:
@@ -319,6 +342,34 @@ def delete_song(path: str) -> dict:
         "trashed_to": _rel_to_music(dest),
         "manifest_cleared": manifest_cleared,
     }
+
+
+# Suffix of the per-file restore sidecar written next to a Tag-Editor-trashed
+# file. The trash listing/restore logic keys off this exact suffix: these
+# sidecars are hidden from the trash rows and cleaned up with their audio file.
+RESTORE_SIDECAR_SUFFIX = ".trashinfo.json"
+
+
+def _write_restore_sidecar(dest: str, original_rel_path: str, manifest_key: str,
+                           manifest_entry) -> None:
+    """
+    Write the restore sidecar for a Tag-Editor-trashed file atomically (temp +
+    os.replace) as "<dest>.trashinfo.json". Captures the original MUSIC_DIR-
+    relative path, the manifest key + removed value, and a timestamp. Raises
+    OSError on write failure (the caller treats it as best-effort).
+    """
+    import json
+    sidecar = dest + RESTORE_SIDECAR_SUFFIX
+    payload = {
+        "original_rel_path": original_rel_path.replace(os.sep, "/"),
+        "manifest_key": manifest_key,
+        "manifest_entry": manifest_entry,
+        "deleted_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = sidecar + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, sidecar)
 
 
 def _unique_trash_dest(dest: str) -> str:

@@ -4,7 +4,14 @@ Trash (Papierkorb) manager for the Manual Tag Editor.
 Lists the MUSIC_DIR/.charts-trash/ tree (the stack's single reversible safety
 stage: the upgrade/replace path, the manual dedup runs and the FLAC->MP3 convert
 move files here instead of hard-deleting them), permanently deletes a single
-trashed file, and empties the whole trash.
+trashed file, empties the whole trash, and RESTORES a single Tag-Editor-deleted
+file back to its original library location.
+
+Restore is deliberately SCOPED: only rows under tageditor-delete-<date>/ that
+still carry their per-file restore sidecar (written by editor.delete_song) are
+restorable, because that is the one flow where charts-config both preserves the
+full library-relative path and owns the manifest relationship. The collision
+policy is REFUSE (never overwrite a file that already sits at the target).
 
 The delete/empty actions are the MOST destructive operations in the whole stack
 (they hard-delete files that are already at the last reversible stage), so the
@@ -28,13 +35,14 @@ its guard delegates to editor._guarded_realpath rather than copying it, so the
 repo-root shared-helper parity test needs no change.
 """
 
+import json
 import logging
 import os
 import shutil
 import threading
 import time
 
-from . import config, editor
+from . import config, editor, library, manifest, tags
 from .i18n import t
 
 logger = logging.getLogger(__name__)
@@ -49,6 +57,28 @@ TRASH_LIST_LIMIT = 2000
 # Ignorable sidecar directory names skipped while pruning an emptied subfolder
 # (mirrors library._CLEANUP_IGNORE; a folder holding only these counts as empty).
 _CLEANUP_IGNORE = {"@eaDir", "#recycle", ".DS_Store"}
+
+# The only trash subfolder prefix whose rows get the green restore button.
+# Scope (a): restore is limited to the Tag-Editor delete flow, the ONE flow that
+# both preserves the full library-relative path AND writes a restore sidecar.
+# Convert (flac2mp3-), dedup (dedup-) and charts-import upgrade/replace
+# (<YYYYMMDD>/<basename>) rows are deliberately NOT restorable (ambiguous target
+# and/or no sidecar) and keep only their red delete button.
+_RESTORE_LABEL_PREFIX = "tageditor-delete-"
+
+
+def _is_restorable(rel: str, full: str) -> bool:
+    """
+    True only for a Tag-Editor-delete row (top folder starts with
+    tageditor-delete-) that still carries its restore sidecar
+    ("<full>" + editor.RESTORE_SIDECAR_SUFFIX). Pre-feature deletions have no
+    sidecar and are therefore not restorable. Fail-closed: any check that is not
+    unambiguously yes returns False.
+    """
+    top = rel.split("/", 1)[0] if rel else ""
+    if not top.startswith(_RESTORE_LABEL_PREFIX):
+        return False
+    return os.path.isfile(full + editor.RESTORE_SIDECAR_SUFFIX)
 
 
 # --- trash-scoped realpath guard (the security core) ------------------------
@@ -132,8 +162,15 @@ def _build_scan() -> dict:
 
     Each entry: {rel_path (POSIX, relative to the trash root, starting with the
     source subfolder), ext (lowercased), format (ext[1:].upper() or '?'), bytes,
-    size_human}. total_bytes/count reflect the WHOLE tree even when the entry
-    list is truncated to TRASH_LIST_LIMIT.
+    size_human, restorable (bool)}. total_bytes/count reflect the WHOLE tree even
+    when the entry list is truncated to TRASH_LIST_LIMIT.
+
+    The per-file restore sidecars (editor.RESTORE_SIDECAR_SUFFIX) are internal
+    bookkeeping: they are SKIPPED here (neither listed nor counted nor summed) so
+    they never show up as their own trashed row. `restorable` is True only for a
+    row that both lives under a tageditor-delete-<date>/ folder AND has its
+    restore sidecar present (so the green button only appears where restore can
+    actually put the file back + re-create the manifest entry).
     """
     root = _trash_root()
     entries: list[dict] = []
@@ -145,6 +182,9 @@ def _build_scan() -> dict:
     try:
         for dirpath, _dirs, files in os.walk(root, followlinks=False):
             for name in files:
+                # Internal restore sidecars are never a trash row of their own.
+                if name.endswith(editor.RESTORE_SIDECAR_SUFFIX):
+                    continue
                 full = os.path.join(dirpath, name)
                 try:
                     size = os.path.getsize(full)
@@ -163,7 +203,10 @@ def _build_scan() -> dict:
                     "format": ext[1:].upper() if ext else "?",
                     "bytes": size,
                     "size_human": _human_size(size),
-                    # Absolute real path for the delete route; never displayed.
+                    # Restorable only for Tag-Editor-delete rows that still carry
+                    # their restore sidecar (scope (a); see _is_restorable).
+                    "restorable": _is_restorable(rel, full),
+                    # Absolute real path for the delete/restore routes; never displayed.
                     "path": full,
                 })
     except OSError:
@@ -227,9 +270,122 @@ def delete_file(path: str) -> dict:
         logger.warning(t("config.tageditor.log.trash_delete_failed",
                                 path=real, error=str(e)))
         raise editor.EditorError("trash_delete_failed", 500)
+    # Clean up the file's restore sidecar alongside it (best-effort; a leftover
+    # sidecar would otherwise be orphaned and still skipped by the listing).
+    try:
+        sidecar = real + editor.RESTORE_SIDECAR_SUFFIX
+        if os.path.isfile(sidecar):
+            os.remove(sidecar)
+    except OSError:
+        pass
     invalidate()
     _prune_up_to_root(os.path.dirname(real), root)
     return {"deleted": rel}
+
+
+# --- restore a single Tag-Editor-trashed file -------------------------------
+
+def restore_file(path: str) -> dict:
+    """
+    Restore ONE Tag-Editor-trashed file back to its original library location
+    (the GREEN "Wiederherstellen" action). Scoped to tageditor-delete-<date>/
+    rows with a restore sidecar only (see _is_restorable); every other trash
+    origin is non-restorable and never reaches here with a usable sidecar.
+
+    Order of operations, fail-closed:
+      1. Source guard: _guarded_trash_realpath (realpath inside MUSIC_DIR AND
+         strictly inside .charts-trash) + require an existing regular file
+         (not_found, 404). No traversal, no restoring from outside the trash.
+      2. Read the restore sidecar ("<src>" + RESTORE_SIDECAR_SUFFIX). No sidecar
+         (pre-feature deletion / other origin) -> restore_no_sidecar (400): refuse
+         rather than guess a target.
+      3. Build the target as MUSIC_DIR/<original_rel_path> and guard it with the
+         UNCHANGED editor._guarded_realpath (inside MUSIC_DIR), then assert it is
+         NOT inside the trash (never "restore" into the trash).
+      4. Collision policy = REFUSE: if the target already exists ->
+         restore_target_exists (400), nothing moved (the re-download case: the
+         correct song may already sit at that path; never clobber it).
+      5. Move the file back via library._move_file (recreates a pruned stack-single
+         folder, mtime preserved, os.rename). A move OSError -> trash_restore_failed
+         (500).
+      6. Best-effort post-move: re-insert the manifest entry from the sidecar
+         (manifest.add_entry) so charts-import recognizes the song again, remove
+         the consumed sidecar, invalidate the cache, prune the emptied trash
+         subfolder, and refresh the search index for the restored path.
+
+    Returns {"restored": "<target rel-to-MUSIC_DIR>"}. Raises editor.EditorError
+    on guard/existence/sidecar/collision/move failure.
+    """
+    real = _guarded_trash_realpath(path)
+    if not os.path.isfile(real):
+        raise editor.EditorError("not_found", 404)
+
+    sidecar = real + editor.RESTORE_SIDECAR_SUFFIX
+    info = _read_restore_sidecar(sidecar)
+    if info is None:
+        raise editor.EditorError("restore_no_sidecar", 400)
+    original_rel = (info.get("original_rel_path") or "").strip()
+    if not original_rel:
+        raise editor.EditorError("restore_no_sidecar", 400)
+
+    base = os.path.realpath(config.MUSIC_DIR)
+    target = os.path.normpath(os.path.join(base, original_rel))
+    # Target guard: must resolve inside MUSIC_DIR (reuse the unchanged guard) and
+    # must NOT be inside the trash root. editor._guarded_realpath realpaths a
+    # possibly-missing target by resolving its existing ancestors.
+    guarded_target = editor._guarded_realpath(target)
+    root = _trash_root()
+    if guarded_target == root or guarded_target.startswith(root + os.sep):
+        raise editor.EditorError("trash_path_outside", 400)
+
+    # Collision = refuse (never overwrite, never keep-both).
+    if os.path.exists(target):
+        raise editor.EditorError("restore_target_exists", 400)
+
+    try:
+        library._move_file(real, target)          # recreates folders, mtime kept
+    except OSError as e:
+        logger.warning(t("config.tageditor.log.trash_restore_failed",
+                                path=real, error=str(e)))
+        raise editor.EditorError("trash_restore_failed", 500)
+
+    # Best-effort post-move: re-insert the manifest entry, drop the sidecar,
+    # invalidate the cache, prune the emptied trash folder, refresh the index.
+    manifest_key = (info.get("manifest_key") or "").lower()
+    manifest_entry = info.get("manifest_entry")
+    if manifest_key and manifest_entry is not None:
+        try:
+            manifest.add_entry(config.MANIFEST_FILE, manifest_key, manifest_entry)
+        except Exception:
+            pass
+    try:
+        if os.path.isfile(sidecar):
+            os.remove(sidecar)
+    except OSError:
+        pass
+    invalidate()
+    _prune_up_to_root(os.path.dirname(real), root)
+    try:
+        fields = tags.read_editable_tags(target)
+        library.update_index_entry(target, fields.get("artist", ""),
+                                   fields.get("title", ""))
+    except Exception:
+        pass
+    return {"restored": os.path.relpath(target, base).replace(os.sep, "/")}
+
+
+def _read_restore_sidecar(sidecar: str) -> dict | None:
+    """
+    Load and return the restore sidecar dict at `sidecar`, or None when it is
+    absent / unreadable / malformed (fail-closed: a bad sidecar is treated as
+    "no sidecar", so restore refuses rather than guessing a target).
+    """
+    try:
+        with open(sidecar, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _prune_up_to_root(start_dir: str, root: str) -> None:

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config12">
+<link rel="stylesheet" href="/static/style.css?v=config13">
 </head>
 <body>
 <header>
@@ -364,6 +364,23 @@
                       data-i18n="tageditor.trash.delete.confirm"></button>
               <button type="button" id="te-trash-delete-cancel" class="te-modal-btn"
                       data-i18n="tageditor.trash.delete.cancel"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restore confirm (green action): a LIGHT confirm (restore is
+             reversible/non-destructive). Shows the file's rel_path; only the
+             confirming click POSTs to /api/tageditor/trash/restore. -->
+        <div id="te-trash-restore-dialog" class="te-modal" hidden>
+          <div class="te-modal-card" role="dialog" aria-modal="true"
+               aria-labelledby="te-trash-restore-title">
+            <h3 id="te-trash-restore-title" data-i18n="tageditor.trash.restore.title"></h3>
+            <p id="te-trash-restore-warn" class="te-modal-q"></p>
+            <div class="te-modal-buttons">
+              <button type="button" id="te-trash-restore-confirm" class="te-modal-btn te-restore-ok"
+                      data-i18n="tageditor.trash.restore.confirm"></button>
+              <button type="button" id="te-trash-restore-cancel" class="te-modal-btn"
+                      data-i18n="tageditor.trash.restore.cancel"></button>
             </div>
           </div>
         </div>
@@ -1227,13 +1244,21 @@ function initTagEditor() {
         listEl.innerHTML = `<div class="muted-txt">${t("tageditor.trash.empty_state")}</div>`;
         return;
       }
-      let html = d.entries.map(e =>
-        `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.rel_path)}">` +
-        `<span class="te-trash-path">${esc(e.rel_path)}</span>` +
-        `<span class="badge te-trash-fmt">${esc(e.format)}</span>` +
-        `<span class="te-trash-size">${esc(e.size_human)}</span>` +
-        `<button type="button" class="btn-sm te-trash-del">${esc(t("tageditor.trash.delete.btn"))}</button>` +
-        `</div>`).join("");
+      let html = d.entries.map(e => {
+        // The GREEN restore button renders ONLY for a backend-flagged restorable
+        // row (a Tag-Editor-delete entry with its restore sidecar); every other
+        // row keeps only the red delete button.
+        const restoreBtn = e.restorable
+          ? `<button type="button" class="btn-sm te-trash-restore">${esc(t("tageditor.trash.restore.btn"))}</button>`
+          : "";
+        return `<div class="te-trash-row" data-path="${esc(e.path)}" data-rel="${esc(e.rel_path)}">` +
+          `<span class="te-trash-path">${esc(e.rel_path)}</span>` +
+          `<span class="badge te-trash-fmt">${esc(e.format)}</span>` +
+          `<span class="te-trash-size">${esc(e.size_human)}</span>` +
+          restoreBtn +
+          `<button type="button" class="btn-sm te-trash-del">${esc(t("tageditor.trash.delete.btn"))}</button>` +
+          `</div>`;
+      }).join("");
       if (d.truncated) {
         html += `<div class="muted-txt te-trash-trunc">` +
           `${esc(t("tageditor.trash.truncated", {n: d.entries.length}))}</div>`;
@@ -1287,6 +1312,55 @@ function initTagEditor() {
           setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
         }
       } catch (e7) {
+        setMsg(t("tageditor.unreachable"), true);
+      }
+      loadTrash();   // refresh list + total regardless of outcome
+    });
+  }
+
+  // --- Restore (green) --------------------------------------------------------
+  // Non-destructive: move a Tag-Editor-deleted song back to its original
+  // location. A light confirm (restore is reversible) mirrors the delete modal;
+  // only the confirming click POSTs the absolute path to /trash/restore.
+  let _trashRestorePath = null;
+  const trashRestoreDialog = document.getElementById("te-trash-restore-dialog");
+  const trashRestoreWarn = document.getElementById("te-trash-restore-warn");
+  const trashRestoreConfirm = document.getElementById("te-trash-restore-confirm");
+  const trashRestoreCancel = document.getElementById("te-trash-restore-cancel");
+  if (trashList && trashRestoreDialog) {
+    trashList.addEventListener("click", (e) => {
+      const btn = e.target.closest(".te-trash-restore");
+      if (!btn) return;
+      const row = e.target.closest(".te-trash-row");
+      if (!row) return;
+      _trashRestorePath = row.getAttribute("data-path");
+      const rel = row.getAttribute("data-rel") || "";
+      if (trashRestoreWarn) {
+        trashRestoreWarn.textContent = t("tageditor.trash.restore.warn", {path: rel});
+      }
+      trashRestoreDialog.hidden = false;
+    });
+    if (trashRestoreCancel) trashRestoreCancel.addEventListener("click", () => {
+      trashRestoreDialog.hidden = true;
+      _trashRestorePath = null;
+    });
+    if (trashRestoreConfirm) trashRestoreConfirm.addEventListener("click", async () => {
+      trashRestoreDialog.hidden = true;
+      const path = _trashRestorePath;
+      _trashRestorePath = null;
+      if (!path) return;
+      const fd = new FormData();
+      fd.append("path", path);
+      try {
+        const r = await fetch("/api/tageditor/trash/restore",
+          {method: "POST", body: fd, cache: "no-store"});
+        const d = await r.json();
+        if (r.ok && d && d.ok) {
+          setMsg(t("tageditor.trash.restore.ok", {path: d.restored || ""}), false);
+        } else {
+          setMsg(esc((d && (d.error || d.message)) || t("tageditor.unreachable")), true);
+        }
+      } catch (e9) {
         setMsg(t("tageditor.unreachable"), true);
       }
       loadTrash();   // refresh list + total regardless of outcome

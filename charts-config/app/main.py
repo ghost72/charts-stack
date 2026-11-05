@@ -367,6 +367,7 @@ async def api_tageditor_trash(request: Request):
     # client-side from the delete route's echo, never leaked in the list body).
     entries = [{"rel_path": e["rel_path"], "ext": e["ext"], "format": e["format"],
                 "bytes": e["bytes"], "size_human": e["size_human"],
+                "restorable": e["restorable"],
                 "path": e["path"]}
                for e in scan["entries"]]
     return JSONResponse({
@@ -404,6 +405,25 @@ async def api_tageditor_trash_empty(request: Request, confirm: str = Form("")):
                             content={"error": i18n.t("config.api.not_authed")})
     try:
         return JSONResponse({"ok": True, **trash.empty_trash(confirm)})
+    except editor.EditorError as err:
+        return _editor_error(err)
+
+
+@app.post("/api/tageditor/trash/restore")
+async def api_tageditor_trash_restore(request: Request, path: str = Form("")):
+    # Restore ONE Tag-Editor-trashed file (reversible, non-destructive) back to
+    # its original library location. Behind the SAME _current_user auth gate
+    # (401 anon) as every other /api/tageditor/* route; NOT behind
+    # TAGEDITOR_AUDIO_ENABLED. trash.restore_file reuses the SAME guards as the
+    # trash delete (realpath inside MUSIC_DIR + strictly inside .charts-trash),
+    # reads the restore sidecar for the target + manifest entry, REFUSES on a
+    # collision (restore_target_exists) and refuses with restore_no_sidecar when
+    # there is no restore data (a pre-feature deletion).
+    if not _current_user(request):
+        return JSONResponse(status_code=401,
+                            content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({"ok": True, **trash.restore_file(path)})
     except editor.EditorError as err:
         return _editor_error(err)
 

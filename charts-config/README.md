@@ -220,8 +220,26 @@ read-only und TTL-gecacht. Zwei Aktionen:
 - **Ganzen Papierkorb leeren** – mit einer deutlichen Bestätigung. Das ist
   **unwiderruflich**: der Papierkorb IST die letzte reversible Stufe, was hier
   gelöscht wird, ist endgültig weg.
+- **Einzelnen Song wiederherstellen (grüner Button)** – erscheint **nur** auf
+  Zeilen, die über den „Song löschen"-Button des Tag-Editors gelöscht wurden
+  (unter `tageditor-delete-<Datum>/`); Convert-/Dedup- und charts-import-
+  Upgrade/Replace-Zeilen behalten nur den roten Löschen-Button (ihr Ursprungsort
+  ist mehrdeutig, daher ausserhalb des Umfangs). Nach einer leichten Bestätigung
+  (Wiederherstellen ist nicht destruktiv) wandert die Datei zurück an ihren
+  **exakten ursprünglichen Ort** in der Library, ihr charts-import-
+  **Manifest-Eintrag wird neu angelegt** (der Stack kennt den Song wieder), und
+  ein zuvor entfernter `<Artist>/<Titel>/`-Ordner wird neu erstellt.
+  **Kollision = Ablehnung:** Liegt am ursprünglichen Ort bereits eine Datei
+  (z. B. der Song wurde unter dem korrekten Namen neu geladen), wird die
+  Wiederherstellung abgelehnt und die vorhandene Datei **nie überschrieben**. Das
+  funktioniert, weil das **Löschen** im Tag-Editor eine kleine Restore-Sidecar
+  (`<gelöschte-Datei>.trashinfo.json`, in der Liste ausgeblendet) mit dem
+  Original­pfad + entferntem Manifest-Eintrag schreibt. **Nur Songs, die mit dem
+  Tag-Editor NACH Einführung dieser Funktion gelöscht wurden, sind
+  wiederherstellbar** – ältere Löschungen haben keine Sidecar, und der Button
+  lehnt mit einer klaren „keine Restore-Daten"-Meldung ab.
 
-**Sicherheit:** Liste **und** Löschen/Leeren liegen hinter demselben Auth-Gate
+**Sicherheit:** Liste **und** Löschen/Leeren/Wiederherstellen liegen hinter demselben Auth-Gate
 wie jede andere `/api/tageditor/*`-Route (401 anonym). Das Löschen ist **streng
 auf `.charts-trash` beschränkt**: über die bestehende MUSIC_DIR-Prüfung hinaus
 verlangt eine zusätzliche Realpath-Containment-Prüfung, dass der aufgelöste Pfad
@@ -229,7 +247,11 @@ verlangt eine zusätzliche Realpath-Containment-Prüfung, dass der aufgelöste P
 des Papierkorbs über diesen Endpoint gelöscht werden (Schutz gegen Traversal UND
 gegen einen Bug, der einen Nicht-Papierkorb-Pfad durchreicht). **Symlinks werden
 nie aus dem Papierkorb heraus verfolgt**, und das Leeren verlangt serverseitig
-ein **ausdrückliches Confirm-Flag** (kein Ein-Klick).
+ein **ausdrückliches Confirm-Flag** (kein Ein-Klick). **Das Wiederherstellen
+nutzt dieselben Guards** (die Quelle muss streng innerhalb `.charts-trash`
+liegen; das Wiederherstellungsziel ist innerhalb `MUSIC_DIR` geschützt und darf
+nie wieder im Papierkorb landen), kann also weder ausserhalb des Papierkorbs
+lesen noch ausserhalb der Library schreiben.
 
 > **Warum diese manuelle Sicht/Steuerung?** Die automatische Aufbewahrung
 > (`TRASH_RETENTION_DAYS`, Default 30, in **charts-import**) löscht nach

@@ -194,6 +194,29 @@ def test_delete_happy_path(library_dir, monkeypatch):
     assert "other.mp3" in data["entries"]
 
 
+def test_delete_writes_restore_sidecar(library_dir, monkeypatch):
+    """Delete writes a restore sidecar next to the trashed file capturing the
+    original library-relative path AND the removed manifest entry, so a later
+    restore can put the file back and re-create the manifest entry."""
+    root, mp3, manifest = library_dir
+    main_mod = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+    r = client.post("/api/tageditor/delete", data={"path": mp3})
+    assert r.status_code == 200, r.text
+    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    trashed = (root / ".charts-trash" / f"tageditor-delete-{day}"
+               / "Wrong Artist" / "My Song" / "My Song.mp3")
+    sidecar = pathlib.Path(str(trashed) + ".trashinfo.json")
+    assert sidecar.is_file()
+    info = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert info["original_rel_path"] == "Wrong Artist/My Song/My Song.mp3"
+    assert info["manifest_key"] == "my song.mp3"
+    # The FULL removed manifest value is preserved for re-insertion.
+    assert info["manifest_entry"]["artist"] == "Wrong Artist"
+    assert info["manifest_entry"]["source"] == "youtube"
+    assert info["deleted_utc"]
+
+
 def test_delete_prunes_empty_single_folder(library_dir, monkeypatch):
     """The now-empty stack-single <Title> album folder is removed, but its parent
     <Artist> folder is left (it may hold other titles)."""

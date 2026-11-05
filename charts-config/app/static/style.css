@@ -930,3 +930,19 @@ body.login {
 }
 .te-modal-btn.danger:hover { filter: brightness(1.1); }
 .te-danger-text { color: #ffb4b4; }
+
+/* Green restore button on a restorable (Tag-Editor-delete) trash row + its
+   modal confirm. Reuses the stack's success accent (var(--ok)); a green sibling
+   of the red delete so the non-destructive action reads clearly as "put back".
+   Mirrors the .te-trash-empty-btn shape. */
+.te-trash-restore {
+  flex: 0 0 auto;
+  border: 1px solid #2a7a3a; border-radius: 8px;
+  background: #16321f; color: var(--ok);
+  padding: 6px 12px; font-size: .8rem; cursor: pointer; white-space: nowrap;
+}
+.te-trash-restore:hover { filter: brightness(1.2); border-color: #45c060; }
+.te-modal-btn.te-restore-ok {
+  background: #2a7a3a; border-color: transparent; color: #fff;
+}
+.te-modal-btn.te-restore-ok:hover { filter: brightness(1.1); }

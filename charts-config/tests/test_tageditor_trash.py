@@ -164,6 +164,43 @@ def test_trash_list_does_not_follow_symlink_out(env, monkeypatch):
     assert not any("real.mp3" in rel for rel in rels)
 
 
+# --- restorable flag + sidecar hiding ---------------------------------------
+
+def test_trash_list_flags_restorable_and_hides_sidecar(env, monkeypatch):
+    """A tageditor-delete row WITH its restore sidecar is flagged restorable; a
+    convert/dedup/upgrade row is not. The sidecar file itself is NOT listed as a
+    row of its own (nor counted/summed)."""
+    root, trash_root, manifest = env
+    # Restorable: tageditor-delete entry WITH its sidecar.
+    tde = trash_root / "tageditor-delete-2026-11-06" / "Artist" / "Song" / "Song.mp3"
+    _write(tde, b"\x00" * 100)
+    _write(pathlib.Path(str(tde) + ".trashinfo.json"),
+           b'{"original_rel_path": "Artist/Song/Song.mp3", "manifest_key": "song.mp3", "manifest_entry": {}}')
+    # NOT restorable: a tageditor-delete entry withOUT a sidecar (pre-feature).
+    tde_nosidecar = trash_root / "tageditor-delete-2026-11-06" / "Old" / "Tune" / "Tune.mp3"
+    _write(tde_nosidecar, b"\x00" * 50)
+    # NOT restorable: convert / dedup / upgrade origins.
+    _write(trash_root / "flac2mp3-2026-11-03" / "B" / "Al" / "y.flac", b"\x01" * 20)
+    _write(trash_root / "dedup-2026-11-02" / "C" / "Cs" / "z.mp3", b"\x02" * 30)
+    _write(trash_root / "20260930" / "Overkill.mp3", b"\x03" * 40)
+
+    main_mod, _ = _reload_app(monkeypatch, root, manifest)
+    client = _authed_client(main_mod)
+    r = client.get("/api/tageditor/trash")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    by_rel = {e["rel_path"]: e for e in d["entries"]}
+    # The sidecar is NOT a row and NOT counted.
+    assert not any(rel.endswith(".trashinfo.json") for rel in by_rel)
+    assert d["count"] == 5
+    # Exactly the tageditor-delete row with a sidecar is restorable.
+    assert by_rel["tageditor-delete-2026-11-06/Artist/Song/Song.mp3"]["restorable"] is True
+    assert by_rel["tageditor-delete-2026-11-06/Old/Tune/Tune.mp3"]["restorable"] is False
+    assert by_rel["flac2mp3-2026-11-03/B/Al/y.flac"]["restorable"] is False
+    assert by_rel["dedup-2026-11-02/C/Cs/z.mp3"]["restorable"] is False
+    assert by_rel["20260930/Overkill.mp3"]["restorable"] is False
+
+
 # --- delete route -----------------------------------------------------------
 
 def test_trash_delete_anon_401(env, monkeypatch):

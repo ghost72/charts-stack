@@ -10,12 +10,14 @@ This is a copy-into-each-service module (no cross-service runtime import).
 Fail-open: any read error yields an empty map, so the editor never breaks when
 the manifest is absent or malformed.
 
-load_entries is read-only (the origin-classification signal). remove_entry is
-the ONE mutating helper: the manual Tag-Editor's delete action removes the
-file's manifest entry so charts-import does not re-import the just-trashed file
-on its next run. Keyed by the lowercased basename exactly as charts-download /
-charts-songrequest write it (manifest.record), so a deleted song does not come
-back.
+load_entries is read-only (the origin-classification signal). remove_entry /
+pop_entry remove the file's manifest entry when the manual Tag-Editor deletes a
+song, so charts-import does not re-import the just-trashed file on its next run
+(pop_entry additionally hands back the removed value so the delete flow can stash
+it in a restore sidecar). add_entry re-inserts it on restore. All keyed by the
+lowercased basename exactly as charts-download / charts-songrequest write it
+(manifest.record), so a deleted song does not come back - and a restored one is
+recognized again.
 """
 
 import json
@@ -56,26 +58,43 @@ def remove_entry(path: str, filename: str) -> bool:
     file was rewritten, False when there was nothing to remove (missing manifest,
     unknown key) or the key was absent.
 
+    Thin wrapper around pop_entry (which also hands back the removed value for the
+    Tag-Editor delete flow's restore sidecar); this keeps the original boolean
+    contract for callers that do not need the value.
+    """
+    cleared, _value = pop_entry(path, filename)
+    return cleared
+
+
+def pop_entry(path: str, filename: str):
+    """
+    Remove the manifest entry keyed by the lowercased basename of `filename` and
+    return (cleared, value): `cleared` True when an entry was present and the file
+    was rewritten (False on missing manifest / unknown key / write error), and
+    `value` the removed entry's value (so the Tag-Editor delete flow can stash it
+    in the restore sidecar) or None when nothing was removed.
+
     Preserves the rest of the manifest (loads the FULL document, deletes only the
     one key under "entries", writes atomically via a temp file + os.replace,
     exactly like the writers' _save). Fail-open: any read/parse/write error logs
-    a warning and returns False without raising, so a delete that trashed the
-    audio file never crashes on a manifest hiccup (the file is already gone; a
-    stale manifest entry only risks a benign re-import, not data loss).
+    a warning and returns (False, None) without raising, so a delete that trashed
+    the audio file never crashes on a manifest hiccup (the file is already gone;
+    a stale manifest entry only risks a benign re-import, not data loss).
     """
     key = _basename_key(filename)
     if not key:
-        return False
+        return False, None
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return False
+        return False, None
     if not isinstance(data, dict):
-        return False
+        return False, None
     entries = data.get("entries")
     if not isinstance(entries, dict) or key not in entries:
-        return False
+        return False, None
+    value = entries[key]
     del entries[key]
     data["entries"] = entries
     try:
@@ -86,5 +105,48 @@ def remove_entry(path: str, filename: str) -> bool:
         os.replace(tmp, path)
     except OSError as e:
         logger.warning("tag editor manifest remove failed for %s: %s", path, e)
+        return False, None
+    return True, value
+
+
+def add_entry(path: str, key: str, value) -> bool:
+    """
+    (Re-)insert `value` under the lowercased basename `key` into the manifest at
+    `path` (used by the Tag-Editor restore flow to put back the entry that delete
+    removed, so charts-import recognizes the restored song again). Returns True
+    when written, False when `key`/`value` is missing or a read/parse/write error
+    occurred.
+
+    Preserves the rest of the manifest and writes atomically (temp + os.replace),
+    exactly like pop_entry. Overwrites an existing entry at `key` (restore of a
+    re-created key simply re-establishes the known metadata). Fail-open: any error
+    logs a warning and returns False without raising, so a best-effort manifest
+    re-insert never turns a successful file restore into a failure.
+    """
+    key = (key or "").lower()
+    if not key or value is None:
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        data = {}
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(data, dict):
+        data = {}
+    entries = data.get("entries")
+    if not isinstance(entries, dict):
+        entries = {}
+    entries[key] = value
+    data["entries"] = entries
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.warning("tag editor manifest add failed for %s: %s", path, e)
         return False
     return True

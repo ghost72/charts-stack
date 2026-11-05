@@ -13,6 +13,25 @@ deployed together, so a single stack version is the honest unit.
 ## [Unreleased]
 
 ### Added
+- **charts-config Trash-Manager: a green "Wiederherstellen" (Restore) button.**
+  A trash row shows a green restore button **only** for songs that were deleted
+  via the Tag-Editor delete button (rows under
+  `.charts-trash/tageditor-delete-<date>/`); convert, dedup and charts-import
+  upgrade/replace entries keep only their red delete button (their original
+  location is ambiguous, so they are out of scope). Restore moves the file back
+  to its exact original library location, re-creates its charts-import manifest
+  entry, recreates a pruned `<Artist>/<Title>/` folder, and cleans up its restore
+  data. **Collision policy = refuse:** if a file already exists at the original
+  location (e.g. the song was re-downloaded under the correct name) the restore
+  is refused and the existing file is never overwritten. To make this reliable,
+  the Tag-Editor **delete** flow now also writes a tiny restore sidecar
+  (`<trashed-file>.trashinfo.json`, hidden from the trash list) capturing the
+  original path + removed manifest entry. **Only songs deleted with the
+  Tag-Editor AFTER this feature shipped are restorable** — older deletions have
+  no sidecar and the button refuses with a clear "no restore data" message. New
+  route `POST /api/tageditor/trash/restore`, behind the same `_current_user` auth
+  gate and the same trash-root + `MUSIC_DIR` realpath guards as the trash delete.
+  Static cache token bumped `config12` → `config13`.
 - **charts-config Manual Tag-Editor: a red "Delete song" button.** When a song
   is loaded, a red button (same treatment as the Trash-Manager delete buttons)
   deletes it after a confirm step. The delete is **reversible**: the audio file
