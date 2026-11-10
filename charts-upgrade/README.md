@@ -142,7 +142,7 @@ Wichtige Schalter (siehe `.env.example` für alle):
 
 ### 2. Deploy (auf `your-nas`)
 
-Code nach `/path/to/charts-upgrade/` kopieren (NVMe), dann:
+Code nach `/path/to/charts-upgrade/` kopieren (z. B. auf HDD), dann:
 
 ```bash
 sudo docker compose up -d --build

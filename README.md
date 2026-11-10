@@ -135,6 +135,20 @@ Project → Action → Build; CLI: `docker compose up -d --build <service>`).
 restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
 rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
 
+**Moving the project to another NAS volume (for example NVMe to HDD):** Stop
+the stack first and preserve the entire project folder, including `.env`,
+`slskd/slskd-config` (configuration and DB), local JSON configuration and
+`lang/`. Relative mounts and build contexts follow the project folder; there
+are no hard-coded Volume-4 paths in `compose.yml`. Update any absolute
+`SLSKD_CONFIG_DIR` override in the live `.env`; keep `MUSIC_ROOT` unchanged
+unless the music library itself moves. Update the Container Manager project
+directory, validate with `docker compose config --quiet`, and recreate the
+containers from the new directory with the same project name. A restart alone
+does not update mounts. Reuse existing images; this move does not require an
+image update or rebuild. If the stack is outside the shared folder being
+moved, it must be handled separately. Verify actual container mount sources
+and slskd settings before resuming automation.
+
 > **Synology tip:** `docker compose up -d --build` can reuse stale build layers
 > on Synology, so a code change may not take effect (the `COPY app/` layer is
 > served from cache and your new files are not picked up). The reliable fix is a
@@ -496,6 +510,21 @@ Manager: Projekt → Aktion → Erstellen; per CLI: `docker compose up -d --buil
 dort reicht ein Neustart (`docker compose up -d --force-recreate charts-watchdog`),
 kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
 `docker compose up -d`.
+
+**Projekt auf ein anderes NAS-Volume verschieben (z. B. NVMe auf HDD):** Erst
+den Stack stoppen und den vollständigen Projektordner einschließlich `.env`,
+`slskd/slskd-config` (Konfiguration und DB), lokaler JSON-Konfigurationen und
+`lang/` erhalten. Relative Mounts und Build-Kontexte folgen dem Projektordner;
+`compose.yml` enthält keine festen Volume-4-Pfade. Absolute Überschreibungen
+von `SLSKD_CONFIG_DIR` in der Live-`.env` anpassen; `MUSIC_ROOT` bleibt gleich,
+solange die Musikbibliothek nicht umzieht. Im Container Manager den neuen
+Projektordner verwenden, mit `docker compose config --quiet` prüfen und die
+Container unter demselben Projektnamen aus dem neuen Ordner neu erstellen.
+Ein Neustart allein aktualisiert keine Mounts. Bestehende Images verwenden;
+der Umzug benötigt kein Image-Update und keinen Rebuild. Liegt der Stack
+außerhalb des verschobenen Shares, muss er separat umgezogen werden. Vor dem
+Wiederaufnehmen der Automatik tatsächliche Mount-Quellen und slskd-Einstellungen
+prüfen.
 
 > **Synology-Tipp:** `docker compose up -d --build` kann auf Synology alte
 > Build-Layer wiederverwenden, sodass eine Code-Änderung nicht greift (die

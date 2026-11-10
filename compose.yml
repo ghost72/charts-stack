@@ -7,6 +7,11 @@
 #   2. Im Synology Container Manager ein Projekt auf diesen Ordner anlegen
 #      ODER per CLI:  docker compose up -d --build
 #
+# Speicherort: relative Mounts und Build-Kontexte folgen diesem Projektordner.
+# Beim NAS-Umzug auf HDD den Container-Manager-Projektpfad aktualisieren und
+# Container neu erstellen. Absolute SLSKD_CONFIG_DIR-Werte in .env separat
+# anpassen; MUSIC_ROOT bleibt beim Umzug des Projektordners unveraendert.
+#
 # Die Dienste reden ueber das automatisch angelegte Projekt-Netz miteinander
 # (z.B. charts-download -> http://slskd:5030). Kein manuelles Netz noetig.
 #

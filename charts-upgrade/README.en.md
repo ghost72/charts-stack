@@ -139,7 +139,7 @@ Important switches (see `.env.example` for all):
 
 ### 2. Deploy (on `your-nas`)
 
-Copy the code to `/path/to/charts-upgrade/` (NVMe), then:
+Copy the code to `/path/to/charts-upgrade/` (for example on HDD), then:
 
 ```bash
 sudo docker compose up -d --build
