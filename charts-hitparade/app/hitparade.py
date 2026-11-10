@@ -92,12 +92,6 @@ def _fetch(chart: str, day: date, timeout_s: float, retries: int) -> str:
             r = httpx.get(url, headers=_HEADERS, timeout=timeout_s,
                           follow_redirects=True)
             r.raise_for_status()
-            # hitparade.ch is ISO-8859-1 (Latin-1), not UTF-8. httpx does read
-            # the charset from the header, but we set it explicitly so that
-            # umlauts/accents (é, à, ü ...) are decoded correctly - otherwise
-            # broken characters appear that disturb the library matching.
-            if not r.encoding or r.encoding.lower() in ("ascii", "utf-8"):
-                r.encoding = "iso-8859-1"
             return r.text
         except Exception as e:  # noqa: BLE001 - collect transport errors
             last_err = e
