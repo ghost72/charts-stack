@@ -32,7 +32,8 @@ einen echten Browser-`User-Agent` (ohne UA kommt nur ein leerer Platzhalter).
 Jeder Chart-Eintrag steht als `<div class="chart_title"><a ...><b>ARTIST</b><br>
 TITEL</a></div>` im HTML; Artist/Titel werden daraus gelesen. Ein simpler
 HTTP-Abruf reicht, **kein** Headless-Browser, **keine** API. Die Seite ist
-ISO-8859-1-kodiert (Umlaute/Akzente werden korrekt dekodiert).
+entsprechend dem HTTP-Charset kodiert; ohne Charset-Angabe verwendet httpx
+UTF-8 als Standard. So bleiben Umlaute und Akzente bei UTF-8-Antworten erhalten.
 
 ### Warum nur die Top-100 (`singles`) und nicht die CH-Artist-Charts
 

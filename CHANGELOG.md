@@ -47,6 +47,10 @@ deployed together, so a single stack version is the honest unit.
     manually (click each header toggles asc/desc, default date desc).
 
 ### Fixed
+- **charts-hitparade: respect the HTTP response charset.** Stop overriding
+  UTF-8 responses as Latin-1, which corrupted umlauts and accents in chart
+  titles, notifications, and library matching. A regression test covers the
+  affected UTF-8 response.
 - **charts-config Tag-Editor delete no longer lets charts-import re-import the
   song.** YouTube/Upload songs are recorded in the manifest under the download
   file name (`<Artist> - <Title>.mp3`), but delete looked the entry up by the

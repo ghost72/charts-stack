@@ -33,8 +33,9 @@ hitparade.ch serves the Top 100 as **HTML** – provided you send a real browser
 `User-Agent` (without a UA you only get an empty placeholder). Each chart entry
 is `<div class="chart_title"><a ...><b>ARTIST</b><br>TITLE</a></div>` in the
 HTML; artist/title are read from there. A simple HTTP request is enough, **no**
-headless browser, **no** API. The page is ISO-8859-1 encoded (umlauts/accents
-are decoded correctly).
+headless browser, **no** API. The response is decoded using the HTTP charset;
+httpx defaults to UTF-8 when none is declared. This preserves umlauts and
+accents in UTF-8 responses.
 
 ### Why only the Top 100 (`singles`) and not the CH-Artist charts
 

@@ -174,7 +174,8 @@ and slskd settings before resuming automation.
 > **When a change adds or edits i18n keys** (`lang/{en,de,fr}.json`): those files
 > are bind-mounted (not baked into the image by `COPY app/`), so a `--no-cache`
 > rebuild alone does **not** pick them up. Two things are needed: (1) the updated
-> `lang/*.json` must reach the mounted folder (the NAS checkout, via `git pull`),
+> `lang/*.json` must reach the mounted folder (for example by copying them to
+> the NAS project directory, or via `git pull` if it is a Git checkout),
 > and (2) **restart the service** so its process reloads the table into memory
 > (`docker restart <service>`). A service whose process is still running keeps the
 > old table in RAM and renders raw key names (e.g. `tab_request`) until restarted.
@@ -556,7 +557,8 @@ prüfen.
 > Diese Dateien sind per Bind-Mount eingebunden (nicht via `COPY app/` ins Image
 > gebacken), ein `--no-cache`-Rebuild allein zieht sie also **nicht**. Zwei Dinge
 > sind nötig: (1) die aktualisierten `lang/*.json` müssen in den gemounteten
-> Ordner (NAS-Checkout, per `git pull`), und (2) den Dienst **neu starten**, damit
+> Ordner (z. B. durch Kopieren ins NAS-Projektverzeichnis oder per `git pull`,
+> falls es ein Git-Checkout ist), und (2) den Dienst **neu starten**, damit
 > der Prozess die Tabelle neu in den Speicher lädt (`docker restart <dienst>`).
 > Ein noch laufender Prozess behält die alte Tabelle im RAM und zeigt rohe
 > Key-Namen (z. B. `tab_request`) bis zum Neustart. Prüfen mit
