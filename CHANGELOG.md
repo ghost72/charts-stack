@@ -12,6 +12,8 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-12
+
 ### Changed
 - **charts-config Trash-Manager: column headers now line up.** Header and rows
   are subgrids of one grid table so they share the same column widths; static
