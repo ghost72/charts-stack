@@ -35,6 +35,8 @@ import pathlib
 import sys
 import types
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent  # charts-stack/
 
 
@@ -246,6 +248,91 @@ def test_looks_like_compilation_parity():
         assert fn(comp_path, "Bravo Hits 2020", "Various Artists") is True, (
             f"{svc}: non-year sampler not read as compilation"
         )
+
+
+@pytest.mark.parametrize("service", _LOOKS_SERVICES)
+@pytest.mark.parametrize("ignore_compilations", [False, True])
+@pytest.mark.parametrize("compilation_first", [False, True])
+def test_playlist_prefers_artist_release(
+        service, ignore_compilations, compilation_first, monkeypatch, tmp_path):
+    mod = _load(service, "library.py")
+    music = tmp_path / "Music"
+    sampler = music / "Various Artists" / "Bravo Hits 67 (2009)" / "CD 02" / "Paparazzi.mp3"
+    single = music / "Lady Gaga" / "Paparazzi (2009)" / "Paparazzi.mp3"
+    paths = [sampler, single] if compilation_first else [single, sampler]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    tags = {
+        str(sampler): ("Lady Gaga", "Paparazzi", "Bravo Hits 67", "Various Artists"),
+        str(single): ("Lady Gaga", "Paparazzi", "Paparazzi", "Lady Gaga"),
+    }
+    monkeypatch.setattr(mod, "_read_tags", tags.__getitem__)
+    monkeypatch.setattr(mod.config, "CHARTS_DIR", str(tmp_path / "Charts"))
+    monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", ignore_compilations)
+    monkeypatch.setattr(mod.os, "walk", lambda _: (
+        (str(path.parent), [], [path.name]) for path in paths
+    ))
+    lib = mod.build_index(str(music))
+    match, score = lib.find_match("Lady Gaga", "Paparazzi", 87)
+    assert match is not None
+    assert match.path == str(single)
+    assert score == 100
+    assert sampler.exists() and single.exists()
+
+
+@pytest.mark.parametrize("service", _LOOKS_SERVICES)
+@pytest.mark.parametrize("year_album", [False, True])
+def test_non_compilation_wins_tie_before_year_preference(service, year_album, monkeypatch):
+    mod = _load(service, "library.py")
+    monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", False)
+    sampler = mod.LibraryTrack(
+        "/music/Various Artists/Bravo Hits (2009)/Paparazzi.mp3",
+        "Lady Gaga", "Paparazzi", is_compilation=True,
+    )
+    single = mod.LibraryTrack(
+        f"/music/Lady Gaga/Paparazzi{' (2009)' if year_album else ''}/Paparazzi.mp3",
+        "Lady Gaga", "Paparazzi",
+    )
+    for tracks in ([sampler, single], [single, sampler]):
+        match, score = mod.Library(tracks).find_match("Lady Gaga", "Paparazzi", 87)
+        assert match is single
+        assert score == 100
+
+
+@pytest.mark.parametrize("service", _LOOKS_SERVICES)
+def test_dated_compilation_detection_and_filter(service, monkeypatch):
+    mod = _load(service, "library.py")
+    path = "/music/Various Artists/Bravo Hits 67 (2009)/CD 02/Paparazzi.mp3"
+    assert mod._looks_like_compilation(path, "Bravo Hits 67", "Various Artists")
+    assert mod._looks_like_compilation(
+        "/music/Lady Gaga/Bravo Hits 67 (2009)/Paparazzi.mp3", "Bravo Hits 67", ""
+    )
+    assert mod._looks_like_compilation(
+        "/music/Collection/Album (2009)/Paparazzi.mp3", "Album", "Various Artists"
+    )
+    track = mod.LibraryTrack(
+        path, "Lady Gaga", "Paparazzi",
+        is_compilation=mod._looks_like_compilation(path, "Bravo Hits 67", "Various Artists"),
+    )
+    monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", True)
+    assert mod.Library([track]).find_match("Lady Gaga", "Paparazzi", 87)[0] is None
+    monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", False)
+    assert mod.Library([track]).find_match("Lady Gaga", "Paparazzi", 87)[0] is track
+
+
+@pytest.mark.parametrize("service", _LOOKS_SERVICES)
+def test_artist_album_preference_and_artist_guard_preserved(service, monkeypatch):
+    mod = _load(service, "library.py")
+    monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", False)
+    single = mod.LibraryTrack("/music/Lady Gaga/Single/Paparazzi.mp3", "Lady Gaga", "Paparazzi")
+    album = mod.LibraryTrack("/music/Lady Gaga/The Fame (2008)/Paparazzi.mp3",
+                             "Lady Gaga", "Paparazzi")
+    wrong = mod.LibraryTrack("/music/Other/Album (2009)/Paparazzi.mp3", "Other", "Paparazzi")
+    for tracks in ([single, album, wrong], [wrong, album, single]):
+        match, score = mod.Library(tracks).find_match("Lady Gaga", "Paparazzi", 87)
+        assert match is album
+        assert score == 100
 
 
 # --- FR-1f: matching._COMPILATION_MARKERS set-equality ----------------------

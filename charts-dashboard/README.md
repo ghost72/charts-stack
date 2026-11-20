@@ -56,15 +56,30 @@ Touch-Gerät mit breitem Bildschirm (z. B. iPad) per Finger **frei verschieben**
     persisted-query-Hash → rote Kachel → Signal „`FLASHBACK_HASH` neu holen";
     ohne Hash grau/muted) und **Energy (NRJ)** (⚡, Live-ICY-Erreichbarkeit des
     Schweizer NRJ-Icecast-Streams, den [`charts-energy`](../charts-energy) liest).
+    **Schweizer Hitparade** prüft die aktuelle Singles-Seite
+    (`https://hitparade.ch/charts/singles`), nicht den nicht vorhandenen
+    `/charts`-Index. Die Kachel zeigt die Erreichbarkeit, nicht den Erfolg des
+    letzten Wochenlaufs; dessen Ergebnis steht in der Dienst-Kachel.
+    **Apple Music Charts** hat eine eigene Kachel, getrennt von iTunes:
+    `APPLE_CHARTS_ENABLED=1` aktiviert den Live-Check des öffentlichen
+    Most-played-Feeds für `APPLE_CHARTS_COUNTRY` (Default `ch`).
+    HTTP-Fehler, leere oder ungültige Titel führen zu Rot; ohne Aktivierung
+    bleibt die Kachel grau und es erfolgt kein Abruf.
   - **Hilfsdienste** – Metadaten-/Empfehlungs-Helfer, keine Chart-Quellen:
     **MusicBrainz** (🏷, Live-Erreichbarkeit des Metadaten-/Jahr-Lookup-Helfers),
     iTunes (Cover), Pushover und **ListenBrainz** (liefert Empfehlungen, keine
     Charts, und steht deshalb hier statt bei den Chart-Quellen).
-  - **Muted-Zustand „not in use":** die Kacheln **Energy (NRJ)** und
-    **MusicBrainz** werden bei abgeschaltetem Feature **nicht** gepingt, sondern
-    zeigen ein ausgegrautes **„not in use"**-Badge. Gesteuert wird das über die
-    bestehenden Flags `ENERGY_ENABLED` / `MB_ENABLED` (auf `0` gesetzt → die
-    jeweilige Kachel ist muted statt geprüft).
+  - **Nicht konfiguriert:** slskd, Lidarr, Last.fm, Apple Music Charts,
+    FLASHBACK FM, Energy, Schweizer Hitparade, MusicBrainz und Pushover zeigen
+    bei fehlenden nötigen Zugangsdaten/URLs bzw. deaktiviertem Live-Check
+    einheitlich einen grauen Status **„nicht konfiguriert"**. Ein zusätzlicher
+    Grund wie „kein API-Key" erscheint höchstens einmal. Ohne Konfiguration
+    erfolgt kein Abruf; bei slskd entfallen auch Verbindungs-/Downloadzahlen.
+    Öffentliche Dienste ohne nötige Zugangsdaten (Deezer, ListenBrainz, iTunes)
+    behalten ihren Live-Status. Die bestehenden Warnfarben für reine
+    Metadaten-Helfer bleiben unverändert.
+    Bei Transportfehlern stehen Status und Diagnose getrennt: z. B.
+    „nicht erreichbar“ und „Fehler: ReadTimeout“, ohne wiederholten Statustext.
 
   So sieht man auf einen Blick alle möglichen Verbindungen und ihren
   Live-Zustand.
@@ -92,9 +107,9 @@ Das Dashboard zeigt weiterhin eine **charts-config-Kachel** in der
   **nicht** direkt über den Docker-Socket.
 - **slskd / Lidarr:** direkte API-Abfrage (`/api/v0/server` bzw. `system/status`).
 - **Externe Live-Checks:** billige Pings gegen ListenBrainz, Deezer, Last.fm,
-  iTunes, Pushover und FLASHBACK FM – gecacht (Default 120 s, entkoppelt vom
+  optional Apple Music Charts, iTunes, Pushover und FLASHBACK FM – gecacht (Default 120 s, entkoppelt vom
   15-s-Poll).
-  ListenBrainz/Deezer/Last.fm **heilen** einen gespeicherten `error` des
+  ListenBrainz/Deezer/Last.fm/Apple Music **heilen** einen gespeicherten `error` des
   zugehörigen Dienstes: ist die Quelle live erreichbar, wird die Dienste-Kachel
   **gelb** („läuft wieder") statt hart **rot**. FLASHBACK FM wird per
   GraphQL-LastPlayed-Query geprüft und heilt `charts-flashback` genauso; ein
@@ -104,6 +119,9 @@ Das Dashboard zeigt weiterhin eine **charts-config-Kachel** in der
   mit einem echten `validate`-Call (verbraucht kein Nachrichten-Budget) statt nur
   ein configured-Flag anzuzeigen. Last.fm braucht einen API-Key – ohne Key bleibt
   die Kachel grau (nicht rot).
+  Diese Live-Anzeige macht den vergangenen Lauf nicht nachträglich erfolgreich:
+  für einen erfolgreichen gespeicherten Laufstatus und eine entsprechende
+  Watchdog-Entwarnung muss der Dienst erneut erfolgreich laufen.
 - **Lauf-Statistik:** jeder charts-Dienst schreibt am Ende eines Laufs eine kleine
   JSON-Datei nach `Charts/.charts-status/<dienst>.json`. Das Dashboard liest nur
   diese Dateien – kein Log-Parsing, keine Laufzeit-Kopplung an die Dienste.
@@ -133,6 +151,8 @@ sein).
 | `SLSKD_API_KEY` | – | für slskd-Status (Pflicht im Stack) |
 | `LIDARR_URL` / `LIDARR_API_KEY` | – | optional, für den Lidarr-Check |
 | `LASTFM_API_KEY` | – | optional, für den Last.fm-Live-Check (leer = Kachel grau) |
+| `APPLE_CHARTS_ENABLED` | `0` | Apple-Music-Charts überwachen; aktiviert selbst keinen Sync-Feed |
+| `APPLE_CHARTS_COUNTRY` | `ch` | Überwachtes Land; passend zum gewünschten Apple-Feed setzen |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, für den Pushover-`validate`-Check |
 | `ENERGY_ENABLED` | `0` | bestehendes charts-energy-Flag – `0` setzt die Energy-(NRJ)-Kachel auf „not in use" statt sie zu pingen |
 | `MB_ENABLED` | `1` | bestehendes stackweites Flag – `0` setzt die MusicBrainz-Kachel auf „not in use" statt sie zu pingen |

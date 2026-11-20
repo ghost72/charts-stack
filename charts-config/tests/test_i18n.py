@@ -90,6 +90,17 @@ def test_config_ui_keys_present():
     canaries = {
         "config.ui.section.finder",
         "config.ui.section.energy",
+        "config.ui.section.artists",
+        "config.ui.section.env",
+        "config.ui.config_tabs.tab.artists",
+        "config.ui.config_tabs.tab.env",
+        "config.ui.env.run_hint",
+        "config.ui.env.save",
+        "config.ui.env.secret_set",
+        "config.env.stale_file",
+        "config.ui.artists.run_hint",
+        "config.ui.artists.identity_verified",
+        "config.ui.artists.confirm_enable",
         "config.ui.finder.generic_error",
         "config.ui.finder.run_hint",
         "config.ui.energy.hint",
@@ -166,6 +177,9 @@ def test_index_render_handoff(monkeypatch, lang):
     # into #pane-title at runtime), so the static canaries are the tab labels.
     assert 'data-i18n="config_tabs.tab.finder"' in html
     assert 'data-i18n="config_tabs.tab.energy"' in html
+    assert 'data-i18n="config_tabs.tab.env"' in html
+    assert 'data-pane="env"' in html
+    assert 'id="env-save"' in html
     i18n_obj = _extract_i18n(html)
     # config.ui.* canaries present in the re-based client table. section.*/hint
     # keys are still injected (reused by the tab switcher's header swap).
@@ -173,6 +187,7 @@ def test_index_render_handoff(monkeypatch, lang):
     assert "energy.hint" in i18n_obj
     assert "section.finder" in i18n_obj
     assert "section.energy" in i18n_obj
+    assert "env.run_hint" in i18n_obj
 
 
 def test_login_page_translated(monkeypatch):

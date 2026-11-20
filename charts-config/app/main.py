@@ -7,10 +7,9 @@ Two read-only tools carved out of charts-dashboard:
   - the Energy channel browser that builds per-channel ENERGY_CHANNELS snippets
     and shows the live active status from charts-energy.
 
-The page never changes any config: it only shows ready-to-paste snippets plus
-text hints on where to paste and what to restart. Read-only toward everything:
-it talks to Deezer/Last.fm (WAN) and reads the charts-energy status JSON; it has
-NO Docker access and NO restart button.
+The source and Energy panels are read-only snippet builders. The artist-scenes
+panel stores its local selection in the shared Charts directory. The page has
+no Docker access and no restart button.
 
 Password-protected (own CONFIG_* login + shared APP_USERS/APP_PASSWORD
 fallback, identical mechanism to charts-dashboard). Data is loaded on demand,
@@ -27,7 +26,8 @@ from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
                                Response)
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, collector, config, convert, editor, i18n, library, trash
+from . import (artist_scenes, audio, collector, config, convert, editor,
+               env_editor, i18n, library, trash)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -197,6 +197,153 @@ async def api_sources_energy_channels(request: Request):
     if not _current_user(request):
         return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
     return JSONResponse(collector.energy_channels())
+
+
+@app.get("/api/sources/apple/chart")
+async def api_sources_apple_chart(request: Request, country: str = "ch", limit: int = 100):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    return JSONResponse(collector.apple_chart_check(country, limit))
+
+
+def _artist_scene_error(err: "artist_scenes.ArtistSceneError") -> JSONResponse:
+    if err.status >= 500:
+        logger.error("Artist scene configuration failed: %s", err.code)
+    return JSONResponse(
+        status_code=err.status,
+        content={"error": i18n.t(f"config.mundart.{err.code}")},
+    )
+
+
+async def _json_payload(
+        request: Request,
+        error_key: str = "config.mundart.invalid_payload") -> dict | JSONResponse:
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JSONResponse(
+            status_code=400,
+            content={"error": i18n.t(error_key)},
+        )
+    if not isinstance(payload, dict):
+        return JSONResponse(
+            status_code=400,
+            content={"error": i18n.t(error_key)},
+        )
+    return payload
+
+
+def _env_editor_error(err: "env_editor.EnvEditorError") -> JSONResponse:
+    if err.status >= 500:
+        logger.error("Environment editor failed: %s", err.code)
+    return JSONResponse(
+        status_code=err.status,
+        content={"error": i18n.t(f"config.env.{err.code}")},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/env")
+async def api_env_get(request: Request):
+    if not _current_user(request):
+        return JSONResponse(
+            status_code=401,
+            content={"error": i18n.t("config.api.not_authed")},
+            headers={"Cache-Control": "no-store"},
+        )
+    try:
+        return JSONResponse(env_editor.get_configuration(),
+                            headers={"Cache-Control": "no-store"})
+    except env_editor.EnvEditorError as err:
+        return _env_editor_error(err)
+
+
+@app.post("/api/env")
+async def api_env_save(request: Request):
+    username = _current_user(request)
+    if not username:
+        return JSONResponse(
+            status_code=401,
+            content={"error": i18n.t("config.api.not_authed")},
+            headers={"Cache-Control": "no-store"},
+        )
+    payload = await _json_payload(request, "config.env.invalid_payload")
+    if isinstance(payload, JSONResponse):
+        payload.headers["Cache-Control"] = "no-store"
+        return payload
+    try:
+        return JSONResponse(
+            env_editor.save_configuration(payload, username),
+            headers={"Cache-Control": "no-store"},
+        )
+    except env_editor.EnvEditorError as err:
+        return _env_editor_error(err)
+
+
+@app.get("/api/mundart/artists")
+async def api_mundart_artists(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse(artist_scenes.get_catalog())
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.post("/api/mundart/settings")
+async def api_mundart_settings(request: Request):
+    username = _current_user(request)
+    if not username:
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    payload = await _json_payload(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    try:
+        return JSONResponse(artist_scenes.save_settings(payload, username))
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.post("/api/mundart/artists/link")
+async def api_mundart_artist_link(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    payload = await _json_payload(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    key = payload.get("key")
+    if not isinstance(key, str):
+        return JSONResponse(
+            status_code=400,
+            content={"error": i18n.t("config.mundart.invalid_payload")},
+        )
+    verified = collector.verify_deezer_artist(payload.get("deezer_id"))
+    if not verified["ok"]:
+        return JSONResponse(status_code=verified["status"],
+                            content={"error": verified["detail"]})
+    try:
+        return JSONResponse(artist_scenes.link_artist(
+            key, verified["id"], verified["name"]))
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.post("/api/mundart/artists/add")
+async def api_mundart_artist_add(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    payload = await _json_payload(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    verified = collector.verify_deezer_artist(payload.get("deezer_id"))
+    if not verified["ok"]:
+        return JSONResponse(status_code=verified["status"],
+                            content={"error": verified["detail"]})
+    try:
+        return JSONResponse(artist_scenes.add_manual_artist(
+            verified["id"], verified["name"]))
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
 
 
 # --- Manual Tag Editor (auth-protected; in-place library tag/cover edits) ---

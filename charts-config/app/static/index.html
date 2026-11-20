@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config23">
+<link rel="stylesheet" href="/static/style.css?v=config29">
 </head>
 <body>
 <header>
@@ -39,12 +39,16 @@
             data-i18n="config_tabs.tab.finder">🔎 Quellen-Finder</button>
     <button type="button" class="tab" data-tab="energy"
             data-i18n="config_tabs.tab.energy">⚡ Energy-Kanäle</button>
+    <button type="button" class="tab" data-tab="artists"
+            data-i18n="config_tabs.tab.artists">🎤 Künstler & Szenen</button>
     <button type="button" class="tab" data-tab="tageditor"
             data-i18n="config_tabs.tab.tageditor">🏷️ Tag-Editor</button>
     <button type="button" class="tab" data-tab="nonmp3"
             data-i18n="config_tabs.tab.nonmp3">🎚️ Nicht-MP3</button>
     <button type="button" class="tab" data-tab="trash"
             data-i18n="config_tabs.tab.trash">🗑 Papierkorb</button>
+    <button type="button" class="tab" data-tab="env"
+            data-i18n="config_tabs.tab.env">⚙️ .env</button>
   </div>
 
   <!-- Per-tab heading block: the title (reuses each section's existing
@@ -92,6 +96,23 @@
         </form>
         <div id="lf-tag-results"></div>
       </div>
+      <div class="finder-box">
+        <h3 data-i18n="finder.box.apple">Apple Music Charts</h3>
+        <div class="finder-hint" data-i18n="finder.apple.hint"></div>
+        <form id="apple-chart-form">
+          <label for="apple-country" class="sr-only" data-i18n="finder.apple.country"></label>
+          <select id="apple-country">
+            <option value="ch">CH</option>
+            <option value="de">DE</option>
+            <option value="gb">GB</option>
+            <option value="us">US</option>
+          </select>
+          <label for="apple-limit" class="sr-only" data-i18n="finder.apple.limit"></label>
+          <input id="apple-limit" type="number" min="1" max="100" value="100" required>
+          <button type="submit" data-i18n="finder.btn.check">Prüfen</button>
+        </form>
+        <div id="apple-chart-results"></div>
+      </div>
       <!-- Deezer genre table (live, daily; fallback static) -->
       <div class="finder-box">
         <h3 data-i18n="finder.box.deezer_genres">Deezer-Genres</h3>
@@ -121,8 +142,67 @@
     </div>
   </div>
 
-  <!-- Pane 3: Manueller Tag-Editor (hidden). Search the library, pick a song,
-       edit its tags/cover in place. The only read-write section (saving clears
+  <!-- Pane 3: Artist inventory and per-install scene selection. -->
+  <div class="tabpane" data-pane="artists" hidden>
+    <div class="finder-hint" data-i18n="artists.run_hint"></div>
+    <div class="finder finder-full">
+      <div class="finder-box">
+        <div class="artist-scene-toolbar">
+          <label class="artist-filter-toggle">
+            <input id="artist-filter-enabled" type="checkbox">
+            <span data-i18n="artists.filter_enabled">Filter aktivieren</span>
+          </label>
+          <label class="artist-target-label" for="artist-target-scene"
+                 data-i18n="artists.target_scene">Zielszene</label>
+          <input id="artist-target-scene" maxlength="80"
+                 data-i18n-ph="artists.target_scene_placeholder"
+                 placeholder="Swiss German Mundart">
+          <button type="button" id="artist-save-settings" class="btn-sm"
+                  data-i18n="artists.save">Speichern</button>
+        </div>
+        <div id="artist-msg" class="artist-msg" role="status"></div>
+        <div id="artist-list">
+          <div class="muted-txt" data-i18n="artists.loading"></div>
+        </div>
+      </div>
+      <div class="finder-box">
+        <h3 data-i18n="artists.search_heading">Deezer-Künstler hinzufügen / verknüpfen</h3>
+        <div id="artist-link-target" class="muted-txt"></div>
+        <form id="artist-search-form">
+          <input id="artist-search-q" autocomplete="off"
+                 data-i18n-ph="artists.search_placeholder"
+                 placeholder="Künstlername suchen">
+          <button type="submit" data-i18n="finder.btn.search">Suchen</button>
+        </form>
+        <div id="artist-search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pane 4: authenticated editor for the central .env file. -->
+  <div class="tabpane" data-pane="env" hidden>
+    <div class="finder-hint" data-i18n="env.run_hint"></div>
+    <div class="env-toolbar">
+      <input id="env-filter" type="search" autocomplete="off"
+             data-i18n-ph="env.search_placeholder"
+             placeholder="Filter settings by name or description">
+      <button type="button" id="env-reload" class="btn-sm"
+              data-i18n="env.reload">Neu laden</button>
+      <button type="button" id="env-save" class="btn-sm"
+              data-i18n="env.save">.env speichern und neu aufbauen</button>
+    </div>
+    <div id="env-msg" class="env-msg" role="status"></div>
+    <div class="env-apply" hidden></div>
+    <div id="env-filter-empty" class="muted-txt" data-i18n="env.filter_empty" hidden></div>
+    <div id="env-groups">
+      <div class="muted-txt" data-i18n="env.loading">Umgebungseinstellungen werden geladen …</div>
+    </div>
+    <div id="env-unknown"></div>
+    <div class="env-apply" hidden></div>
+  </div>
+
+  <!-- Pane 5: Manueller Tag-Editor (hidden). Search the library, pick a song,
+       edit its tags/cover in place. This write section (saving clears
        the stack markers). Inert without the /music/Music mount (search returns
        nothing). tageditor.hint is lifted into #pane-desc. -->
   <div class="tabpane" data-pane="tageditor" hidden>
@@ -659,6 +739,27 @@ async function checkLastfmTag(q) {
   }
 }
 
+async function checkAppleChart(country, limit) {
+  const box = document.getElementById("apple-chart-results");
+  box.innerHTML = `<div class="muted-txt">${t("finder.checking")}</div>`;
+  try {
+    const response = await fetch(
+      "/api/sources/apple/chart?country=" + encodeURIComponent(country) +
+      "&limit=" + encodeURIComponent(limit), {cache: "no-store"});
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      box.innerHTML = `<div class="s-err">${esc(data.detail || t("finder.generic_error"))}</div>`;
+      return;
+    }
+    const samples = data.sample.map(song => `<li>${esc(song)}</li>`).join("");
+    box.innerHTML =
+      `<div class="lf-hit">${t("finder.apple.hit", {country: esc(data.country.toUpperCase()), count: data.count})}</div>` +
+      `<ul class="lf-samples">${samples}</ul>` + snippetCell(data.snippet);
+  } catch (error) {
+    box.innerHTML = `<div class="s-err">${t("finder.unreachable")}</div>`;
+  }
+}
+
 // Loads the read-only Energy channel list and renders it as a sortable table.
 // Fail-open like searchDeezerPlaylists: any non-OK / !ok / empty result shows
 // the energy.unreachable message instead of throwing. Status is a badge span,
@@ -696,6 +797,437 @@ async function loadEnergyChannels() {
     ], 0);   // default sort: Channel, ascending by name feel (descending glyph)
   } catch (e) {
     box.innerHTML = `<div class="muted-txt">${t("energy.unreachable")}</div>`;
+  }
+}
+
+let _artistSceneState = null;
+let _artistLinkKey = "";
+
+function setArtistMessage(message, kind = "") {
+  const box = document.getElementById("artist-msg");
+  if (!box) return;
+  box.textContent = message;
+  box.className = `artist-msg${kind ? " " + kind : ""}`;
+}
+
+function renderArtistCatalog(data) {
+  _artistSceneState = data;
+  document.getElementById("artist-filter-enabled").checked = data.filter_enabled;
+  document.getElementById("artist-target-scene").value = data.target_scene || "";
+  const box = document.getElementById("artist-list");
+  if (!Array.isArray(data.artists) || !data.artists.length) {
+    box.innerHTML = `<div class="muted-txt">${t("artists.empty")}</div>`;
+    return;
+  }
+  const rows = data.artists.map(artist => {
+    const key = esc(artist.key);
+    const name = esc(artist.name);
+    const verified = artist.identity_verified === true;
+    const identity = verified
+      ? t("artists.identity_verified", {id: esc(artist.deezer_id)})
+      : t("artists.identity_pending");
+    const sources = Object.entries(artist.source_counts || {}).map(([source, value]) => {
+      const count = Number(value && value.tracks);
+      return `${esc(source)} (${Number.isFinite(count) ? count : 0})`;
+    }).join("<br>") || t("artists.manual_source");
+    return `<tr data-artist-key="${key}">
+      <td>${name}</td>
+      <td>${sources}</td>
+      <td class="artist-identity">${identity}</td>
+      <td><input type="text" class="artist-scene" data-artist-key="${key}"
+                 maxlength="80" value="${esc(artist.scene || "")}"></td>
+      <td><input type="checkbox" class="artist-enabled" data-artist-key="${key}"
+                 ${artist.enabled ? "checked" : ""} ${verified ? "" : "disabled"}
+                 aria-label="${esc(t("artists.include_aria", {artist: artist.name}))}"></td>
+      <td><input type="text" class="artist-evidence" data-artist-key="${key}"
+                 maxlength="500" value="${esc(artist.evidence || "")}"
+                 placeholder="${esc(t("artists.evidence_placeholder"))}"></td>
+      <td><button type="button" class="btn-sm artist-link"
+                  data-artist-key="${key}" data-artist-name="${name}">
+          ${verified ? t("artists.change_identity") : t("artists.verify")}
+      </button></td>
+    </tr>`;
+  }).join("");
+  box.innerHTML =
+    `<div class="muted-txt">${t("artists.count", {count: data.artists.length})}</div>` +
+    `<div class="artist-table-wrap"><table class="artist-table">
+      <thead><tr>
+        <th>${t("artists.col.artist")}</th>
+        <th>${t("artists.col.sources")}</th>
+        <th>${t("artists.col.identity")}</th>
+        <th>${t("artists.col.scene")}</th>
+        <th>${t("artists.col.include")}</th>
+        <th>${t("artists.col.evidence")}</th>
+        <th>${t("artists.col.action")}</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+async function loadMundartArtists() {
+  const box = document.getElementById("artist-list");
+  if (!box) return;
+  box.innerHTML = `<div class="muted-txt">${t("artists.loading")}</div>`;
+  setArtistMessage("");
+  try {
+    const response = await fetch("/api/mundart/artists", {cache: "no-store"});
+    const data = await response.json();
+    if (!response.ok || !data || !data.ok) {
+      box.innerHTML = `<div class="s-err">${esc((data && data.error) || t("artists.load_error"))}</div>`;
+      return;
+    }
+    renderArtistCatalog(data);
+  } catch (error) {
+    box.innerHTML = `<div class="s-err">${t("artists.load_error")}</div>`;
+  }
+}
+
+async function searchArtistCatalog(query) {
+  const box = document.getElementById("artist-search-results");
+  box.innerHTML = `<div class="muted-txt">${t("finder.searching")}</div>`;
+  try {
+    const response = await fetch(
+      "/api/sources/deezer/artists?q=" + encodeURIComponent(query),
+      {cache: "no-store"});
+    const data = await response.json();
+    if (!response.ok || !data || !data.ok) {
+      box.innerHTML = `<div class="s-err">${esc((data && data.detail) || t("artists.search_error"))}</div>`;
+      return;
+    }
+    if (!Array.isArray(data.results) || !data.results.length) {
+      box.innerHTML = `<div class="muted-txt">${t("finder.no_hits")}</div>`;
+      return;
+    }
+    const action = _artistLinkKey ? "link" : "add";
+    const label = _artistLinkKey ? t("artists.link") : t("artists.add");
+    box.innerHTML = data.results.map(artist =>
+      `<div class="artist-search-result">
+        <span class="artist-search-result-name">${esc(artist.name)}
+          <span class="muted-txt">· ${esc(artist.nb_fan)} fans · ID ${esc(artist.id)}</span>
+        </span>
+        <button type="button" class="btn-sm" data-artist-action="${action}"
+                data-artist-id="${esc(artist.id)}">${label}</button>
+      </div>`).join("");
+  } catch (error) {
+    box.innerHTML = `<div class="s-err">${t("artists.search_error")}</div>`;
+  }
+}
+
+async function saveArtistSelection() {
+  const filterEnabled = document.getElementById("artist-filter-enabled").checked;
+  if (filterEnabled && !_artistSceneState?.filter_enabled
+      && !confirm(t("artists.confirm_enable"))) return;
+  const artists = [...document.querySelectorAll("#artist-list tr[data-artist-key]")]
+    .map(row => ({
+      key: row.dataset.artistKey,
+      enabled: row.querySelector(".artist-enabled").checked,
+      scene: row.querySelector(".artist-scene").value,
+      evidence: row.querySelector(".artist-evidence").value,
+    }));
+  const payload = {
+    filter_enabled: filterEnabled,
+    target_scene: document.getElementById("artist-target-scene").value,
+    artists,
+  };
+  setArtistMessage(t("artists.saving"));
+  try {
+    const response = await fetch("/api/mundart/settings", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    const data = await response.json();
+    if (!response.ok || !data || !data.ok) {
+      setArtistMessage(esc((data && data.error) || t("artists.save_error")), "error");
+      return;
+    }
+    renderArtistCatalog(data);
+    setArtistMessage(t("artists.saved"), "ok");
+  } catch (error) {
+    setArtistMessage(t("artists.save_error"), "error");
+  }
+}
+
+function initArtistScenes() {
+  const searchForm = document.getElementById("artist-search-form");
+  searchForm.addEventListener("submit", event => {
+    event.preventDefault();
+    const query = document.getElementById("artist-search-q").value.trim();
+    if (query) searchArtistCatalog(query);
+  });
+  document.getElementById("artist-save-settings").addEventListener(
+    "click", saveArtistSelection);
+  document.getElementById("artist-list").addEventListener("click", event => {
+    const button = event.target.closest(".artist-link");
+    if (!button) return;
+    _artistLinkKey = button.dataset.artistKey;
+    const name = button.dataset.artistName || "";
+    document.getElementById("artist-search-q").value = name;
+    document.getElementById("artist-link-target").textContent =
+      t("artists.link_prompt", {artist: name});
+    searchArtistCatalog(name);
+  });
+  document.getElementById("artist-search-results").addEventListener("click", async event => {
+    const button = event.target.closest("[data-artist-action]");
+    if (!button) return;
+    const action = button.dataset.artistAction;
+    const payload = {deezer_id: button.dataset.artistId};
+    let url = "/api/mundart/artists/add";
+    if (action === "link" && _artistLinkKey) {
+      url = "/api/mundart/artists/link";
+      payload.key = _artistLinkKey;
+    }
+    button.disabled = true;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok || !data || !data.ok) {
+        setArtistMessage(esc((data && data.error) || t("artists.save_error")), "error");
+        button.disabled = false;
+        return;
+      }
+      _artistLinkKey = "";
+      document.getElementById("artist-link-target").textContent = "";
+      document.getElementById("artist-search-results").innerHTML = "";
+      renderArtistCatalog(data);
+      setArtistMessage(t(action === "link" ? "artists.linked" : "artists.added"), "ok");
+    } catch (error) {
+      setArtistMessage(t("artists.save_error"), "error");
+      button.disabled = false;
+    }
+  });
+}
+
+let _envConfiguration = null;
+let _envLoaded = false;
+
+function setEnvMessage(message, kind) {
+  const el = document.getElementById("env-msg");
+  el.textContent = message || "";
+  el.className = "env-msg" + (kind ? " env-msg-" + kind : "");
+}
+
+function envDocLink(link) {
+  return `<a href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">` +
+    `<span aria-hidden="true">📖</span> ${esc(link.label)}</a>`;
+}
+
+function renderEnvEditor(data) {
+  _envConfiguration = data;
+  const groupRoot = document.getElementById("env-groups");
+  const groups = data.groups || [];
+  if (!groups.length) {
+    groupRoot.innerHTML = `<div class="muted-txt">${esc(t("env.load_error"))}</div>`;
+  } else {
+    groupRoot.innerHTML = groups.map(group => {
+      const links = (group.links || []).map(envDocLink).join(" ");
+      const fields = group.fields.map(field => {
+        const key = esc(field.key);
+        const searchText = esc(
+          [field.key, field.label, field.description, group.name]
+            .join(" ").toLowerCase());
+        const currentValue = field.secret ? "" : (field.value || "");
+        const escapedValue = esc(currentValue);
+        const placeholder = field.secret
+          ? t("env.secret_placeholder")
+          : (field.example_value || "");
+        const isLong = !field.secret &&
+          (field.type === "json" || currentValue.length > 180);
+        const input = isLong
+          ? `<textarea id="env-${key}" data-env-input data-env-key="${key}" data-secret="false"` +
+            ` data-original="${escapedValue}" data-optional="${field.optional}"` +
+            ` data-set="${field.is_set}">${escapedValue}</textarea>`
+          : `<input id="env-${key}" type="${field.secret ? "password" : "text"}" ` +
+            `data-env-input data-env-key="${key}" data-secret="${field.secret}"` +
+            ` data-original="${escapedValue}" data-optional="${field.optional}"` +
+            ` data-set="${field.is_set}" value="${escapedValue}"` +
+            ` placeholder="${esc(placeholder)}"` +
+            ` autocomplete="${field.secret ? "new-password" : "off"}">`;
+        const status = field.secret
+          ? t(field.configured ? "env.secret_set" : "env.secret_unset")
+          : t("env.source_" + field.source);
+        const optionalControl = field.optional
+          ? `<label class="env-check"><input type="checkbox" data-env-unset="${key}">` +
+            `${esc(t("env.optional_unset"))}</label>` : "";
+        const secretControl = field.secret
+          ? `<label class="env-check"><input type="checkbox" data-env-clear="${key}">` +
+            `${esc(t("env.secret_clear"))}</label>` : "";
+        const groupUrls = new Set((group.links || []).map(link => link.url));
+        const extraDocs = field.groups.length > 1
+          ? field.links.filter(link => !groupUrls.has(link.url)).map(envDocLink).join(" ")
+          : "";
+        return `<div class="env-field" data-env-search="${searchText}">` +
+          `<label class="env-field-label" for="env-${key}">${key}</label>` +
+          `<div class="env-field-meta">${esc(status)}</div>` +
+          `${input}` +
+          (field.description
+            ? `<div class="env-description">${esc(field.description)}</div>` : "") +
+          (extraDocs ? `<div class="env-field-docs">${extraDocs}</div>` : "") +
+          `<div class="env-field-controls">${optionalControl}${secretControl}</div>` +
+          `</div>`;
+      }).join("");
+      return `<section class="env-group" data-env-search="${esc(group.name.toLowerCase())}"><div class="env-group-head">` +
+        `<h3>${esc(group.name)}</h3><div class="env-doc-links">${links}</div>` +
+        `</div><div class="env-fields">${fields}</div></section>`;
+    }).join("");
+  }
+
+  const unknownRoot = document.getElementById("env-unknown");
+  const unknown = data.unknown || [];
+  unknownRoot.innerHTML = unknown.length
+    ? `<section class="env-group env-unknown" data-env-search="${esc((t("env.unknown_heading") + " " + unknown.map(item => item.key).join(" ")).toLowerCase())}"><div class="env-group-head">` +
+      `<h3>${esc(t("env.unknown_heading"))}</h3>` +
+      `<span>${esc(t("env.unknown_count", {count: unknown.length}))}</span>` +
+      `</div><p class="env-description">${esc(t("env.unknown_help"))}</p>` +
+      `<div class="env-unknown-keys">${unknown.map(item => esc(item.key)).join(", ")}</div>` +
+      `</section>`
+    : "";
+  applyEnvFilter();
+}
+
+function applyEnvFilter() {
+  const filter = document.getElementById("env-filter").value.trim().toLowerCase();
+  let visibleFields = 0;
+  document.querySelectorAll("#env-groups .env-group").forEach(group => {
+    const fields = group.querySelectorAll(".env-field");
+    let visibleInGroup = 0;
+    fields.forEach(field => {
+      const visible = !filter || field.dataset.envSearch.includes(filter);
+      field.hidden = !visible;
+      if (visible) visibleInGroup += 1;
+    });
+    group.hidden = fields.length ? visibleInGroup === 0
+      : (!!filter && !group.dataset.envSearch.includes(filter));
+    visibleFields += visibleInGroup;
+  });
+  const unknownGroup = document.querySelector("#env-unknown .env-group");
+  if (unknownGroup) {
+    const unknownMatches = (_envConfiguration.unknown || [])
+      .filter(item => !filter || item.key.toLowerCase().includes(filter)).length;
+    unknownGroup.hidden = !!filter && unknownMatches === 0;
+    visibleFields += unknownMatches;
+  }
+  const empty = document.getElementById("env-filter-empty");
+  if (empty) empty.hidden = !filter || visibleFields > 0;
+}
+
+async function loadEnvEditor(force) {
+  if (_envLoaded && !force) return;
+  setEnvMessage(t("env.loading"));
+  try {
+    const response = await fetch("/api/env", {cache: "no-store"});
+    const data = await response.json();
+    if (!response.ok || !data || !data.ok) {
+      _envLoaded = false;
+      setEnvMessage((data && data.error) || t("env.load_error"), "error");
+      return;
+    }
+    _envLoaded = true;
+    renderEnvEditor(data);
+    setEnvMessage("");
+    document.querySelectorAll(".env-apply").forEach(panel => {
+      panel.hidden = true;
+    });
+  } catch (error) {
+    setEnvMessage(t("env.load_error"), "error");
+  }
+}
+
+function renderEnvApply(data) {
+  const content = data.services?.length && data.apply_command
+    ? `<h3>${esc(t("env.recreate_heading"))}</h3>` +
+      `<p>${esc(t("env.recreate_hint"))}</p>` +
+      `<div class="env-command-row"><code>${esc(data.apply_command)}</code>` +
+      `<button type="button" class="btn-sm" data-env-copy>` +
+      `${esc(t("env.copy"))}</button></div>`
+    : `<p>${esc(t("env.apply_none"))}</p>`;
+  document.querySelectorAll(".env-apply").forEach(panel => {
+    panel.innerHTML = content;
+    panel.hidden = false;
+  });
+}
+
+function initEnvEditor() {
+  document.getElementById("env-reload").addEventListener(
+    "click", () => loadEnvEditor(true));
+  document.getElementById("env-filter").addEventListener(
+    "input", applyEnvFilter);
+  document.getElementById("env-groups").addEventListener("change", event => {
+    const checkbox = event.target;
+    if (checkbox.matches("[data-env-unset]") && checkbox.checked) {
+      const key = checkbox.dataset.envUnset;
+      const clear = document.querySelector(`[data-env-clear="${key}"]`);
+      if (clear) clear.checked = false;
+    } else if (checkbox.matches("[data-env-clear]") && checkbox.checked) {
+      const key = checkbox.dataset.envClear;
+      const unset = document.querySelector(`[data-env-unset="${key}"]`);
+      if (unset) unset.checked = false;
+    }
+  });
+  document.querySelector('[data-pane="env"]').addEventListener("click", event => {
+    const button = event.target.closest("[data-env-copy]");
+    if (!button || !_envConfiguration || !_envConfiguration.apply_command) return;
+    copySnippet(_envConfiguration.apply_command, button);
+  });
+  document.getElementById("env-save").addEventListener("click", saveEnvEditor);
+}
+
+async function saveEnvEditor() {
+  if (!_envConfiguration) return;
+  const values = {};
+  const secrets = {};
+  const unset = [];
+  const clearSecrets = [];
+  document.querySelectorAll("#env-groups [data-env-input]").forEach(input => {
+    const key = input.dataset.envKey;
+    const unsetBox = document.querySelector(
+      `#env-groups [data-env-unset="${key}"]`);
+    const clearBox = document.querySelector(
+      `#env-groups [data-env-clear="${key}"]`);
+    if (unsetBox && unsetBox.checked) {
+      unset.push(key);
+    } else if (input.dataset.secret === "true") {
+      if (clearBox && clearBox.checked) clearSecrets.push(key);
+      else if (input.value) secrets[key] = input.value;
+    } else if (input.value !== input.dataset.original) {
+      values[key] = input.value;
+    }
+  });
+  const button = document.getElementById("env-save");
+  button.disabled = true;
+  setEnvMessage(t("env.saving"));
+  try {
+    const response = await fetch("/api/env", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        revision: _envConfiguration.revision,
+        template_revision: _envConfiguration.template_revision,
+        values, secrets, unset, clear_secrets: clearSecrets,
+      }),
+      cache: "no-store",
+    });
+    const data = await response.json();
+    if (!response.ok || !data || !data.ok) {
+      setEnvMessage((data && data.error) || t("env.save_error"), "error");
+      if (response.status === 409) _envLoaded = false;
+      return;
+    }
+    _envLoaded = true;
+    renderEnvEditor(data);
+    _envConfiguration = data;
+    renderEnvApply(data);
+    setEnvMessage(data.backup_created
+      ? t("env.saved") + " " + t("env.backup")
+      : t("env.saved_no_changes"), "ok");
+  } catch (error) {
+    setEnvMessage(t("env.save_error"), "error");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -765,6 +1297,11 @@ function initFinder(lastfm) {
       if (q) checkLastfmTag(q);
     });
   }
+  document.getElementById("apple-chart-form").addEventListener("submit", event => {
+    event.preventDefault();
+    checkAppleChart(document.getElementById("apple-country").value,
+                    document.getElementById("apple-limit").value);
+  });
 
   // Copy buttons (delegation across the whole finder section).
   const finder = document.querySelector(".finder");
@@ -1747,6 +2284,8 @@ function initTagEditor() {
 const PANE_HEAD = {
   finder:    { title: "section.finder",            desc: "finder.hint",            html: true  },
   energy:    { title: "section.energy",            desc: "energy.hint",            html: true  },
+  artists:   { title: "section.artists",           desc: "artists.hint",           html: false },
+  env:       { title: "section.env",               desc: "env.hint",               html: false },
   tageditor: { title: "section.tageditor",         desc: "tageditor.hint",         html: false },
   nonmp3:    { title: "tageditor.nonmp3.heading",  desc: "tageditor.nonmp3.hint",  html: false },
   trash:     { title: "section.trash",             desc: "tageditor.trash.hint",   html: false },
@@ -1803,10 +2342,16 @@ function clearTagEditorSuccessMsg() {
 
 applyStaticI18n();   // populate the static head/body markup once on load
 configTabs.forEach(tab => {
-  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  tab.addEventListener("click", () => {
+    activateTab(tab.dataset.tab);
+    if (tab.dataset.tab === "artists") loadMundartArtists();
+    if (tab.dataset.tab === "env") loadEnvEditor();
+  });
 });
 setPaneHead("finder");   // fill the header for the default (finder) tab on load
 initTagEditor();     // wire the manual tag editor (independent of the finder)
+initArtistScenes();
+initEnvEditor();
 // charts-config has no /api/status; probe the Last.fm endpoint once (empty
 // query) to learn whether a key is configured, then init the finder. The
 // backend returns `configured` even without an API key.

@@ -83,10 +83,13 @@ def _container_states() -> dict:
 
 def _slskd_status() -> dict:
     """slskd connection status + rough transfer numbers."""
-    out = {"ok": False, "state": i18n.t("dashboard.conn.slskd.state_unknown"),
+    out = {"configured": bool(config.SLSKD_HOST and config.SLSKD_API_KEY),
+           "ok": False, "state": i18n.t("dashboard.conn.slskd.state_unknown"),
            "downloads_active": None, "detail": ""}
-    if not config.SLSKD_API_KEY:
-        out["detail"] = i18n.t("dashboard.conn.slskd.no_api_key")
+    if not out["configured"]:
+        out["detail"] = i18n.t("dashboard.conn.slskd.no_api_key"
+                               if not config.SLSKD_API_KEY else
+                               "dashboard.conn.slskd.no_host")
         return out
     headers = {"X-API-Key": config.SLSKD_API_KEY}
     base = config.SLSKD_HOST.rstrip("/")
@@ -157,7 +160,7 @@ def _external_status() -> dict:
     would go out per refresh.
 
     Returns: {service: {"ok": bool, "detail": str}} per service (listenbrainz,
-    deezer, lastfm, itunes, pushover, flashback, energy, musicbrainz, hitparade);
+    deezer, lastfm, apple, itunes, pushover, flashback, energy, musicbrainz, hitparade);
     lastfm + pushover additionally with "configured": bool.
     """
     global _ext_cache, _ext_ts
@@ -217,6 +220,36 @@ def _external_status() -> dict:
                                   err=e.__class__.__name__)
     else:
         lf["detail"] = i18n.t("dashboard.conn.lastfm.no_api_key")
+
+    apple = {"configured": config.APPLE_CHARTS_ENABLED, "ok": False, "detail": ""}
+    if apple["configured"]:
+        country = config.APPLE_CHARTS_COUNTRY
+        if len(country) != 2 or not country.isascii() or not country.isalpha():
+            apple["detail"] = i18n.t("dashboard.conn.apple.invalid_country")
+        else:
+            try:
+                r = httpx.get(
+                    f"https://rss.marketingtools.apple.com/api/v2/{country}"
+                    "/music/most-played/100/songs.json",
+                    timeout=8, follow_redirects=True)
+                if r.status_code != 200:
+                    apple["detail"] = i18n.t("dashboard.conn.http_error", code=r.status_code)
+                else:
+                    payload = r.json()
+                    feed = payload.get("feed") if isinstance(payload, dict) else None
+                    tracks = feed.get("results") if isinstance(feed, dict) else None
+                    apple["ok"] = isinstance(tracks, list) and bool(tracks) and all(
+                        isinstance(track, dict)
+                        and isinstance(track.get("artistName"), str) and track["artistName"].strip()
+                        and isinstance(track.get("name"), str) and track["name"].strip()
+                        for track in tracks)
+                    if not apple["ok"]:
+                        apple["detail"] = i18n.t("dashboard.conn.apple.invalid_response")
+            except (httpx.HTTPError, ValueError) as e:
+                apple["detail"] = i18n.t(
+                    "dashboard.conn.unreachable", err=e.__class__.__name__)
+    else:
+        apple["detail"] = i18n.t("dashboard.conn.not_in_use")
 
     # iTunes/Apple: INFO only, NEVER coupled to the red logic. 429/403 =
     # throttled, not dead -> still ok=True (reachable), detail distinguishes.
@@ -375,7 +408,7 @@ def _external_status() -> dict:
     else:
         hp["detail"] = i18n.t("dashboard.conn.not_in_use")
 
-    result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "itunes": it,
+    result = {"listenbrainz": lb, "deezer": dz, "lastfm": lf, "apple": apple, "itunes": it,
               "pushover": po, "flashback": fb, "energy": en, "musicbrainz": mb,
               "hitparade": hp}
     _ext_cache = result

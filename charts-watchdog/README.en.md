@@ -24,8 +24,8 @@ Per container, only on a state **change**:
 ## External/dependent services
 
 On top of the containers, the watchdog periodically checks the **reachability of
-the external services** the stack depends on – using the exact same reachability
-criteria as the [`charts-dashboard`](../charts-dashboard):
+the external services** the stack depends on – using the corresponding
+endpoints from the [`charts-dashboard`](../charts-dashboard):
 
 - **slskd** – `/api/v0/server` reports logged in (`isLoggedIn`).
 - **Lidarr** – `/api/v1/system/status` responds (only if `LIDARR_URL` +
@@ -35,6 +35,11 @@ criteria as the [`charts-dashboard`](../charts-dashboard):
 - **Deezer** – chart endpoint returns HTTP 200 with no error object.
 - **Last.fm** – chart endpoint returns HTTP 200 without an error (only with
   `LASTFM_API_KEY`, otherwise not monitored).
+- **Apple Music Charts** – public most-played feed for `APPLE_CHARTS_COUNTRY`
+  (default `ch`), separate from the iTunes search endpoint. Only checked with
+  `APPLE_CHARTS_ENABLED=1`; otherwise no request or alarm. Requires HTTP 200
+  and feed/result/artist/title fields. This is a basic text sanity check;
+  sync and dashboard perform full JSON/track validation.
 - **iTunes** – search endpoint reachable; being **throttled** (HTTP 429/403)
   deliberately counts as reachable, **not** as an outage.
 
@@ -125,6 +130,8 @@ all-clear:
 | `SLSKD_HOST` / `SLSKD_API_KEY` | `http://slskd:5030` / – | slskd check (`/api/v0/server`) |
 | `LIDARR_URL` / `LIDARR_API_KEY` | *(empty)* | optional – Lidarr monitored only with both set |
 | `LASTFM_API_KEY` | *(empty)* | optional – Last.fm monitored only with a key |
+| `APPLE_CHARTS_ENABLED` | `0` | Optional Apple chart check using the same outage/recovery logic |
+| `APPLE_CHARTS_COUNTRY` | `ch` | Country code to monitor; match the Apple feed |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | without these only logs, no message |
 | `PUSHOVER_DEVICE` | *(empty)* | Optional: target device. Multiple devices possible, comma-separated (e.g. `iPhone-Max,Tablet-Anna`) — one message is sent per device. All devices belong to the same Pushover account. Empty field = delivery to all devices of the account. Invalid/disabled device names are stripped before sending — otherwise Pushover delivers an unknown name to **all** devices instead (double push). |
 | `PUSHOVER_SOUND` | `siren` | Notification sound for the watchdog alerts. Valid Pushover sounds: `pushover, magic, cosmic, intermission, bike, bugle, cashregister, classical, falling, gamelan, incoming, mechanical, pianobar, siren, spacealarm, tugboat, alien, climb, persistent, echo, updown, none` (= silent), `vibrate`. Empty = account default. Overridable via `PUSHOVER_SOUND_WATCHDOG` in `compose.yml`. |
@@ -152,5 +159,5 @@ degrades cleanly to English or the key name and keeps running.
 
 Deliberately **not** translated are the internal state words (`running-healthy`,
 `ok`, `problem`, `transient`, …) and the proper names of the external services
-(slskd, Lidarr, ListenBrainz, Deezer, Last.fm, iTunes) – they are technical
+(slskd, Lidarr, ListenBrainz, Deezer, Last.fm, Apple Music, iTunes) – they are technical
 markers or product names, not display text.

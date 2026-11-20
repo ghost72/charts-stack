@@ -69,10 +69,7 @@ section h2 {
   letter-spacing: -0.2px;
 }
 
-/* Segmented tab bar. One button per section; all five share one row on
-   tablet/desktop (flex: 1 1 0 below). On phones (<=560px) the row becomes a
-   horizontally scrollable strip instead - see the phone media query below.
-   The active tab glows blue. */
+/* Use each label's natural width before wrapping tabs onto a new row. */
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 /* The .tab buttons live in .tabs, a SIBLING of the panes, and are NOT inside
    any form, .finder-box, .card, or #te-form - so the generic primary-button
@@ -83,13 +80,13 @@ section h2 {
    button rule broadens. */
 .tab {
   -webkit-appearance: none; appearance: none;
-  flex: 1 1 0; min-width: 0; margin: 0;
+  flex: 1 0 auto; min-width: 0; max-width: 100%; margin: 0;
   padding: 10px 14px; font-size: .9rem; font-weight: 600;
   color: var(--muted);
   background: var(--tile);
   border: 1px solid #3a3350; border-radius: 11px;
   box-shadow: none; cursor: pointer;
-  white-space: nowrap;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.25;
   transition: color .15s, background .15s, box-shadow .2s, border-color .15s;
   filter: none;   /* neutralise any leaked brightness filter */
 }
@@ -114,25 +111,15 @@ section h2 {
 }
 .pane-desc { margin: 0; }   /* .finder-hint supplies colour/size */
 
-/* Phone-only (<=560px, the file's phone breakpoint; the 720/760px ones are for
-   the wider grid wrap on tablets, which must keep the single desktop row).
-   On a phone the five tabs can't share one row without clipping their labels,
-   so turn the .tabs bar into a horizontally scrollable strip instead: each tab
-   keeps its full emoji + label at a comfortable size (flex: 0 0 auto so it sizes
-   to content and never shrinks), and the bar scrolls sideways with smooth touch
-   scrolling. The active-tab blue glow and all other tab styling are unchanged.
-   Tablet/desktop are untouched, so there the flex: 1 1 0 row above still wins. */
-@media (max-width: 560px) {
+/* On narrow screens, give every tab enough width for its label to wrap inside
+   the button instead of letting text spill or requiring horizontal scrolling. */
+@media (max-width: 760px) {
   .tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;   /* Firefox: hide scrollbar for a clean strip */
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
   }
-  .tabs::-webkit-scrollbar { display: none; }   /* WebKit/Blink: hide scrollbar */
   .tab {
-    flex: 0 0 auto; min-width: 0;   /* size to content, don't shrink-and-clip */
-    padding: 9px 12px; font-size: .82rem;
+    width: 100%; min-width: 0; padding: 9px 8px; font-size: .82rem;
   }
   .config-hero-title { font-size: 1.3rem; }
 }
@@ -204,7 +191,11 @@ body.login {
 .finder-box.muted { opacity: .55; }
 .finder-box.muted input, .finder-box.muted button { pointer-events: none; }
 .finder-box form { display: flex; gap: 8px; margin: 0 0 10px; }
-.finder-box form input {
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.finder-box form input, .finder-box form select {
   flex: 1; min-width: 0; padding: 7px 9px;
   border: 1px solid #3a3350; border-radius: 7px;
   background: var(--bg); color: var(--fg); font-size: .85rem;
@@ -283,6 +274,45 @@ body.login {
 .snip-copy { flex: 0 0 auto; white-space: nowrap; text-align: left; }
 .lf-hit { color: var(--ok); font-size: .85rem; margin: 4px 0 6px; }
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
+
+/* Mundart artist inventory and local scene controls. */
+.artist-scene-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+}
+.artist-filter-toggle { display: flex; align-items: center; gap: 7px; }
+.artist-filter-toggle input { accent-color: var(--accent); }
+.artist-target-label { color: var(--muted); font-size: .82rem; }
+.artist-scene-toolbar > input {
+  min-width: 180px; flex: 1 1 180px; padding: 7px 9px;
+  border: 1px solid #3a3350; border-radius: 7px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+}
+.artist-msg { min-height: 1.3em; margin: 4px 0 8px; font-size: .82rem; }
+.artist-msg.error { color: var(--err); }
+.artist-msg.ok { color: var(--ok); }
+.artist-table-wrap { max-width: 100%; overflow-x: auto; }
+#artist-list .artist-table { width: 100%; min-width: 850px; border-collapse: collapse; }
+#artist-list .artist-table th, #artist-list .artist-table td {
+  padding: 7px 8px; border-bottom: 1px solid #453c5e;
+  text-align: left; vertical-align: middle;
+}
+#artist-list .artist-table th { color: var(--muted); font-size: .78rem; }
+#artist-list .artist-table td { font-size: .8rem; }
+.artist-table .artist-identity { white-space: nowrap; }
+.artist-table input[type="text"] {
+  width: 100%; min-width: 100px; padding: 6px 7px;
+  border: 1px solid #3a3350; border-radius: 6px;
+  background: var(--bg); color: var(--fg); font-size: .78rem;
+}
+.artist-table input[type="checkbox"] { accent-color: var(--accent); }
+.artist-search-result {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; padding: 8px 0; border-bottom: 1px solid #453c5e;
+  font-size: .82rem;
+}
+.artist-search-result-name { min-width: 0; overflow-wrap: anywhere; }
+.artist-search-result .btn-sm { flex: 0 0 auto; }
 
 /* Energy channel status badge: a small inline pill like the chips. Active uses
    the shared green token, inactive the muted grey used by .tile.muted. */
@@ -1045,3 +1075,60 @@ body.login {
   background: #16321f; border: 1px solid #2a7a3a; color: var(--ok);
 }
 .te-modal-btn.te-restore-ok:hover { filter: brightness(1.2); border-color: #45c060; }
+
+.env-toolbar {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0;
+}
+.env-toolbar input { flex: 1 1 280px; min-width: 0; }
+.env-msg { min-height: 1.4em; margin: 8px 0; font-size: .88rem; }
+.env-msg-error { color: #ff9a9a; }
+.env-msg-ok { color: var(--ok); }
+.env-group {
+  margin: 12px 0; padding: 14px;
+  background: var(--card); border: 1px solid #3a3350; border-radius: 12px;
+}
+.env-group-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.env-group-head h3 { margin: 0; font-size: 1rem; }
+.env-doc-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: .8rem; }
+.env-doc-links a { color: #9dc8ff; }
+.env-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.env-field {
+  min-width: 0; padding: 10px; border-radius: 9px;
+  background: var(--tile); border: 1px solid #3a3350;
+}
+.env-field-label { display: block; font-size: .82rem; font-weight: 650; }
+.env-field-meta { margin: 4px 0 7px; color: var(--muted); font-size: .75rem; }
+.env-field input, .env-field textarea {
+  display: block; width: 100%; min-width: 0; margin: 0;
+  padding: 8px 9px; border: 1px solid #4a405e; border-radius: 7px;
+  background: #15121c; color: var(--fg); font: .82rem ui-monospace, monospace;
+}
+.env-field textarea { min-height: 96px; resize: vertical; }
+.env-description { margin-top: 7px; color: var(--muted); font-size: .76rem; line-height: 1.4; }
+.env-field-docs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: .72rem; }
+.env-field-docs a { color: #9dc8ff; }
+.env-field-controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.env-check { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; color: var(--muted); }
+.env-check input { width: auto; margin: 0; }
+.env-unknown-keys { color: var(--muted); font: .78rem ui-monospace, monospace; overflow-wrap: anywhere; }
+.env-apply {
+  margin: 16px 0; padding: 14px; border: 1px solid #335d87;
+  border-radius: 10px; background: #1a2b3c;
+}
+.env-apply h3 { margin: 0 0 8px; font-size: .95rem; }
+.env-apply p { margin: 6px 0 10px; color: #c1d6ed; font-size: .83rem; }
+.env-command-row { display: flex; align-items: center; gap: 8px; }
+.env-command-row code {
+  flex: 1; min-width: 0; padding: 9px; border-radius: 7px;
+  background: #111820; color: #d6e8fa; overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .env-toolbar { flex-wrap: wrap; }
+  .env-toolbar input { flex-basis: 100%; }
+  .env-fields { grid-template-columns: minmax(0, 1fr); }
+  .env-command-row { align-items: stretch; flex-direction: column; }
+}

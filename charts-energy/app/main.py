@@ -81,7 +81,8 @@ def poll_once() -> int:
 
 def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
                            out_missing: list[tuple[int, str, str, str, bool, str]],
-                           out_present: list[tuple[str, str, str]]) -> int:
+                           out_present: list[tuple[str, str, str]],
+                           seen_tracks: set[str]) -> int:
     """
     Match one LIBRARY-mode channel against the library (no .m3u written).
 
@@ -103,6 +104,11 @@ def _match_library_channel(channel, tracks: list[dict], lib, start_pos: int,
     for entry in tracks:
         artist = entry.get("artist", "")
         title = entry.get("title", "")
+        track_key = f"{library.normalize(artist)}|{library.normalize(title)}"
+        if artist and title and track_key in seen_tracks:
+            continue
+        if artist and title:
+            seen_tracks.add(track_key)
         yr, is_fallback = year_mod.resolve_year(artist, title, channel.decade)
         track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
         # Presence guard: an existing library copy (incl. a compilation-named or
@@ -163,6 +169,7 @@ def run_match() -> dict:
     # for the present ones.
     library_missing: list[tuple[int, str, str, str, bool, str]] = []
     library_present: list[tuple[str, str, str]] = []
+    library_seen_tracks: set[str] = set()
     lib_pos = 0
 
     for channel in channels:
@@ -177,7 +184,8 @@ def run_match() -> dict:
 
         if channel.mode == "library":
             lib_pos = _match_library_channel(
-                channel, tracks, lib, lib_pos, library_missing, library_present)
+                channel, tracks, lib, lib_pos, library_missing, library_present,
+                library_seen_tracks)
             continue
 
         # OWN mode: assign a synthetic chart position by recency (newest first).
@@ -354,7 +362,7 @@ def _notify(results: list[dict], feed_results: list[dict] | None = None,
                 cap_note=t("notify.missing.more", count=hidden) if hidden else ""))
         if present:
             blocks.append(Block(
-                entries=[Entry([_library_song_line(artist, title, yr)])
+                entries=[Entry([_library_song_line(artist, title, yr)], weight=0)
                          for artist, title, yr in present],
                 header=["", t("energy.notify.library_present_header",
                               count=len(present))]))

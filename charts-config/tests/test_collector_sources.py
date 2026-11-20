@@ -76,6 +76,75 @@ def test_deezer_playlists_success(monkeypatch):
                     "source": "123", "limit": "all", "enabled": True}
 
 
+def test_apple_chart_returns_country_snippet_and_preview(monkeypatch):
+    calls = []
+    _patch_get(monkeypatch, capture=calls, resp=_FakeResp(200, {"feed": {"results": [
+        {"artistName": "Artist A", "name": "Song A"},
+        {"artistName": "Artist B", "name": "Song B"},
+    ]}}))
+    out = collector.apple_chart_check(" CH ", 1)
+    assert out["ok"] is True
+    assert out["sample"] == ["Artist A - Song A"]
+    assert out["count"] == 1
+    assert json.loads(out["snippet"]) == {
+        "service": "apple", "country": "ch", "limit": 1, "enabled": True}
+    assert calls[0][0] == (
+        "https://rss.marketingtools.apple.com/api/v2/ch/music/most-played/100/songs.json")
+
+
+@pytest.mark.parametrize("country,limit", [("../ch", 100), ("", 100), ("ch", 0), ("ch", 101)])
+def test_apple_invalid_selection_is_reported_without_network(monkeypatch, country, limit):
+    calls = []
+    _patch_get(monkeypatch, capture=calls)
+    out = collector.apple_chart_check(country, limit)
+    assert out["ok"] is False
+    assert out["detail"]
+    assert calls == []
+
+
+@pytest.mark.parametrize("status,payload", [
+    (503, {}), (200, {}), (200, {"feed": {"results": []}}),
+    (200, {"feed": {"results": [{"artistName": "", "name": "Song"}]}}),
+])
+def test_apple_unusable_response_has_no_snippet(monkeypatch, status, payload):
+    _patch_get(monkeypatch, resp=_FakeResp(status, payload))
+    out = collector.apple_chart_check("ch", 100)
+    assert out["ok"] is False
+    assert out["detail"]
+    assert "snippet" not in out
+
+
+def test_apple_finder_timeout_is_visible(monkeypatch):
+    _patch_get(monkeypatch, exc=collector.httpx.ReadTimeout("test timeout"))
+    out = collector.apple_chart_check("ch")
+    assert out["ok"] is False
+    assert "ReadTimeout" in out["detail"]
+
+
+def test_apple_route_requires_login_and_forwards_selection(monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(config, "APP_USERS", {"test": "unused"})
+    main = importlib.import_module("app.main")
+    calls = []
+
+    def fake_check(country, limit):
+        calls.append((country, limit))
+        return {"ok": True, "country": country, "count": limit}
+
+    monkeypatch.setattr(collector, "apple_chart_check", fake_check)
+    monkeypatch.setattr(main, "_current_user", lambda request: None)
+    client = TestClient(main.app)
+    assert client.get("/api/sources/apple/chart?country=de&limit=25").status_code == 401
+    assert calls == []
+    monkeypatch.setattr(main, "_current_user", lambda request: "test")
+    response = client.get("/api/sources/apple/chart?country=de&limit=25")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "country": "de", "count": 25}
+    assert calls == [("de", 25)]
+
+
 def test_deezer_playlists_error_on_200(monkeypatch):
     # Deezer reports errors as HTTP 200 + error field.
     _patch_get(monkeypatch, resp=_FakeResp(200, {"error": {"code": 4}}))

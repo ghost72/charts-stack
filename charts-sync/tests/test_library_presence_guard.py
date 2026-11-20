@@ -108,6 +108,30 @@ def test_genuinely_missing_song_is_written(monkeypatch, tmp_dirs):
     assert body == ["  1. Nobody - Unknown Song"]
 
 
+@pytest.mark.parametrize("compilation_artist", ["Lady Gaga", "Various Artists"])
+@pytest.mark.parametrize("ignore_compilations", [False, True])
+def test_playlist_links_artist_release_not_compilation(
+        monkeypatch, tmp_dirs, compilation_artist, ignore_compilations):
+    music = tmp_dirs["music"]
+    sampler = music / "Various Artists" / "Bravo Hits 67 (2009)" / "CD 02" / "Paparazzi.mp3"
+    single = music / "Lady Gaga" / "Paparazzi (2009)" / "Paparazzi.mp3"
+    _touch(str(sampler))
+    _touch(str(single))
+    tags = {
+        str(sampler): (compilation_artist, "Paparazzi", "Bravo Hits 67", "Various Artists"),
+        str(single): ("Lady Gaga", "Paparazzi", "Paparazzi", "Lady Gaga"),
+    }
+    monkeypatch.setattr(library, "_read_tags", tags.__getitem__)
+    monkeypatch.setattr(config, "IGNORE_COMPILATIONS", ignore_compilations)
+
+    assert _run_one_source(monkeypatch, [ChartTrack(1, "Lady Gaga", "Paparazzi")]) == "ok"
+
+    entries = [line for line in _playlist_lines() if line and not line.startswith("#")]
+    assert entries == [str(single.relative_to(music))]
+    assert _missing_body() == []
+    assert sampler.exists() and single.exists()
+
+
 # --- FR-4: presence.find_existing direct -------------------------------------
 
 def test_find_existing_direct(monkeypatch, tmp_dirs):

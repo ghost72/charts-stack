@@ -4,6 +4,8 @@ Unit tests for the discovery CLI (app/discover.py).
 The static list output needs no network; the probe is stubbed (no real HTTP).
 """
 
+from contextlib import contextmanager
+
 import httpx
 import pytest
 
@@ -47,10 +49,11 @@ class _FakeClient:
     def __exit__(self, *a):
         return False
 
-    def get(self, url, headers=None):
+    @contextmanager
+    def stream(self, method, url, headers=None):
         if self._exc:
             raise self._exc
-        return self._response
+        yield self._response
 
 
 def _patch_client(monkeypatch, response=None, exc=None):
@@ -108,3 +111,40 @@ def test_probe_result_does_not_print(monkeypatch, capsys):
                   response=_FakeResponse(200, {"icy-name": "Energy Pop"}))
     discover.probe_result("energypop")
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("probe", [discover.probe, discover.probe_result])
+@pytest.mark.parametrize("status,headers,alive", [
+    (200, {"icy-name": "Energy Pop"}, True),
+    (200, {}, False),
+    (404, {}, False),
+])
+def test_probe_closes_stream_without_reading_audio(monkeypatch, probe,
+                                                  status, headers, alive):
+    class AudioStream(httpx.SyncByteStream):
+        closed = False
+
+        def __iter__(self):
+            raise AssertionError("Liveness must not read the continuous audio body")
+
+        def close(self):
+            self.closed = True
+
+    stream = AudioStream()
+
+    def handle(request):
+        assert request.method == "GET"
+        assert request.headers["Icy-MetaData"] == "1"
+        return httpx.Response(status, headers=headers, stream=stream)
+
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: real_client(
+        transport=httpx.MockTransport(handle), **kwargs))
+
+    result = probe("energypop")
+
+    if probe is discover.probe:
+        assert result == (0 if alive else 1)
+    else:
+        assert result is alive
+    assert stream.closed

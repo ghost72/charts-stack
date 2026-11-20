@@ -38,7 +38,7 @@ any Subsonic client works, on any platform.
 
 | Service | Job | Interval |
 | --- | --- | --- |
-| **charts-sync** | Fetches Deezer/Last.fm charts, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
+| **charts-sync** | Fetches Deezer/optional Last.fm or Apple Music charts and Energy handoffs, matches against your library, writes `.m3u` playlists + `missing-*.txt` | 12 h |
 | **charts-hitparade** | Fetches the official Swiss charts (Top 100) weekly, writes `hitparade.m3u` + `missing-hitparade.txt` | Sun 20:00 |
 | **charts-flashback** | Collects the FLASHBACK FM main stream rotation (all decades mixed) and grows the library (downloads, no playlist; year tag for the decade NSPs) | 2 h |
 | **charts-energy** | Uses the Swiss NRJ/energy.ch ICY webradio stream as a source; three per-channel modes (own playlist / feed into a charts-sync theme / grow the library); **disabled by default** | continuous poll (`ENERGY_POLL_SECONDS` ~90 s) + match every ~30 min |
@@ -50,7 +50,7 @@ any Subsonic client works, on any platform.
 | **charts-songrequest** | Web UI (FastAPI), multi-user login, three tabs: request a song (slskd search), upload an MP3, or import from a YouTube URL | on-demand |
 | **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
 | **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections, run stats, and an "in progress" overview (active downloads, queue, quarantine, upgrade) | service |
-| **charts-config** | Password-protected web UI (port 5058) hosting the source finder, the Energy-channel browser, and the manual tag editor (edit a library song's tags/cover in place) | service |
+| **charts-config** | Password-protected web UI (port 5058) with source finder, Energy browser, local Mundart artist/scene inventory and filter, and manual tag editor | service |
 | **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
 
 ### The glue: two shared folders + the manifest
@@ -94,17 +94,16 @@ charts-import looks.
 ### Installation (one project, one `.env`)
 
 The whole stack is **one** project: a single `compose.yml` with all services
-and one central `.env`. You only copy one folder and fill in one file.
+and one central `.env` for shared settings.
+
+For a **new installation**, use the files from the same release, including
+the hidden `.env.example`. The web editor is available only after the first
+start, so set the initial paths and credentials by hand.
 
 ```bash
-# 1. Copy this charts-stack folder to your server.
-
-# 2. Set up slskd first (API key + Soulseek login) – see slskd/README.en.md.
-#    This produces the API key you enter into the .env next.
-
-# 3. Create and fill in one central .env:
-cp .env.example .env
-#    REQUIRED (otherwise at least one service will NOT start):
+# 1. From the charts-stack project directory, create .env only if it is missing:
+test -e .env || (umask 077; cp .env.example .env)
+#    Set the local paths, user/group IDs and credentials:
 #      MUSIC_ROOT, SLSKD_API_KEY, PUID, PGID,
 #      SONGREQUEST_USERS   (charts-songrequest crashes otherwise - security gate),
 #      DASHBOARD_PASSWORD  (charts-dashboard crashes otherwise - security gate),
@@ -113,19 +112,41 @@ cp .env.example .env
 #      and the config login instead of DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
-# 4. Create the three data subfolders BEFORE the first start with the right
+# 2. Create the data and backup directories BEFORE the first start with the right
 #    ownership (otherwise Docker creates them as root on bind-mount and the
 #    services, running as PUID:PGID, cannot write).
 #    NOTE: $MUSIC_ROOT lives in your .env, it is NOT a shell variable - export
 #    it first with the SAME value you set in the .env, otherwise the commands
 #    would target the filesystem root:
 export MUSIC_ROOT=/volume2/music   # use the SAME value as in your .env
-mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
-chown -R 1027:100 "$MUSIC_ROOT"   # use your own PUID:PGID (Synology default here)
-
-# 5. Start – all services together:
-docker compose up -d --build
+mkdir -p "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare" .env-backups
+# Use your own PUID:PGID and run with sufficient privileges:
+chown 1027:100 .env .env-backups "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
+chmod 600 .env
+chmod 700 .env-backups
 ```
+
+3. Configure and start [slskd](slskd/README.en.md#setup). The same API key
+   goes in `.env` and `slskd.yml`. Then run
+   `docker compose config --quiet && docker compose up -d --build`.
+4. Open `http://<server>:5058` (or your configured `CONFIG_PORT`) and sign in
+   to `charts-config`.
+
+After deployment, the authenticated `charts-config` UI can manage the central
+`.env` in its **.env** tab. Saving rebuilds it from `.env.example`, carries
+forward existing values and preserves extra active variables. Secrets are never
+sent back to the browser. Before a file change, a private backup is written to
+`.env-backups/`. `charts-config` remains unprivileged and has write access only
+for this feature to the mounted `.env` and backup directory; `.env.example` is
+read-only. The host file and backup directory must be writable by the
+configured `PUID:PGID`. The editor does not modify `compose.yml`, `slskd.yml`
+or external JSON files. Saving does not restart containers.
+
+**Updating an existing installation:** Back up and keep your live `.env`,
+slskd settings and local JSON files. Copy the new `compose.yml`, `.env.example`
+and application files from the same release. Do not copy `.env.example` over
+the live `.env`. Once the new editor is running, review any new settings
+before saving.
 
 **With the Synology Container Manager:** Project → Create → point the path at
 this `charts-stack` folder → it finds `compose.yml` and `.env` automatically.
@@ -133,7 +154,10 @@ After **code changes**, **rebuild** the affected services (Container Manager:
 Project → Action → Build; CLI: `docker compose up -d --build <service>`).
 `charts-watchdog` is a pure shell script with no image of its own – there a
 restart is enough (`docker compose up -d --force-recreate charts-watchdog`), no
-rebuild. Pure `.env` changes never need a rebuild, just `docker compose up -d`.
+rebuild. Pure `.env` changes need no image rebuild; to apply them, recreate the
+affected containers from the project directory:
+`docker compose up -d --no-deps --force-recreate <service...>`. The .env tab
+shows the service list for saved changes.
 
 **Moving the project to another NAS volume (for example NVMe to HDD):** Stop
 the stack first and preserve the entire project folder, including `.env`,
@@ -282,16 +306,16 @@ channel (it is an optional add-on, not part of the default list above – mirror
 > international + Swiss charts and Mundart. Reason: the NSPs cover the *whole*
 > library (broader + better quality than a single Deezer playlist).
 
-### Your own chart sources (Deezer / Last.fm)
+### Your own chart sources (Deezer / Last.fm / Apple Music)
 
 In `charts-sync` the `CHARTS` variable (JSON) defines the playlists and their
 sources. Each source may carry an optional, backward-compatible `service` field
-(`deezer`/`lastfm`). The bundled IDs are **examples** – replace them with your
+(`deezer`/`lastfm`/`apple`/`energy`). The bundled IDs are **examples** – replace them with your
 own. The full field and ID reference plus ready-made examples (country, 80s/90s,
 …) is in **[`CHARTS-SOURCES.en.md`](CHARTS-SOURCES.en.md)**. New source IDs are
 easy to find via the **source finder** in
 [charts-config](charts-config) (port 5058; Deezer playlist search, genre table,
-Last.fm tag check). See `charts-sync/README.en.md`.
+Last.fm tag check, Apple Music country charts). See `charts-sync/README.en.md`.
 
 **On/off per service:** `charts-hitparade` and `charts-flashback` each have a
 switch `HITPARADE_ENABLED` / `FLASHBACK_ENABLED` (`true`/`false`, default
@@ -315,9 +339,10 @@ A third web UI sits alongside them:
 
 - **charts-config** – a read-only web UI (default port `5058`) hosting the
   **source finder** (Deezer playlist/artist search, Deezer genre table, Last.fm
-  tag check → ready `charts-sync` snippets) and the **Energy-channel browser**
-  (per-channel `ENERGY_CHANNELS` snippet + live status). It changes no config –
-  it only shows ready-to-paste snippets. Password-protected with its **own**
+  tag check, Apple Music country charts → ready `charts-sync` snippets) and the **Energy-channel browser**
+  (per-channel `ENERGY_CHANNELS` snippet + live status), plus the local Mundart
+  artist/scene inventory and optional playlist filter and manual tag editor.
+  It does not write `.env` or `charts.json`. Password-protected with its **own**
   login (user `admin` + `CONFIG_PASSWORD`). See `charts-config/README.en.md`.
 
 Neither the dashboard nor the watchdog accesses the Docker socket directly; both
@@ -413,7 +438,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 
 | Dienst | Aufgabe | Intervall |
 | --- | --- | --- |
-| **charts-sync** | Holt Deezer-/Last.fm-Charts, matcht gegen deine Library, schreibt `.m3u`-Playlists + `missing-*.txt` | 12 h |
+| **charts-sync** | Holt Deezer-/optionale Last.fm- oder Apple-Music-Charts und Energy-Übergaben, matcht gegen deine Library, schreibt `.m3u`-Playlists + `missing-*.txt` | 12 h |
 | **charts-hitparade** | Holt wöchentlich die offizielle Schweizer Hitparade (Top-100), schreibt `hitparade.m3u` + `missing-hitparade.txt` | So 20:00 |
 | **charts-flashback** | Sammelt die Rotation vom FLASHBACK-FM-Hauptstream (alle Dekaden gemischt) und lässt die Library wachsen (Nachladen, keine Playlist; Jahr-Tag für die Dekaden-NSP) | 2 h |
 | **charts-energy** | Nutzt den Schweizer NRJ-/energy.ch-ICY-Webradio-Stream als Quelle; drei Modi pro Kanal (eigene Playlist / Feed in ein charts-sync-Thema / Library wachsen lassen); **standardmäßig deaktiviert** | Dauer-Poll (`ENERGY_POLL_SECONDS` ~90 s) + Match alle ~30 min |
@@ -425,7 +450,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 | **charts-songrequest** | Web-UI (FastAPI) zum manuellen Anfordern einzelner Songs (Mehrbenutzer-Login) | on-demand |
 | **charts-watchdog** | Überwacht alle Container und meldet per Pushover, wenn einer ausfällt oder sich erholt | 30 s |
 | **charts-dashboard** | Web-UI (FastAPI) mit Status aller Dienste, Verbindungen und Lauf-Statistik | Dienst |
-| **charts-config** | Passwortgeschützte Web-UI (Port 5058) mit dem Quellen-Finder + dem Energy-Kanal-Browser; reiner Lese-Zugriff (ändert keine Konfiguration) | Dienst |
+| **charts-config** | Passwortgeschützte Web-UI (Port 5058) mit Quellen-Finder, Energy-Browser, lokalem Mundart-Künstler-/Szenen-Inventar und Filter sowie Tag-Editor | Dienst |
 | **slskd** | Soulseek-Client, die Download-Engine (eigenes Soulseek-Login) | Dienst |
 
 ### Das Bindeglied: zwei gemeinsame Ordner + das Manifest
@@ -469,18 +494,17 @@ genau dort sucht charts-import.
 ### Installation (ein Projekt, eine `.env`)
 
 Der ganze Stack ist **ein** Projekt: eine `compose.yml` mit allen Diensten,
-eine zentrale `.env`. Du musst nur einen Ordner kopieren und eine Datei
-ausfüllen.
+eine zentrale `.env` für gemeinsame Einstellungen.
+
+Für eine **Neuinstallation** die Dateien aus demselben Release übernehmen,
+einschliesslich der versteckten `.env.example`. Der Webeditor steht erst
+nach dem ersten Start zur Verfügung. Pfade und Zugangsdaten deshalb zuerst
+von Hand eintragen.
 
 ```bash
-# 1. Diesen charts-stack-Ordner auf deinen Server kopieren.
-
-# 2. slskd zuerst einrichten (API-Key + Soulseek-Login) – siehe slskd/README.md.
-#    Dabei entsteht der API-Key, den du gleich in die .env eintraegst.
-
-# 3. Eine zentrale .env anlegen und ausfuellen:
-cp .env.example .env
-#    PFLICHT (sonst startet mind. ein Dienst NICHT):
+# 1. Im charts-stack-Projektordner .env nur anlegen, wenn sie noch nicht existiert:
+test -e .env || (umask 077; cp .env.example .env)
+#    Lokale Pfade, Benutzer-/Gruppen-IDs und Zugangsdaten eintragen:
 #      MUSIC_ROOT, SLSKD_API_KEY, PUID, PGID,
 #      SONGREQUEST_USERS   (charts-songrequest crasht sonst - Sicherheits-Gate),
 #      DASHBOARD_PASSWORD  (charts-dashboard crasht sonst - Sicherheits-Gate),
@@ -489,19 +513,43 @@ cp .env.example .env
 #      ab - Dashboard UND Config - statt DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
-# 4. Die drei Daten-Unterordner VOR dem Start mit den richtigen Rechten anlegen
+# 2. Daten- und Sicherungsordner VOR dem Start mit den richtigen Rechten anlegen
 #    (sonst legt Docker sie beim Bind-Mount als root an -> die Dienste laufen
 #    unter PUID:PGID und koennen nicht schreiben).
 #    ACHTUNG: $MUSIC_ROOT steht in deiner .env, ist KEINE Shell-Variable - zuerst
 #    mit DEMSELBEN Wert wie in der .env exportieren, sonst zielen die Befehle auf
 #    das Wurzelverzeichnis des Dateisystems:
 export MUSIC_ROOT=/volume2/music   # DENSELBEN Wert wie in deiner .env verwenden
-mkdir -p "$MUSIC_ROOT"/{Music,Charts,SeedShare}
-chown -R 1027:100 "$MUSIC_ROOT"   # eigene PUID:PGID einsetzen (hier Synology-Default)
-
-# 5. Starten – alle Dienste zusammen:
-docker compose up -d --build
+mkdir -p "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare" .env-backups
+# Eigene PUID:PGID einsetzen und mit den nötigen Rechten ausführen:
+chown 1027:100 .env .env-backups "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
+chmod 600 .env
+chmod 700 .env-backups
 ```
+
+3. [slskd](slskd/README.md#setup) konfigurieren und starten. In `.env` und
+   `slskd.yml` denselben API-Schlüssel verwenden. Dann
+   `docker compose config --quiet && docker compose up -d --build` ausführen.
+4. `http://<server>:5058` (bzw. den eingestellten `CONFIG_PORT`) öffnen und
+   in `charts-config` anmelden.
+
+Nach der Inbetriebnahme kann die passwortgeschützte `charts-config`-Oberfläche
+die zentrale `.env` im Tab **.env** verwalten. Beim Speichern wird sie anhand
+der `.env.example` neu aufgebaut; bestehende Werte und zusätzliche aktive
+Variablen bleiben erhalten. Zugangsdaten werden nicht an den Browser
+zurückgegeben. Vor jeder Dateiänderung wird eine private Sicherung in
+`.env-backups/` angelegt. `charts-config` bleibt unprivilegiert und erhält für
+diese Funktion Schreibzugriff auf die gemountete `.env` und das
+Sicherungsverzeichnis; `.env.example` ist read-only. Die Hostdatei und das
+Sicherungsverzeichnis müssen für die konfigurierte `PUID:PGID` schreibbar sein.
+Der Editor ändert weder `compose.yml` noch `slskd.yml` oder externe
+JSON-Dateien. Speichern startet keine Container neu.
+
+**Bestehende Installation aktualisieren:** Die Live-`.env`, die
+slskd-Einstellungen und lokale JSON-Dateien sichern und behalten. Die neue
+`compose.yml`, `.env.example` und Anwendungsdateien aus demselben Release
+übernehmen. `.env.example` nicht über die Live-`.env` kopieren. Neue
+Einstellungen nach dem Update zuerst im Editor prüfen, dann speichern.
 
 **Mit dem Synology Container Manager:** Projekt → Erstellen → Pfad auf diesen
 `charts-stack`-Ordner → er findet die `compose.yml` und die `.env` automatisch.
@@ -509,8 +557,10 @@ Nach **Code-Änderungen** die betroffenen Dienste neu **bauen** (im Container
 Manager: Projekt → Aktion → Erstellen; per CLI: `docker compose up -d --build
 <dienst>`). `charts-watchdog` ist ein reines Shell-Skript ohne eigenes Image –
 dort reicht ein Neustart (`docker compose up -d --force-recreate charts-watchdog`),
-kein Rebuild. Reine `.env`-Änderungen brauchen nie einen Rebuild, nur ein
-`docker compose up -d`.
+kein Rebuild. Reine `.env`-Änderungen brauchen keinen Image-Rebuild. Zum
+Anwenden die betroffenen Container aus dem Projektordner neu erstellen:
+`docker compose up -d --no-deps --force-recreate <dienst...>`. Der .env-Tab
+zeigt die Diensteliste für gespeicherte Änderungen.
 
 **Projekt auf ein anderes NAS-Volume verschieben (z. B. NVMe auf HDD):** Erst
 den Stack stoppen und den vollständigen Projektordner einschließlich `.env`,
@@ -668,16 +718,16 @@ spiegelt die `.env.example`).
 > *ganze* Library ab (breiter + bessere Qualität als eine einzelne
 > Deezer-Playlist).
 
-### Eigene Chart-Quellen (Deezer / Last.fm)
+### Eigene Chart-Quellen (Deezer / Last.fm / Apple Music)
 
 In `charts-sync` definiert die Variable `CHARTS` (JSON) die Playlists und ihre
 Quellen. Jede Quelle kann ein optionales, abwärtskompatibles `service`-Feld
-(`deezer`/`lastfm`) tragen. Die mitgelieferten IDs sind **Beispiele** – ersetze
+(`deezer`/`lastfm`/`apple`/`energy`) tragen. Die mitgelieferten IDs sind **Beispiele** – ersetze
 sie durch deine eigenen. Die vollständige Feld- und ID-Referenz samt fertiger
 Beispiele (Country, 80er/90er …) steht in **[`CHARTS-SOURCES.md`](CHARTS-SOURCES.md)**.
 Neue Quellen-IDs findest du bequem über den **Quellen-Finder** in
 [charts-config](charts-config) (Port 5058; Deezer-Playlist-Suche, Genre-Tabelle,
-Last.fm-Tag-Prüfung). Details in `charts-sync/README.md`.
+Last.fm-Tag-Prüfung, Apple-Music-Ländercharts). Details in `charts-sync/README.md`.
 
 **An/Aus pro Dienst:** `charts-hitparade` und `charts-flashback` haben je einen
 Schalter `HITPARADE_ENABLED` / `FLASHBACK_ENABLED` (`true`/`false`, Default
@@ -699,13 +749,13 @@ Zwei Dienste behalten den Stack im Auge:
 
 Daneben steht eine dritte Web-UI:
 
-- **charts-config** – eine reine Lese-Web-UI (Standard-Port `5058`) mit dem
+- **charts-config** – eine passwortgeschützte Web-UI (Standard-Port `5058`) mit dem
   **Quellen-Finder** (Deezer-Playlist-/Künstler-Suche, Deezer-Genre-Tabelle,
-  Last.fm-Tag-Prüfung → fertige `charts-sync`-Snippets) und dem
+  Last.fm-Tag-Prüfung, Apple-Music-Ländercharts → fertige `charts-sync`-Snippets) und dem
   **Energy-Kanal-Browser** (fertiges `ENERGY_CHANNELS`-Snippet je Kanal +
-  Live-Status). Sie ändert **keine** Konfiguration – sie zeigt nur
-  Snippets zum Hineinkopieren. Passwortgeschützt mit **eigenem** Login (Benutzer
-  `admin` + `CONFIG_PASSWORD`). Details in `charts-config/README.md`.
+  Live-Status), plus lokalem Mundart-Künstler-/Szenen-Inventar und optionalem
+  Playlist-Filter. Sie ändert weder `.env` noch `charts.json`. Details in
+  `charts-config/README.md`.
 
 Dashboard und Watchdog greifen **nicht** direkt auf den Docker-Socket zu,
 sondern **read-only**

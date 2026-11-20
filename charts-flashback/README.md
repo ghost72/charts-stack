@@ -202,10 +202,11 @@ Bevor ein Song in `missing-flashback.txt` geschrieben wird, prüft ein
 flashback / recommend / hitparade), ob der Song bereits irgendwo unter
 `Music/<Artist>/` existiert – unabhängig vom Album-Ordner und **ohne** den
 Compilation-Filter. Falls ja, gilt der Song als vorhanden und wird nicht erneut
-geladen. Zusätzlich liefert `_looks_like_compilation` jetzt für jeden Lidarr
-`(JJJJ)`-Album-Ordner einen **Kurzschluss auf `False`**, sodass ein Song, dessen
-einzige verbliebene Kopie in einem kuratierten `Greatest Hits (2008)/`-Album
-liegt, nicht mehr für einen Sampler gehalten und als Single nachgeladen wird.
+geladen. Die Jahreszahl-Ausnahme gilt nur für `Greatest Hits`; `Various Artists`
+und `Bravo Hits` bleiben auch mit `(JJJJ)` im Pfad Compilations. Bei gleichem
+Match-Score gewinnt die Nicht-Compilation-Version, danach das Künstleralbum mit
+Jahreszahl, auch bei `IGNORE_COMPILATIONS=0`. Vorhandene Musikdateien bleiben
+unverändert.
 
 > Ein Repo-Root-Paritätstest (`tests/test_shared_helper_parity.py`) erzwingt nun,
 > dass diese duplizierten Helfer (`presence.py`, `_title_key`, `_artist_key`,

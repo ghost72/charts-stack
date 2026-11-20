@@ -60,6 +60,8 @@ SLSKD_API_KEY="${SLSKD_API_KEY:-}"
 LIDARR_URL="${LIDARR_URL:-}"
 LIDARR_API_KEY="${LIDARR_API_KEY:-}"
 LASTFM_API_KEY="${LASTFM_API_KEY:-}"
+APPLE_CHARTS_ENABLED="${APPLE_CHARTS_ENABLED:-0}"
+APPLE_CHARTS_COUNTRY="$(printf '%s' "${APPLE_CHARTS_COUNTRY:-ch}" | tr '[:upper:]' '[:lower:]')"
 
 # --- i18n (translatable output texts, shared lang/ set) ---------------------
 # charts-watchdog is the only non-Python service; t() mirrors the semantics of
@@ -363,7 +365,7 @@ http_probe() {
 }
 
 # Reachability of ONE external service. Echo: "ok", "problem" or "skip"
-# (= not configured -> do not monitor). Criteria 1:1 from collector.py.
+# (= not configured -> do not monitor). Uses the dashboard's corresponding endpoints.
 # Fail-open: a missing response (HTTP_CODE=000) is "problem" for THIS poll
 # (only the debounce machine may turn it into a message).
 ext_reachable() {
@@ -403,6 +405,25 @@ ext_reachable() {
       # 200 = ok; 429/403 = throttled, STILL reachable (no alarm).
       http_probe "https://itunes.apple.com/search?term=test&limit=1"
       case "$HTTP_CODE" in 200|429|403) echo ok ;; *) echo problem ;; esac ;;
+    apple)
+      case "$(printf '%s' "$APPLE_CHARTS_ENABLED" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) : ;;
+        *) echo skip; return ;;
+      esac
+      case "$APPLE_CHARTS_COUNTRY" in
+        [a-z][a-z]) : ;;
+        *) echo problem; return ;;
+      esac
+      http_probe "https://rss.marketingtools.apple.com/api/v2/${APPLE_CHARTS_COUNTRY}/music/most-played/100/songs.json"
+      if [ "$HTTP_CODE" = "200" ] &&
+         printf '%s' "$HTTP_BODY" | grep -q '"feed"' &&
+         printf '%s' "$HTTP_BODY" | grep -q '"results"' &&
+         printf '%s' "$HTTP_BODY" | grep -Eq '"artistName"[[:space:]]*:[[:space:]]*"[^"]+' &&
+         printf '%s' "$HTTP_BODY" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"[^"]+'; then
+        echo ok
+      else
+        echo problem
+      fi ;;
     *) echo skip ;;
   esac
 }
@@ -416,6 +437,7 @@ ext_label() {
     deezer)       echo "Deezer" ;;
     lastfm)       echo "Last.fm" ;;
     itunes)       echo "iTunes" ;;
+    apple)        echo "Apple Music" ;;
     *)            echo "$1" ;;
   esac
 }
@@ -589,7 +611,7 @@ main_loop() {
     # collide with the external slskd check). Debounce = EXT_DEBOUNCE_POLLS
     # (= WATCH_EXTERNAL_DEBOUNCE_SECONDS, default 10 min), recovery RECOVER_POLLS,
     # cooldown COOLDOWN - reused from the container part.
-    for e in slskd lidarr listenbrainz deezer lastfm itunes; do
+    for e in slskd lidarr listenbrainz deezer lastfm itunes apple; do
       res="$(ext_reachable "$e")"
       [ "$res" = "skip" ] && continue   # not configured -> do not monitor
       label="$(ext_label "$e")"

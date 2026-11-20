@@ -7,9 +7,8 @@ Web-UI und REST-API. Der charts-Stack nutzt ihn zum Suchen und Herunterladen von
 Songs: **charts-download**, **charts-upgrade** und **charts-songrequest** sprechen
 über die REST-API mit slskd.
 
-> Hinweis: slskd ist ein eigenständiger Dienst (eigenes Soulseek-Login nötig) und
-> wird hier als separates compose-Projekt geführt, weil der ganze charts-Stack
-> davon abhängt.
+> slskd ist ein eigener Dienst im gemeinsamen Compose-Projekt und benötigt
+> einen eigenen Soulseek-Login.
 
 ## Wie es mit dem charts-Stack zusammenspielt
 
@@ -45,7 +44,7 @@ und allen charts-Diensten identisch sein.
 ### 1. Key festlegen + in die zentrale `.env` schreiben
 
 ```bash
-cp .env.example .env            # zentrale .env im charts-stack-Root (falls noch nicht da)
+test -e .env || (umask 077; cp .env.example .env)
 openssl rand -hex 32            # erzeugt einen Zufalls-Key - Ausgabe kopieren
 ```
 
@@ -55,6 +54,10 @@ lesen ihn von dort. `SLSKD_HOST` steht standardmäßig auf `http://slskd:5030`
 (Containername im Projekt-Netz) – das passt im Ein-Projekt-Setup automatisch.
 
 ### 2. slskd starten (erzeugt die slskd.yml)
+
+Vor dem Start den konfigurierten `SLSKD_CONFIG_DIR` anlegen und für den
+Dienstbenutzer `PUID:PGID` schreibbar machen. Standardpfad:
+`./slskd/slskd-config`.
 
 ```bash
 docker compose up -d slskd

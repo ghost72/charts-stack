@@ -27,15 +27,16 @@ class ChartTrack:
     """A single chart track with the fields relevant for matching."""
 
     def __init__(self, position: int, artist: str, title: str, deezer_id: int = 0,
-                 contributors: list[str] | None = None):
+                 contributors: list[str] | None = None,
+                 artist_id: str | int = ""):
         self.position = position
         self.artist = artist
         self.title = title
         self.deezer_id = deezer_id
+        self.artist_id = str(artist_id or "").strip()
         # All artists involved in this track (Deezer 'contributors[]'),
         # including feature/collab partners that are NOT the main artist.
-        # Only relevant for the exclude_artists filter; it plays no role in
-        # matching. Last.fm tracks have no contributors -> empty list.
+        # Last.fm and Energy tracks have no contributors -> empty list.
         self.contributors: list[str] = contributors or []
 
     def __repr__(self) -> str:
@@ -46,7 +47,9 @@ def _parse_tracks(items: list[dict]) -> list[ChartTrack]:
     """Convert the Deezer JSON entries into ChartTrack objects."""
     tracks: list[ChartTrack] = []
     for index, item in enumerate(items, start=1):
-        artist = (item.get("artist") or {}).get("name", "").strip()
+        artist_data = item.get("artist") or {}
+        artist = artist_data.get("name", "").strip()
+        artist_id = artist_data.get("id", "")
         # title_short has no "(feat. ...)" additions and usually matches better.
         title = (item.get("title_short") or item.get("title") or "").strip()
         if not artist or not title:
@@ -62,7 +65,7 @@ def _parse_tracks(items: list[dict]) -> list[ChartTrack]:
             if isinstance(c, dict) and (c.get("name") or "").strip()
         ]
         tracks.append(ChartTrack(position, artist, title, item.get("id", 0),
-                                 contributors))
+                                 contributors, artist_id))
     return tracks
 
 
@@ -166,7 +169,10 @@ def _is_excluded_artist(artist: str, exclude_set: set[str],
 
 
 def _fetch_one_feed(feed, client: httpx.Client) -> list[ChartTrack]:
-    """Dispatcher: fetch a feed from Deezer or Last.fm depending on its type."""
+    """Fetch one public/API chart feed or read an Energy handoff."""
+    if feed.kind == "apple":
+        from . import apple
+        return apple.fetch_feed(feed, client)
     if feed.kind == "energy":
         # Lazy import to avoid a module import cycle (energy_feed imports from
         # this module for ChartTrack). Reads a local handoff JSON, no socket.
@@ -250,18 +256,32 @@ def _apply_genre_filter(tracks: list[ChartTrack],
 
 def fetch_chart(chart_source) -> list[ChartTrack]:
     """
-    Fetch the chart list(s) for a ChartSource and merge multiple feeds (Deezer
-    and/or Last.fm) into one deduplicated list. Disabled feeds (enabled=False)
-    are skipped. Afterwards an optional genre filter is applied.
+    Fetch the chart list(s) for a ChartSource and merge multiple feeds into
+    one deduplicated list. Disabled feeds (enabled=False)
+    are skipped. For mundart.m3u, discoveries are inventoried and the optional
+    local scene filter is applied. Afterwards the optional genre filter runs.
 
     Order: feeds are queried in configuration order. If a song appears in
     multiple feeds, the first occurrence wins (i.e. the earlier-listed source).
     Positions are renumbered after the merge so the playlist order is stable.
     """
-    active = chart_source.active_feeds
+    from . import artist_catalog
+
+    is_mundart = getattr(chart_source, "name", "") == artist_catalog.MUNDART_PLAYLIST
+    selection = artist_catalog.load_selection() if is_mundart else None
+    configured_active = chart_source.active_feeds
+    manual_feeds = (
+        artist_catalog.manual_artist_feeds(selection)
+        if selection is not None else []
+    )
+    active = (
+        [feed for feed in configured_active if feed.kind != "energy"]
+        + manual_feeds
+        + [feed for feed in configured_active if feed.kind == "energy"]
+    )
     # Per-playlist effective genre filter (explicit genre_filter > global).
     genre_active = chart_source.effective_genre_filter
-    skipped = len(chart_source.feeds) - len(active)
+    skipped = len(chart_source.feeds) - len(configured_active)
     skipped_suffix = t("deezer.chart.fetch_skipped", skipped=skipped) if skipped else ""
     logger.info(t(
         "deezer.chart.fetch",
@@ -272,6 +292,8 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     seen: set[str] = set()
     # Counter for tracks removed via exclude_artists (playlist-specific).
     excluded_artists = 0
+    artist_filtered = 0
+    discoveries: list[tuple[str, list[ChartTrack]]] = []
     # Contribution stats per source: raw delivered and of those NEW (not yet
     # covered by an earlier feed).
     stats: dict[str, dict[str, int]] = {}
@@ -286,9 +308,16 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
             except Exception as e:
                 logger.error(t("deezer.feed.failed", feed=repr(feed), error=e))
                 continue
+            if is_mundart:
+                discoveries.append((artist_catalog._feed_label(feed), tracks))
             s = stats.setdefault(feed.kind, {"raw": 0, "new": 0})
             s["raw"] += len(tracks)
             for track in tracks:
+                if (selection is not None
+                        and selection["filter_enabled"]
+                        and not artist_catalog.is_allowed(track, selection)):
+                    artist_filtered += 1
+                    continue
                 # Check the artist exclusion (playlist-specific) BEFORE the
                 # dedup. Order matters: if we did 'seen' first and exclusion
                 # second, an excluded artist could slip through when the same
@@ -310,9 +339,15 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
                 s["new"] += 1
                 merged.append(track)
 
+        if is_mundart:
+            artist_catalog.record_discoveries(discoveries)
+
         if excluded_artists:
             logger.info(t("deezer.exclude.summary",
                           name=chart_source.title, count=excluded_artists))
+        if artist_filtered:
+            logger.info(t("deezer.artist.filter_summary",
+                          name=chart_source.title, count=artist_filtered))
 
         before_filter = len(merged)
         # Apply the (optional) genre filter to the merged list.
@@ -325,7 +360,7 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     # Log the contribution stats (what each source adds NET).
     if stats:
         parts = []
-        for kind in ("deezer", "lastfm", "energy"):
+        for kind in ("deezer", "lastfm", "apple", "energy"):
             if kind in stats:
                 s = stats[kind]
                 dup = s["raw"] - s["new"]
@@ -344,8 +379,10 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     chart_source.last_stats = {
         "deezer_new": stats.get("deezer", {}).get("new", 0),
         "lastfm_new": stats.get("lastfm", {}).get("new", 0),
+        "apple_new": stats.get("apple", {}).get("new", 0),
         "energy_new": stats.get("energy", {}).get("new", 0),
         "genre_filtered": filtered if genre_active else 0,
+        "artist_filtered": artist_filtered,
     }
 
     logger.info(t("deezer.merge.result", name=chart_source.title, count=len(merged)))

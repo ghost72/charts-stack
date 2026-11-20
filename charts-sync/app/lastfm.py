@@ -2,8 +2,8 @@
 Last.fm chart client.
 
 Last.fm provides the AudioScrobbler web API (2.0). For reading chart, geo, tag
-and user queries a free API key is enough (no OAuth, no signature). We fetch
-metadata only (artist + title), no audio data.
+and user queries an API key is used (no OAuth, no signature). From 2026-12-01,
+the key owner needs Last.fm Pro. We fetch metadata only, no audio data.
 
 Methods used (all format=json):
   - chart.getTopTracks              global top tracks (listener/scrobble-based)

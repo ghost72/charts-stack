@@ -4,7 +4,7 @@
 
 Dieses Dokument beschreibt die `CHARTS`-Konfiguration von
 [`charts-sync`](charts-sync): wie du **beliebig viele Playlists** definierst und
-jede aus **einer oder mehreren Quellen** (Deezer und/oder Last.fm) zusammensetzt.
+jede aus **einer oder mehreren Quellen** (Deezer, Last.fm, Apple Music oder Energy) zusammensetzt.
 Alles ist über eine einzige Umgebungsvariable konfigurierbar – kein Code-Umbau,
 keine festen Playlist-Namen.
 
@@ -77,7 +77,7 @@ Verweis auf dieses Dokument (siehe [Troubleshooting](#7-troubleshooting)).
 
 | Feld | Pflicht | Typ | Bedeutung |
 |------|---------|-----|-----------|
-| `service` | nein (empfohlen) | `"deezer"` / `"lastfm"` | Datenquelle; fehlt das Feld, wird es aus `type` abgeleitet (`type:"lastfm"` → Last.fm, sonst Deezer) |
+| `service` | nein (empfohlen) | `"deezer"` / `"lastfm"` / `"apple"` / `"energy"` | Datenquelle; fehlt das Feld, wird es aus `type` abgeleitet (`type:"lastfm"` → Last.fm, sonst Deezer) |
 | `limit` | nein | `"all"` oder Zahl | max. Tracks **dieser** Quelle |
 | `enabled` | nein | bool | `false` = Quelle stilllegen, ohne sie zu löschen; Default `true` |
 
@@ -88,6 +88,7 @@ Verweis auf dieses Dokument (siehe [Troubleshooting](#7-troubleshooting)).
 | `deezer` | `type:"chart"` | `source` (Chart-ID, `0` = global) | `{"service":"deezer","type":"chart","source":"0"}` |
 | `deezer` | `type:"playlist"` | `source` (Playlist-ID) | `{"service":"deezer","type":"playlist","source":"1313617925"}` |
 | `deezer` | `type:"artist"` | `source` (Künstler-ID) | `{"service":"deezer","type":"artist","source":"16529"}` |
+| `apple` | `type:"chart"` (optional) | `country` (zweistelliges Länderkürzel) | `{"service":"apple","country":"ch","limit":100}` |
 | `lastfm` | `method:"chart.getTopTracks"` | – | `{"service":"lastfm","method":"chart.getTopTracks"}` |
 | `lastfm` | `method:"geo.getTopTracks"` | `country` (engl. Ländername) | `{"service":"lastfm","method":"geo.getTopTracks","country":"Switzerland"}` |
 | `lastfm` | `method:"tag.getTopTracks"` | `tag` | `{"service":"lastfm","method":"tag.getTopTracks","tag":"pop"}` |
@@ -97,10 +98,82 @@ Verweis auf dieses Dokument (siehe [Troubleshooting](#7-troubleshooting)).
 > sie intern in Kleinbuchstaben um. `geo.getTopTracks` und `geo.gettoptracks`
 > sind also gleichwertig.
 
-Für Last.fm-Quellen wird ein kostenloser `LASTFM_API_KEY`
-(https://www.last.fm/api/account/create) benötigt. Ein versehentlich an einer
+Für Last.fm-Quellen wird ein eigener `LASTFM_API_KEY`
+(https://www.last.fm/api/account/create) benötigt. Laut Last.fm-Ankündigung
+braucht der Schlüsselinhaber ab **1. Dezember 2026 Last.fm Pro**. Last.fm bleibt
+optional unterstützt; Deezer, Apple Music und Energy brauchen diesen Key nicht.
+Ein versehentlich an einer
 Last.fm-Quelle gesetztes Deezer-`source` wird **ignoriert** (nicht an die API
 durchgereicht).
+
+### Apple Music ohne API-Key (optional)
+
+`service:"apple"` liest den öffentlichen [Apple-RSS-/JSON-Feed](https://rss.marketingtools.apple.com/)
+für die meistgespielten Songs eines Landes. `country` ist z. B. `ch`, `de`,
+`gb` oder `us` (nicht der ausgeschriebene Ländername wie bei Last.fm).
+`limit` ist 1–100; `"all"` bzw. der eingebaute All-Default bedeutet hier
+**höchstens 100**, ohne Pagination. Ein explizites numerisches Limit über 100,
+ein ungültiges Kürzel oder ein anderer `type` deaktiviert den Feed mit Warnung.
+HTTP-Fehler, leere oder kaputte Antworten werden als Feed-Fehler geloggt.
+Bei Transportfehlern (z. B. Timeout) und HTTP-5xx versucht charts-sync denselben
+Feed höchstens dreimal, mit Warnung und 1 bzw. 2 Sekunden Pause vor dem nächsten
+Versuch. HTTP-4xx und ungültige Inhalte werden nicht wiederholt. Ein dauerhafter
+Fehler bleibt ein Feed-Fehler; es gibt keinen stillen Wechsel auf ein anderes
+Land oder eine andere Quelle. Dashboard-/Watchdog-Checks bleiben unabhängig.
+Es werden nur Metadaten gelesen, kein Apple-Abo und kein API-Key benötigt.
+Bestehende Standardquellen werden dadurch nicht geändert.
+
+<!-- runnable:apple_ch -->
+```json
+[{"name":"charts.m3u","genre_filter":false,"sources":[{"service":"deezer","type":"chart","source":"0","limit":100},{"service":"apple","country":"ch","limit":100}]}]
+```
+
+Zusätzliche Deezer-Quellen bleiben normale Playlist-Feeds, z. B.
+`7966514882` (Alt Trends, 80 Titel) und `668126235` (Alternative Essentials,
+50 Titel), öffentlich geprüft am 19.11.2026. Nur bewusst zur bestehenden
+`sources`-Liste ergänzen; sie bringen auch andere Titel mit, nicht nur
+Last.fm-Ersatz. Der erste Feed behält bei identischem Künstler/Titel Vorrang;
+Energy wird weiterhin zuletzt gemergt. Apple-Beiträge stehen als `apple`
+im Quellen-Log und als `Apple Music` in der Benachrichtigung.
+
+Der Quellen-Finder in [`charts-config`](charts-config/README.md) prüft
+CH-/DE-/GB-/US-Feeds auf Anfrage und liefert Vorschau und kopierbares Snippet.
+Für die separate Dashboard-Kachel und Watchdog-Ausfall-/Entwarnungsmeldungen
+`APPLE_CHARTS_ENABLED=1` und `APPLE_CHARTS_COUNTRY=ch` in der bestehenden `.env`
+setzen (Land passend zum Feed wählen) und beide Dienste neu erstellen.
+Default ist aus: diese Variablen steuern nur die Überwachung, nicht die
+Sync-Feeds. Es wird ein Land überwacht, nicht automatisch jedes konfigurierte
+Apple-Land. Der iTunes-Cover-Check bleibt davon unabhängig.
+
+**Ohne Last.fm betreiben:** Alle `lastfm`-Feeds mit `enabled:false` erhalten,
+`genre_filter:false` pro Playlist und `GENRE_FILTER=0` setzen. Bei vollständigem
+Verzicht außerdem `LASTFM_ENABLED=0` und `LASTFM_API_KEY=` in der bestehenden
+lokalen `.env` setzen. Ein leeres Key-Feld unterbindet auch die optionalen
+Last.fm-Statusprüfungen. Betroffene Container neu erstellen, nicht nur
+neu starten. Der Genre-Filter bleibt für Nutzer mit eigenem Key optional
+verfügbar; kuratierte Quellen garantieren keine bestimmten Genres.
+
+**Bestehende Installation aktualisieren:** Zuerst die bestehende `.env` und
+die eigene Quellenkonfiguration sichern. Änderungen gezielt in diese Dateien
+übernehmen, nicht durch Beispiele ersetzen; bestehende Quellen, Ausschlüsse,
+Zugangsdaten und Datenpfade erhalten. Apple als Feed ergänzen und bei Bedarf
+die Überwachung wie oben einschalten. Last.fm nur abschalten, wenn gewünscht.
+Die aktualisierte Haupt-`compose.yml` reicht die Apple-Variablen bereits an
+Dashboard und Watchdog durch. Ein eigener Apple-Container, eine zusätzliche
+Compose-Datei oder private NAS-Hilfsskripte sind dafür nicht erforderlich.
+Aus dem Projekt-Hauptordner mit den aktualisierten Projektdateien:
+
+```sh
+docker compose config --quiet &&
+docker compose build charts-sync charts-dashboard charts-config &&
+docker compose up -d --no-deps --force-recreate \
+  charts-sync charts-recommend charts-dashboard charts-config charts-watchdog
+```
+
+Recommend braucht nur bei geänderten Last.fm-Einstellungen eine Neuerstellung;
+die obige Folge deckt auch die vollständige Last.fm-Abschaltung ab. Der
+Watchdog lädt sein eingebundenes Skript beim Neuerstellen; kein eigenes
+Image bauen. Ein bloßer Restart übernimmt geänderte Umgebungsvariablen nicht.
 
 > **`type:"artist"`** holt die Top-Tracks EINES Künstlers
 > (`/artist/<id>/top`, von Deezer intern bei ~100 gedeckelt). Praktisch für

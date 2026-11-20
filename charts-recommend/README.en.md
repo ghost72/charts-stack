@@ -23,6 +23,13 @@ Optionally also **Last.fm** (a global extra source of the operator, not
 per-user): "similar songs" (`track.getSimilar`) or top tracks
 (`user.getTopTracks`).
 
+Last.fm remains optional and requires your own API key. According to Last.fm's
+announcement, the key owner needs Last.fm Pro from 1 December 2026.
+To disable it, set `LASTFM_ENABLED=0`; to stop all Last.fm use across the stack,
+also clear `LASTFM_API_KEY=`. ListenBrainz remains independent.
+For completely disabling it, including sync feeds and the genre filter, see
+[CHARTS-SOURCES.en.md](../CHARTS-SOURCES.en.md#apple-music-without-an-api-key-optional).
+
 > The CF recommendation endpoint (`cf/recommendation/user/<user>/recording`) is
 > **deliberately not** used: it only returns raw `recording_mbid` + score, whose
 > name resolution would need MusicBrainz (1 req/s) or a fragile player endpoint.
@@ -224,10 +231,11 @@ Before a song is written to `missing-recommend.txt`, a **presence guard**
 hitparade) checks whether the song already exists anywhere under
 `Music/<Artist>/` – regardless of album folder and **ignoring** the compilation
 filter. If it does, the song is treated as present and is not re-downloaded.
-In addition, `_looks_like_compilation` now **short-circuits to `False` for any
-Lidarr `(YYYY)` album folder**, so a song whose only surviving copy lives in a
-curated `Greatest Hits (2008)/` album is no longer mistaken for a sampler and
-re-fetched as a single.
+The year-folder exception applies only to `Greatest Hits`; `Various Artists`
+and `Bravo Hits` remain compilations even with `(YYYY)` in their path. Equal
+match scores prefer the non-compilation release, then an artist album with
+a year, including with `IGNORE_COMPILATIONS=0`. Existing music files are
+unchanged; this service does not write playlists.
 
 > A repo-root parity test (`tests/test_shared_helper_parity.py`) now enforces
 > that these duplicated helpers (`presence.py`, `_title_key`, `_artist_key`,

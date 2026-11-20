@@ -4,14 +4,14 @@ Read-only backend helpers for charts-config.
 Two source groups, migrated verbatim from charts-dashboard (only the i18n key
 namespace was re-based onto the config.* root):
   1. Source finder: Deezer playlist/artist search, Deezer genre catalog and the
-     Last.fm tag check. All read-only, fail-open (every exception -> {ok:False,
+     Last.fm tag check and Apple Music country charts. All read-only, fail-open (every exception -> {ok:False,
      detail:...}, NEVER raise upward) over the public Deezer/Last.fm HTTP APIs.
   2. Energy channel browser: the confirmed non-regional Energy (NRJ) channels
      with a per-channel default-mode snippet plus a live active/active-mode
      status read from charts-energy's status JSON (mounted read-only).
 
 Unlike the dashboard collector this module has NO Docker SDK and NO status/
-connection/storage machinery: charts-config only talks to Deezer/Last.fm (WAN)
+connection/storage machinery: charts-config only talks to Deezer/Last.fm/Apple Music (WAN)
 and reads the charts-energy status file. All functions are defensive: if a
 source fails, they return a fail-open result instead of blowing up the request.
 """
@@ -145,6 +145,35 @@ def search_deezer_artists(q: str) -> dict:
             "config.conn.unreachable", err=e.__class__.__name__)}
 
 
+def verify_deezer_artist(artist_id: str) -> dict:
+    """Resolve a Deezer artist ID to its canonical name before storing it."""
+    artist_id = str(artist_id or "").strip()
+    if not re.fullmatch(r"[0-9]{1,20}", artist_id):
+        return {"ok": False, "status": 400,
+                "detail": i18n.t("config.finder.artist_invalid")}
+    try:
+        response = httpx.get(
+            f"https://api.deezer.com/artist/{artist_id}", timeout=8,
+            follow_redirects=True)
+        payload = response.json() if response.status_code == 200 else {}
+        resolved_id = str(payload.get("id", "")) if isinstance(payload, dict) else ""
+        name = (payload.get("name", "").strip()
+                if isinstance(payload, dict) and isinstance(payload.get("name"), str)
+                else "")
+        if (response.status_code != 200 or not isinstance(payload, dict)
+                or payload.get("error") or resolved_id != artist_id or not name):
+            return {"ok": False, "status": 404,
+                    "detail": i18n.t("config.finder.artist_invalid")}
+        return {"ok": True, "id": artist_id, "name": name}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": 502,
+            "detail": i18n.t(
+                "config.conn.unreachable", err=exc.__class__.__name__),
+        }
+
+
 # Deezer genre list: cached once a day (own TTL, rarely changed). Module-global
 # cache following the finder cache pattern.
 _genre_cache: dict | None = None
@@ -247,6 +276,46 @@ def lastfm_tag_check(q: str) -> dict:
         return {"ok": False, "configured": True,
                 "detail": i18n.t("config.conn.unreachable",
                                  err=e.__class__.__name__)}
+
+
+def apple_chart_check(country: str, limit: int = 100) -> dict:
+    """Validate a public country chart and return a copyable source snippet."""
+    country = country.strip().lower()
+    if (len(country) != 2 or not country.isascii() or not country.isalpha()
+            or not 1 <= limit <= 100):
+        return {"ok": False, "detail": i18n.t("config.finder.apple.invalid_selection")}
+    try:
+        response = httpx.get(
+            f"https://rss.marketingtools.apple.com/api/v2/{country}"
+            "/music/most-played/100/songs.json",
+            timeout=8, follow_redirects=True)
+        if response.status_code != 200:
+            return {"ok": False, "detail": i18n.t(
+                "config.conn.http_error", code=response.status_code)}
+        payload = response.json()
+        feed = payload.get("feed") if isinstance(payload, dict) else None
+        tracks = feed.get("results") if isinstance(feed, dict) else None
+        if not isinstance(tracks, list) or not tracks:
+            return {"ok": False, "detail": i18n.t("config.finder.apple.invalid_response")}
+        selected = tracks[:limit]
+        if not all(
+            isinstance(track, dict)
+            and isinstance(track.get("artistName"), str) and track["artistName"].strip()
+            and isinstance(track.get("name"), str) and track["name"].strip()
+            for track in selected
+        ):
+            return {"ok": False, "detail": i18n.t("config.finder.apple.invalid_response")}
+        return {
+            "ok": True, "country": country, "count": len(selected),
+            "sample": [f"{track['artistName'].strip()} - {track['name'].strip()}"
+                       for track in selected[:10]],
+            "snippet": json.dumps({"service": "apple", "country": country,
+                                   "limit": limit, "enabled": True},
+                                  separators=(",", ":")),
+        }
+    except (httpx.HTTPError, ValueError) as e:
+        return {"ok": False, "detail": i18n.t(
+            "config.conn.unreachable", err=e.__class__.__name__)}
 
 
 # ---------------------------------------------------------------------------

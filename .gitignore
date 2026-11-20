@@ -3,9 +3,14 @@
 .env
 .env.*
 !.env.example
+# Only the empty directory marker is tracked; generated backups contain secrets.
+!.env-backups/
+.env-backups/*
+!.env-backups/.gitkeep
 # Personal env copies/merges with real secrets (e.g. env_nas, env_new, env.bak).
 # Never commit these - they hold tokens/passwords. Only .env.example is public.
 env_*
+!charts-config/app/env_editor.py
 *.env
 
 # Local playlist definition file (optional, CHARTS_FILE). The template

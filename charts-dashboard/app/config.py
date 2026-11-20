@@ -54,6 +54,10 @@ LIDARR_API_KEY = os.environ.get("LIDARR_API_KEY", "").strip()
 # (not configured), never red. Last.fm has no key-free ping.
 LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "").strip()
 
+# Optional Apple Music chart monitoring, separate from the iTunes search API.
+APPLE_CHARTS_ENABLED = _get_bool("APPLE_CHARTS_ENABLED", False)
+APPLE_CHARTS_COUNTRY = os.environ.get("APPLE_CHARTS_COUNTRY", "ch").strip().lower()
+
 # --- FLASHBACK FM (GraphQL live check of the external source) ---
 # Persisted query hash; empty = FLASHBACK tile stays "muted" (not configured).
 # A dead hash -> tile red (signal: fetch a new hash).
@@ -79,11 +83,13 @@ ENERGY_ENABLED = _get_bool("ENERGY_ENABLED", False)
 
 # --- Swiss Hitparade (hitparade.ch) reachability live check ---
 # charts-hitparade scrapes the official Swiss chart from hitparade.ch. The
-# dashboard pings the same page with a real browser User-Agent (the site serves
+# dashboard pings the current singles page with a real browser User-Agent (the site serves
 # an empty placeholder without one). Mirrors charts-hitparade's HITPARADE_ENABLED
 # (default on): when off the tile shows "not in use" instead of pinging.
 HITPARADE_ENABLED = _get_bool("HITPARADE_ENABLED", True)
-HITPARADE_URL = os.environ.get("HITPARADE_URL", "https://hitparade.ch/charts").strip()
+HITPARADE_URL = os.environ.get(
+    "HITPARADE_URL", "https://hitparade.ch/charts/singles"
+).strip()
 
 # --- MusicBrainz (reachability live check of the metadata helper) ---
 # Metadata helper (release-year lookup) used by charts-energy / charts-flashback,

@@ -76,13 +76,13 @@ def probe_result(slug: str) -> bool:
     url = config.ENERGY_STREAM_HOST_TMPL.format(slug=slug)
     try:
         with httpx.Client(timeout=config.ENERGY_READ_TIMEOUT) as client:
-            resp = client.get(url, headers={
+            with client.stream("GET", url, headers={
                 "Icy-MetaData": "1",
                 "User-Agent": config.ENERGY_USER_AGENT,
-            })
+            }) as resp:
+                return resp.status_code == 200 and bool(resp.headers.get("icy-name"))
     except httpx.HTTPError:
         return False
-    return resp.status_code == 200 and bool(resp.headers.get("icy-name"))
 
 
 def probe(slug: str) -> int:
@@ -97,19 +97,20 @@ def probe(slug: str) -> int:
     url = config.ENERGY_STREAM_HOST_TMPL.format(slug=slug)
     try:
         with httpx.Client(timeout=config.ENERGY_READ_TIMEOUT) as client:
-            resp = client.get(url, headers={
+            with client.stream("GET", url, headers={
                 "Icy-MetaData": "1",
                 "User-Agent": config.ENERGY_USER_AGENT,
-            })
+            }) as resp:
+                icy_name = resp.headers.get("icy-name")
+                status_code = resp.status_code
     except httpx.HTTPError as e:
         print(t("energy.discover.probe_unreachable", slug=slug, error=e))
         return 1
 
-    icy_name = resp.headers.get("icy-name")
-    if resp.status_code == 200 and icy_name:
+    if status_code == 200 and icy_name:
         print(t("energy.discover.probe_ok", slug=slug, name=icy_name))
         return 0
-    print(t("energy.discover.probe_fail", slug=slug, status=resp.status_code))
+    print(t("energy.discover.probe_fail", slug=slug, status=status_code))
     return 1
 
 

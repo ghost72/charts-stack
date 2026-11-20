@@ -249,12 +249,16 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
         stat_bits.append(f"Deezer {stats['deezer_new']}")
     if stats.get("lastfm_new"):
         stat_bits.append(f"Last.fm {stats['lastfm_new']}")
+    if stats.get("apple_new"):
+        stat_bits.append(f"Apple Music {stats['apple_new']}")
     if stats.get("energy_new"):
         stat_bits.append(f"Energy {stats['energy_new']}")
     if stat_bits:
         lines.append(t("notify.sources", sources=", ".join(stat_bits)))
     if stats.get("genre_filtered"):
         lines.append(t("notify.genre_filtered", count=stats["genre_filtered"]))
+    if stats.get("artist_filtered"):
+        lines.append(t("notify.artist_filtered", count=stats["artist_filtered"]))
 
     # Overview line first: the new/missing counts must survive the Pushover
     # budget cut, so they sit in the head (never cut). Order = detail order.

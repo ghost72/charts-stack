@@ -26,6 +26,13 @@ Optional zusätzlich **Last.fm** (globale Zusatz-Quelle des Betreibers, nicht pr
 User): „ähnliche Songs" (`track.getSimilar`) oder Top-Tracks
 (`user.getTopTracks`).
 
+Last.fm bleibt optional und benötigt einen eigenen API-Key. Laut
+Last.fm-Ankündigung braucht dessen Inhaber ab 1. Dezember 2026 Last.fm Pro.
+Ohne Last.fm `LASTFM_ENABLED=0` setzen und bei vollständigem Verzicht im
+gesamten Stack `LASTFM_API_KEY=` leeren. ListenBrainz bleibt davon unabhängig.
+Für die vollständige Abschaltung einschließlich Sync-Feeds und Genre-Filter
+siehe [CHARTS-SOURCES.md](../CHARTS-SOURCES.md#apple-music-ohne-api-key-optional).
+
 > Der CF-Empfehlungs-Endpoint (`cf/recommendation/user/<user>/recording`) wird
 > **bewusst nicht** verwendet: er liefert nur rohe `recording_mbid` + Score,
 > deren Namensauflösung MusicBrainz (1 req/s) oder einen fragilen
@@ -236,10 +243,11 @@ Bevor ein Song in `missing-recommend.txt` geschrieben wird, prüft ein
 flashback / recommend / hitparade), ob der Song bereits irgendwo unter
 `Music/<Artist>/` existiert – unabhängig vom Album-Ordner und **ohne** den
 Compilation-Filter. Falls ja, gilt der Song als vorhanden und wird nicht erneut
-geladen. Zusätzlich liefert `_looks_like_compilation` jetzt für jeden Lidarr
-`(JJJJ)`-Album-Ordner einen **Kurzschluss auf `False`**, sodass ein Song, dessen
-einzige verbliebene Kopie in einem kuratierten `Greatest Hits (2008)/`-Album
-liegt, nicht mehr für einen Sampler gehalten und als Single nachgeladen wird.
+geladen. Die Jahreszahl-Ausnahme gilt nur für `Greatest Hits`; `Various Artists`
+und `Bravo Hits` bleiben auch mit `(JJJJ)` im Pfad Compilations. Bei gleichem
+Match-Score gewinnt die Nicht-Compilation-Version, danach das Künstleralbum mit
+Jahreszahl, auch bei `IGNORE_COMPILATIONS=0`. Vorhandene Musikdateien bleiben
+unverändert; dieser Dienst schreibt keine Playlists.
 
 > Ein Repo-Root-Paritätstest (`tests/test_shared_helper_parity.py`) erzwingt nun,
 > dass diese duplizierten Helfer (`presence.py`, `_title_key`, `_artist_key`,

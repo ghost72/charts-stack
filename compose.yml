@@ -714,8 +714,8 @@ services:
       - PUSHOVER_SOUND=${PUSHOVER_SOUND_WATCHDOG:-siren}
       - PUSHOVER_ENABLED=${PUSHOVER_WATCHDOG_ENABLED:-1}
       - PUSHOVER_DEVICES_TTL=${PUSHOVER_DEVICES_TTL:-3600}
-      # Erreichbarkeits-Checks der externen/abhaengigen Dienste (gleiche
-      # Kriterien wie das Dashboard). SLSKD_API_KEY wie im restlichen Stack mit
+      # Erreichbarkeits-Checks der externen/abhaengigen Dienste (entsprechende
+      # Endpunkte wie das Dashboard). SLSKD_API_KEY wie im restlichen Stack mit
       # :?-Guard (slskd ist Pflichtbestandteil); Lidarr/Last.fm optional (leer
       # -> nicht ueberwacht). WATCH_EXTERNAL_DEBOUNCE_SECONDS Default 600 = 10min.
       - SLSKD_HOST=${SLSKD_HOST:-http://slskd:5030}
@@ -724,6 +724,8 @@ services:
       - LIDARR_API_KEY=${LIDARR_API_KEY:-}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
       - WATCH_EXTERNAL_DEBOUNCE_SECONDS=${WATCH_EXTERNAL_DEBOUNCE_SECONDS:-600}
+      - APPLE_CHARTS_ENABLED=${APPLE_CHARTS_ENABLED:-0}
+      - APPLE_CHARTS_COUNTRY=${APPLE_CHARTS_COUNTRY:-ch}
       # Status-error machine: pages when a service writes status="error" into
       # its <service>.json (the same status files the dashboard reads via the
       # ro mount below). Reuses the debounce/recover/cooldown tunables above.
@@ -778,6 +780,8 @@ services:
       - PUSHOVER_USER=${PUSHOVER_USER:-}
       # Fuer den Last.fm-Live-Check (optional; leer -> Last.fm-Kachel muted).
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - APPLE_CHARTS_ENABLED=${APPLE_CHARTS_ENABLED:-0}
+      - APPLE_CHARTS_COUNTRY=${APPLE_CHARTS_COUNTRY:-ch}
       # Fuer den FLASHBACK-FM-Live-Check (toter Hash -> rote Kachel).
       - FLASHBACK_HASH=${FLASHBACK_HASH:-}
       - DASHBOARD_REFRESH_SECONDS=${DASHBOARD_REFRESH_SECONDS:-15}
@@ -811,12 +815,10 @@ services:
     env_file:
       - .env
 
-  # ── charts-config ─ Snippet-/Konfig-UI (Web) ─────────────────────────────
-  # Quellen-Finder (Deezer/Last.fm) + Energy-Kanal-Browser. Baut fertige
-  # charts-sync- und ENERGY_CHANNELS-Snippets zum Hineinkopieren in .env/
-  # charts.json. Reiner Lese-Zugriff: ruft nur Deezer/Last.fm (WAN) ab und
-  # liest die charts-energy-Status-JSON read-only. KEIN Docker-Zugriff, KEIN
-  # Neustart-Knopf - nur Text-Hinweise. Passwortgeschuetzt (eigener Login).
+  # ── charts-config ─ Konfig-UI (Web) ──────────────────────────────────────
+  # Quellen-Finder und Energy-Kanal-Browser bleiben read-only. Das
+  # Künstler-Verzeichnis schreibt die lokale Mundart-Auswahl atomar unter
+  # /charts; charts-sync liest dieselben Dateien. Kein Docker-Zugriff.
   charts-config:
     build: ./charts-config
     image: charts-config:latest
@@ -825,6 +827,7 @@ services:
     user: "${PUID:-1027}:${PGID:-100}"
     environment:
       - STATUS_DIR=/charts/.charts-status
+      - ARTIST_DATA_DIR=/charts
       # Advisory on/off flag (web UI has no run-loop; authoritative off-switch
       # is not starting the container). Kept for parity with ENERGY_ENABLED etc.
       - CONFIG_ENABLED=${CONFIG_ENABLED:-true}
@@ -846,7 +849,7 @@ services:
       # Dezenter Spenden-Footer (PayPal/Revolut). Default an; mit 0 abschaltbar.
       - CONFIG_DONATE=${CONFIG_DONATE:-1}
       # Manual tag editor: the library root (read-write mount below), the shared
-      # manifest file (read over the :ro /charts mount), the mtime-preserve gate,
+      # manifest file under /charts, the mtime-preserve gate,
       # and the search-index/cover limits. No TAGEDITOR_ENABLED flag - the real
       # off-switch is simply not mounting /music/Music.
       - MUSIC_DIR=/music/Music
@@ -867,14 +870,17 @@ services:
     ports:
       - "${CONFIG_PORT:-5058}:5058"
     volumes:
-      # Status-JSONs (Energy-Live-Status) + Manifest/Quelldateien: der Tag-Editor-
-      # Delete muss Manifest-Eintraege entfernen und Download-Quelldateien in den
-      # Papierkorb verschieben (sonst importiert charts-import den Song neu).
-      # Darum read-write (frueher :ro, dann schlug das Manifest-Update still fehl).
+      # Status, Manifest/Quelldateien, Tag-Editor und persistente
+      # Künstler-Auswahl/Inventar liegen im Charts-Ordner; deshalb read-write.
       - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts
       # Zentrale Sprachdateien (en/de/fr), geteilt wie die .env.
       - ./lang:/lang:ro
       # Musik-Library read-write fuer den manuellen Tag-Editor (In-place-Edits).
       - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music   # NEW: read-write for the tag editor
+      # Authenticated .env editor: only the central file is writable; its
+      # template and private backup directory are separate fixed mounts.
+      - ./.env:/config/.env:rw
+      - ./.env.example:/config/.env.example:ro
+      - ./.env-backups:/config/.env-backups:rw
     env_file:
       - .env

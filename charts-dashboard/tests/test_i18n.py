@@ -25,7 +25,9 @@ import importlib
 import json
 import pathlib
 import re
+import shutil
 import string
+import subprocess
 
 import pytest
 
@@ -126,6 +128,96 @@ def test_de_golden_dashboard():
             == "Hash ung\u00fcltig (API ge\u00e4ndert?)")
     # shared template keeps its {code} placeholder
     assert i18n.t("dashboard.conn.http_error", code=503) == "Fehler (HTTP 503)"
+
+
+@pytest.mark.parametrize("lang", _SHIPPED)
+def test_connection_tiles_configuration_and_failure_details(lang):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required to exercise the dashboard JavaScript")
+    html = (pathlib.Path(i18n.__file__).parent / "static" / "index.html").read_text(
+        encoding="utf-8")
+    tile = re.search(r"function tile\(cls, title, lines\) \{[\s\S]*?\n\}", html)
+    connections = re.search(
+        r"const ext = d\.external \|\| \{\};[\s\S]*?"
+        r'groupBlock\("conn\.group\.helpers", helpers\);', html)
+    translator = re.search(r"function t\(key, params\) \{[\s\S]*?\n\}", html)
+    assert tile and connections and translator
+    messages = _load_shipped(lang)
+    optional = ("slskd", "lidarr", "apple", "lastfm", "flashback", "energy",
+                "hitparade", "musicbrainz", "pushover")
+    reasons = {
+        "slskd": "dashboard.conn.slskd.no_api_key",
+        "lidarr": "dashboard.conn.lidarr.not_configured",
+        "lastfm": "dashboard.conn.lastfm.no_api_key",
+        "flashback": "dashboard.conn.flashback.no_hash",
+        "pushover": "dashboard.conn.pushover.not_configured",
+    }
+    cases = []
+    timeout_detail = messages["dashboard.conn.unreachable"].format(err="ReadTimeout")
+    for configured, ok, error in (
+            (False, False, "HTTP 503"), (True, True, ""),
+            (True, False, "HTTP 503"), (True, False, timeout_detail)):
+        data = {"external": {
+            "deezer": {"ok": False, "detail": error},
+            "listenbrainz": {"ok": False, "detail": error},
+            "itunes": {"ok": False, "detail": error},
+        }}
+        for service in optional:
+            detail = (messages[reasons.get(service, "dashboard.conn.not_in_use")]
+                      if not configured else error)
+            status = {"configured": configured, "ok": ok, "detail": detail}
+            target = data if service in ("slskd", "lidarr") else data["external"]
+            target[service] = status
+        cases.append(data)
+    payload = {
+        "tile": tile.group(),
+        "connections": connections.group(),
+        "translator": translator.group(),
+        "messages": {k.removeprefix(_UI_PREFIX): v for k, v in messages.items()
+                     if k.startswith(_UI_PREFIX)},
+        "cases": cases,
+    }
+    script = """
+const vm = require("node:vm");
+const input = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const results = input.cases.map(d => vm.runInNewContext(
+  input.translator + "\\n" + input.tile +
+  "\\nconst rendered = {}; const originalTile = tile;" +
+  "tile = (cls, title, lines) => rendered[title] = originalTile(cls, title, lines);\\n" +
+  input.connections + "\\nrendered",
+  {d, I18N: input.messages, document: {getElementById: () => ({innerHTML: ""})}}
+));
+process.stdout.write(JSON.stringify(results));
+"""
+    result = subprocess.run(
+        [node, "-e", script], input=json.dumps(payload), text=True,
+        capture_output=True, check=True, timeout=10)
+    unconfigured, reachable, failed, timed_out = json.loads(result.stdout)
+    for service in optional:
+        title = messages[f"dashboard.ui.tile.title.{service}"]
+        lines = re.findall(r'<div class="line">(.*?)</div>', unconfigured[title])
+        assert 'class="tile muted"' in unconfigured[title], service
+        assert lines[0] == messages["dashboard.ui.tile.not_configured"], service
+        assert len(lines) == len(set(lines)), service
+        assert 'class="tile ok"' in reachable[title], service
+        failure_class = "warn" if service == "musicbrainz" else "err"
+        assert f'class="tile {failure_class}"' in failed[title], service
+        if service != "pushover":
+            assert "HTTP 503" in failed[title], service
+    lastfm = unconfigured[messages["dashboard.ui.tile.title.lastfm"]]
+    assert lastfm.count(messages["dashboard.conn.lastfm.no_api_key"]) == 1
+    for service in ("deezer", "listenbrainz"):
+        title = messages[f"dashboard.ui.tile.title.{service}"]
+        assert 'class="tile err"' in unconfigured[title]
+        assert messages["dashboard.ui.tile.not_reachable"] in unconfigured[title]
+    for service in optional + ("deezer", "listenbrainz", "itunes"):
+        if service == "pushover":
+            continue
+        title = messages[f"dashboard.ui.tile.title.{service}"]
+        assert "ReadTimeout" in timed_out[title], service
+        assert timed_out[title].count(
+            messages["dashboard.ui.tile.not_reachable"]) <= 1, service
 
 
 # --- TestClient render proof (server->frontend handoff) ----------------------

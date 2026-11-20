@@ -92,3 +92,9 @@ def test_missing_cap_note_kept(monkeypatch):
 
 def test_truncate_helper_removed():
     assert not hasattr(main, "_truncate_for_pushover")
+
+
+def test_apple_source_contribution_is_visible(monkeypatch):
+    monkeypatch.setattr(_Src, "last_stats", {"deezer_new": 5, "apple_new": 3})
+    msg = _send(monkeypatch, _matched(2), [])
+    assert "Deezer 5, Apple Music 3" in msg

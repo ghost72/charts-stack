@@ -1,6 +1,16 @@
 {
   "_comment": "Gemeinsame Fixture fuer die charts-sync-Parser-Tests UND die Doku CHARTS-SOURCES.md / .en.md (FEAT-002 zitiert die 'runnable'-Snippets 1:1). Nur verifizierte, real existierende Deezer-IDs (0 = globale Chart, 1313617925 = Top Switzerland, 658561775 = Swiss Mundart Hits) oder ID-lose Last.fm-Methoden. Jedes 'runnable'-Beispiel laeuft durch config._parse_charts OHNE Validierungs-Warnung/-Fehler.",
   "runnable": {
+    "apple_ch": [
+      {
+        "name": "charts.m3u",
+        "genre_filter": false,
+        "sources": [
+          {"service": "deezer", "type": "chart", "source": "0", "limit": 100},
+          {"service": "apple", "country": "ch", "limit": 100}
+        ]
+      }
+    ],
     "minimal": [
       {
         "sources": [

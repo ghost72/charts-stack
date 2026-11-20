@@ -199,10 +199,11 @@ Before a song is written to `missing-flashback.txt`, a **presence guard**
 hitparade) checks whether the song already exists anywhere under
 `Music/<Artist>/` – regardless of album folder and **ignoring** the compilation
 filter. If it does, the song is treated as present and is not re-downloaded.
-In addition, `_looks_like_compilation` now **short-circuits to `False` for any
-Lidarr `(YYYY)` album folder**, so a song whose only surviving copy lives in a
-curated `Greatest Hits (2008)/` album is no longer mistaken for a sampler and
-re-fetched as a single.
+The year-folder exception applies only to `Greatest Hits`; `Various Artists`
+and `Bravo Hits` remain compilations even with `(YYYY)` in their path. Equal
+match scores prefer the non-compilation release, then an artist album with
+a year, including with `IGNORE_COMPILATIONS=0`. Existing music files are
+unchanged.
 
 > A repo-root parity test (`tests/test_shared_helper_parity.py`) now enforces
 > that these duplicated helpers (`presence.py`, `_title_key`, `_artist_key`,

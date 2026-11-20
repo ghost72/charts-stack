@@ -1,9 +1,9 @@
 # charts-config
 
-Snippet-/Konfig-Weboberfläche für den charts-stack. Eine passwortgeschützte
-Web-UI (Standard-Port `5058`), die beim Zusammenstellen der Chart- und
-Energy-Quellen hilft: Sie zeigt **fertige Snippets** zum Hineinkopieren in
-`.env`/`charts.json` – sie ändert selbst **nichts**.
+Passwortgeschützte Konfig-Weboberfläche für den charts-stack (Standard-Port
+`5058`). Quellen-Finder und Energy-Kanal-Browser erzeugen Snippets, ohne
+`.env` oder `charts.json` zu ändern. Das Künstler-Panel verwaltet separat die
+lokale Mundart-Auswahl; der Tag-Editor ändert ausgewählte Musikdateien.
 
 Schwester-Dienst des [`charts-dashboard`](../charts-dashboard): charts-config
 wurde aus dem Dashboard herausgelöst. Der Quellen-Finder und der
@@ -14,8 +14,8 @@ Dashboard ist ein reiner Status-Monitor.
 
 ## Was es zeigt
 
-Zwei reine **Lese-Werkzeuge** auf einer Seite – beide bauen nur Snippets, keines
-schreibt `.env` oder `charts.json`:
+Quellen-Finder und Energy-Kanal-Browser sind **Lese-Werkzeuge**. Künstler- und
+Tag-Editor haben begrenzte, passwortgeschützte Schreibfunktionen.
 
 ### Quellen-Finder (neue Chart-Quellen finden)
 
@@ -36,6 +36,11 @@ nicht mehr von Hand aus Weblinks fummeln:
   `tag.getTopTracks`, ob er brauchbar ist, und zeigt das passende Snippet
   (`{"service":"lastfm","method":"tag.getTopTracks","tag":"<tag>",…}`). Dieser
   Teil ist **nur mit `LASTFM_API_KEY`** aktiv; ohne Key ist er ausgegraut.
+- **Apple-Music-Ländercharts:** CH, DE, GB oder US und ein Limit von 1–100
+  wählen → den öffentlichen Most-played-Feed prüfen, bis zu zehn Titel
+  ansehen und ein validiertes `service:"apple"`-Snippet kopieren. Kein Konto
+  oder API-Key nötig. Die Prüfung erfolgt erst beim Absenden, verändert
+  keine Konfiguration und aktiviert auch keine Überwachung.
 
 Jedes Snippet lässt sich kopieren und direkt in die `CHARTS`-Variable der
 `.env`/`compose.yml` (bzw. `charts.json`) einsetzen. Volle Referenz:
@@ -48,9 +53,11 @@ Energy-(NRJ-)Webradio-Kanäle, damit man beim Zusammenstellen von
 `ENERGY_CHANNELS` nicht die Slugs aus dem README suchen muss. Je Kanal werden
 Anzeigename, Slug, Genre, ein **Status-Badge** (aktiv + laufender Modus bzw.
 inaktiv) und ein **fertiges JSON-Snippet** für das `ENERGY_CHANNELS`-Array
-gezeigt. charts-config ändert **nie** `.env` oder `charts.json` – man fügt von
-Hand ein und startet den Dienst selbst neu (nur **Text-Hinweise**, kein
-Neustart-Knopf).
+gezeigt. Der Kanal-Browser schreibt selbst nichts. Das Snippet kannst du im
+separaten `.env`-Tab in die bestehende `ENERGY_CHANNELS`-Liste einfügen, sofern
+keine externe Kanaldatei mit Vorrang eingerichtet ist. Erstelle nach dem
+Speichern die betroffenen Container neu, damit sie die neuen Werte übernehmen.
+Der Tab zeigt den Befehl an, führt ihn aber nicht selbst aus.
 
 Der Status stammt aus der laufenden `charts-energy`-Konfiguration (die der
 Dienst in seine Status-JSON schreibt und die charts-config read-only liest);
@@ -66,10 +73,40 @@ Je Standard-Modus ist eine zusätzliche Verdrahtung nötig:
 
 Details zu den Modi: [`charts-energy/README.md`](../charts-energy/README.md).
 
+### Künstler & Szenen (Mundart)
+
+Das passwortgeschützte Künstler-Panel liest das von `charts-sync` laufend
+ergänzte Inventar aller Hauptinterpreten und Deezer-Feature-Gäste aus den
+aktiven `mundart.m3u`-Feeds. Pro Eintrag zeigt es Feed-Herkunft und Titelanzahl.
+Künstler, die Energy nur als Text liefert, bleiben zunächst ungeprüft; über die
+Deezer-Suche wird eine eindeutige Künstler-ID aufgelöst und verknüpft. Namen
+werden nicht unscharf zusammengeführt.
+
+Die Szene-Zuordnung und Aktivierung sind eine **menschliche Auswahl**, keine
+automatische Sprach- oder Mundart-Erkennung. Ein optionaler Beleg kann
+mitgespeichert werden. Manuell hinzugefügte Deezer-Künstler liefern bei
+eingeschaltetem Filter ihre Deezer-Top-50-Titel als zusätzlichen Feed. Der
+Filter ist anfangs ausgeschaltet und wirkt erst nach ausdrücklicher
+Aktivierung; dann bleiben in
+`mundart.m3u` nur aktivierte, verknüpfte Künstler der gewählten Zielszene.
+Andere Playlists bleiben unverändert.
+
+Inventar und Auswahl liegen getrennt von `.env` und `charts.json` im gemeinsam
+gemounteten Charts-Ordner:
+
+- `.charts-artist-inventory.json` – von `charts-sync` aktualisierte
+  Feed-Kandidaten, Quellen und Zeitstempel.
+- `.charts-artist-selection.json` – lokale Szenen, Deezer-Verknüpfungen und
+  Aktivierungen, atomar von charts-config gespeichert.
+
+Eine leere/fehlende Auswahldatei lässt den bisherigen Mundart-Feed unverändert;
+neue Künstler werden nicht automatisch freigegeben.
+
 ### Manueller Tag-Editor (Schreibzugriff)
 
-Das einzige **Schreib**-Werkzeug auf der Seite. Durchsuche die Musik-Library,
-wähle einen Song und bearbeite seine Tags (Künstler, Titel, Album, Jahr, Track)
+Der Tag-Editor ist ein weiteres **Schreib**-Werkzeug auf der Seite. Durchsuche
+die Musik-Library, wähle einen Song und bearbeite seine Tags (Künstler, Titel,
+Album, Jahr, Track)
 und/oder ersetze das eingebettete Cover (Upload oder Bild-URL), dann
 **Speichern**. Die Tag-Änderung wird immer **zuerst an Ort und Stelle** in die
 vorhandene `.mp3` geschrieben (fail-open: die Änderung geht nie verloren, auch
@@ -312,13 +349,14 @@ lesen noch ausserhalb der Library schreiben.
 
 ## Woher die Daten kommen
 
-- **Deezer / Last.fm:** direkte Abfrage der öffentlichen HTTP-APIs (WAN). Ohne
+- **Deezer / Last.fm / Apple Music:** direkte Abfrage der öffentlichen HTTP-APIs (WAN). Ohne
   `LASTFM_API_KEY` ist nur der Last.fm-Teil ausgegraut – der Rest läuft.
 - **Energy-Live-Status:** aus der Status-JSON, die `charts-energy` nach
   `Charts/.charts-status/` schreibt – von charts-config **read-only** gemountet.
 - **Kein Docker-Zugriff, kein Neustart-Knopf:** anders als das Dashboard braucht
-  charts-config die Docker-SDK **nicht**. Es liest nur Deezer/Last.fm und die
-  Status-JSON – es startet oder stoppt keinen Container.
+  charts-config die Docker-SDK **nicht**. Das Künstler-Panel schreibt nur die
+  lokale Auswahldatei im Charts-Ordner; `.env` und `charts.json` werden nicht
+  geändert. Kein Socket-Mount, kein Proxy, kein Container-Start/-Stop.
 
 ## Login
 
@@ -350,6 +388,35 @@ kann von außen erreichbar sein.
 | `TAGEDITOR_AUDIO_ENABLED` | `0` | Im-Browser-Abspielen + Download eines geladenen Songs (**standardmäßig AUS**, fail-closed). An = Audio-Endpoint zusätzlich hinter Login **und** Pfad-Guard; nur für privaten/authentifizierten Zugriff einschalten (siehe Sicherheitshinweis) |
 | `TAGEDITOR_CONVERT_TIMEOUT` | `600` | Timeout (Sekunden) für eine einzelne FLAC→MP3-ffmpeg-Umwandlung; begrenzt ein hängendes ffmpeg |
 
+### Tab „.env“
+
+Der passwortgeschützte Tab steht am Ende der Navigation und zeigt die Einstellungen nach Gruppen aus
+`.env.example`, übernimmt deren Kommentare als Hilfe und verlinkt mit 📖 auf die
+jeweilige Service-Dokumentation. Beim Speichern wird die zentrale `.env` aus
+der aktuellen Vorlage neu aufgebaut; gespeicherte Werte werden übernommen und
+aktive zusätzliche Variablen am Ende erhalten. Kommentare und Formatierung aus
+der alten `.env` werden durch die aktuelle Vorlage ersetzt.
+Unveränderte Werte behalten ihre ursprüngliche Compose-Schreibweise (auch
+`$VAR`-/`${VAR}`-Ausdrücke); neu eingegebene oder geänderte Werte werden
+hingegen als wörtliche Werte gespeichert.
+„Eigene Variablen“ sind aktive Schlüssel, die der eingebundenen Vorlage
+fehlen. Sie sind nicht automatisch falsch und werden nicht gelöscht.
+
+Zugangsdaten wie Passwörter, API-Schlüssel und Tokens werden nicht an den Browser
+zurückgegeben. Leere Passwortfelder lassen bestehende Werte unverändert; sie können
+gezielt ersetzt oder geleert werden. Vor einer tatsächlichen Dateiänderung
+entsteht eine private Sicherung in `.env-backups/`. `charts-config` bleibt
+unprivilegiert; für diese Funktion sind `.env` und das separate
+Sicherungsverzeichnis read-write gemountet, `.env.example` ist read-only. Der
+konfigurierte `PUID:PGID` muss die Host-`.env` und `.env-backups/` schreiben
+dürfen.
+
+Das Speichern führt **keinen** Container-Neustart aus. Direkt unter der
+Speicherbestätigung und nochmals am Ende des Tabs steht ein
+kopierbaren `docker compose up -d --no-deps --force-recreate ...`-Befehl für
+die betroffenen Dienste an; im Projektordner ausführen. Dafür ist kein
+Image-Rebuild nötig.
+
 ## Zugriff
 
 Im LAN direkt über `http://<host>:5058`. Für den Zugriff von außen hinter einen
@@ -359,10 +426,16 @@ kein WebSocket nötig) und **HTTPS** verwenden – das Login nutzt ein Session-C
 ## Sicherheit
 
 - Läuft als **unprivilegierter User** (`PUID:PGID`), **nicht** als root.
-- **Kein** Docker-Zugriff: charts-config spricht nur mit Deezer/Last.fm (WAN) und
+- **Kein** Docker-Zugriff: der Quellen-Finder spricht mit Deezer/Last.fm/Apple Music (WAN) und
   liest die charts-energy-Status-JSON. Kein Socket-Mount, kein Proxy, kein
   Container-Start/-Stop.
-- Mountet den Charts-Ordner **read-only** (nur für die Status-JSONs).
+- Mountet den Charts-Ordner read-write für lokale Künstler-Auswahl und
+  Tag-Editor-Metadaten. `charts.json` bleibt unberührt.
+- Für den authentifizierten `.env`-Tab ist nur die fest konfigurierte
+  `.env`-Datei read-write gemountet; `.env.example` ist read-only und
+  `.env-backups/` ist ein separates Mount-Ziel. Das Projektverzeichnis und der
+  Docker-Socket werden nicht gemountet; der Editor kann nur den festen
+  `.env`-Pfad bearbeiten.
 
 ## Installation
 
@@ -372,6 +445,20 @@ sondern über das gemeinsame Stack-Projekt (eine `compose.yml` + eine zentrale
 Installation. Nur diesen Dienst neu bauen/starten:
 `docker compose up -d --build charts-config` aus dem `charts-stack`-Ordner.
 
+### Mundart-Künstler-Panel – Deployment
+
+Das Inventar wird von `charts-sync` erzeugt, charts-config zeigt und speichert
+die Auswahl. Nach dem Einspielen dieser Funktion beide Dienste neu bauen und
+erstellen:
+
+```bash
+docker compose up -d --build charts-sync charts-config
+```
+
+Inventar und Auswahl werden im gemeinsam gemounteten Charts-Ordner angelegt;
+eine Datenmigration ist nicht nötig. Der Filter bleibt deaktiviert, bis er im
+Künstler-Panel ausdrücklich eingeschaltet wird.
+
 ### Manueller Tag-Editor – Mount und Rebuild
 
 Der Tag-Editor braucht die Musik-Library **read-write** gemountet. Die Stack-
@@ -379,13 +466,14 @@ Der Tag-Editor braucht die Musik-Library **read-write** gemountet. Die Stack-
 
 ```yaml
     volumes:
-      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts:ro          # Status + Manifest, read-only
+      - ${MUSIC_ROOT:-/volume2/music}/Charts:/charts             # Status + Manifest + lokale Auswahl
       - ./lang:/lang:ro                                          # Sprachdateien
       - ${MUSIC_ROOT:-/volume2/music}/Music:/music/Music         # read-write für den Tag-Editor
 ```
 
-`/charts` bleibt **read-only** (das Manifest wird dort nur gelesen); nur
-`/music/Music` ist read-write. Nach dem Einspielen des neuen Codes das Image neu
+`/charts` ist read-write (unter anderem für Manifestpflege und die lokale
+Künstler-Auswahl); `/music/Music` bleibt für den Tag-Editor read-write. Nach
+dem Einspielen des neuen Codes das Image neu
 bauen, damit die neuen Abhängigkeiten (`mutagen`, `Pillow`) installiert werden:
 
 ```bash
@@ -397,8 +485,8 @@ docker compose up -d charts-config
 read-only unter `/lang` gemountet; ein `--no-cache`-Rebuild allein zieht
 geänderte Sprachdateien **nicht**. Nach dem Kopieren der aktualisierten `lang/`-
 Dateien in den NAS-Mount `docker restart charts-config` ausführen, damit der
-Loader die Tabelle neu einliest – sonst erscheinen die neuen Tag-Editor-Labels
-als rohe Keys. Auf Synology notfalls den Container neu erstellen
+Loader die Tabelle neu einliest – sonst erscheinen neue Labels als rohe Keys.
+Auf Synology notfalls den Container neu erstellen
 (`docker compose up -d --force-recreate charts-config`).
 
 ## Sprache

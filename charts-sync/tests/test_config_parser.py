@@ -105,6 +105,34 @@ def test_service_case_insensitive(monkeypatch):
     assert feed.deezer_type == "chart"
 
 
+@pytest.mark.parametrize("limit,expected", [(25, 25), ("all", 100)])
+def test_apple_country_and_limit(monkeypatch, caplog, limit, expected):
+    with caplog.at_level(logging.WARNING):
+        feed = _only_feed(_parse(monkeypatch, [{
+            "name": "x.m3u", "sources": [
+                {"service": "APPLE", "country": " CH ", "limit": limit}]}]))
+    assert feed.kind == "apple"
+    assert feed.country == "ch"
+    assert feed.limit == expected
+    assert feed.enabled is True
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("country,limit,type_", [
+    ("", 100, "chart"), ("../ch", 100, "chart"),
+    ("ch", 0, "chart"), ("ch", 101, "chart"), ("ch", 100, "playlist"),
+    ("ch", "invalid", "chart"),
+])
+def test_invalid_apple_feed_is_disabled(monkeypatch, caplog, country, limit, type_):
+    with caplog.at_level(logging.WARNING):
+        feed = _only_feed(_parse(monkeypatch, [{
+            "name": "x.m3u", "sources": [
+                {"service": "apple", "country": country, "limit": limit, "type": type_}]}]))
+    assert feed.kind == "apple"
+    assert feed.enabled is False
+    assert caplog.records
+
+
 # --- Validation: warnings instead of crashes --------------------------------
 
 def test_contradiction_service_deezer_type_lastfm(monkeypatch, examples, caplog):

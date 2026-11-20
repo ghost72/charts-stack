@@ -71,6 +71,11 @@ docker compose run --rm charts-energy python -m app.discover --probe energypop
 
 `--list` zeigt die bestätigten Slugs (Anzeige | Slug | Genre); `--probe <slug>`
 prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
+CLI-Probe und täglicher Liveness-Check lesen dabei nur die HTTP-Header und
+schließen den Stream sofort, ohne Audiodaten einzulesen. Ein normaler,
+vollständig lesender GET würde bei einem kontinuierlichen Radiostream den
+einzelnen Scheduler-Thread und damit auch Polling und Feed-Aktualisierung
+blockieren; ein Lese-Timeout begrenzt nur Pausen zwischen Datenpaketen.
 
 > **Ehrliche Einschränkung (Liveness-Re-Check, G2):** Der tägliche
 > Liveness-Check (`ENERGY_LIVENESS_*`) prüft **nur die bereits bekannten** Slugs
@@ -86,6 +91,12 @@ prüft einen geratenen Slug (HTTP 200 + `icy-name`-Header ⇒ echter Kanal).
 
 Unter der Kopfzeile listet eine **Übersicht** jeden eigenen Kanal, jeden Feed und den Library-Teil mit seinen Zahlen (`Kanal ✅vorhanden ⬇fehlend`, `Thema ➡n`, `📚 Library ✅n ⬇n`). Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag. Bei sehr vielen Einträgen wechselt sie in eine einzeilige Kompaktform (`✅n ⬇n`); ab etwa 35 Einträgen endet die Zeile mit „ …“ (theoretische Grenze). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
+Im **library-Modus** werden wiederholte Spins desselben normalisierten
+Künstlers/Titels über Kanäle hinweg nur einmal als vorhanden oder fehlend
+gezählt und in die gemeinsame Fehlliste geschrieben. „N weitere“ zählt dort
+nur nicht angezeigte fehlende Songs; bereits vorhandene Songs werden nicht als
+Download-Rückstand mitgezählt.
+
 ## Konfiguration (zentrale `.env`)
 
 | Variable | Default | Zweck |
@@ -99,7 +110,7 @@ Unter der Kopfzeile listet eine **Übersicht** jeden eigenen Kanal, jeden Feed u
 | `ENERGY_MAX_TRACKS_PER_CHANNEL` | `500` | Obergrenze pro Kanal (neueste behalten). |
 | `MATCH_THRESHOLD` | `87` | Match-Schwelle (wie charts-sync). |
 | `ARTIST_MIN_SCORE` | `60` | Künstler-Mindest-Score. |
-| `IGNORE_COMPILATIONS` | `1` | Compilation-Tracks beim Match ignorieren. Ein Präsenz-Guard verhindert aber (library- UND own-Modus) einen erneuten Download, sobald unter `<Künstler>/` bereits eine Kopie des Songs existiert – auch in einem Compilation-benannten Ordner (`Greatest Hits`) oder einem Lidarr-`(YYYY)`-Album; Lidarr-`(YYYY)`-Alben gelten gar nicht erst als Compilation. Echte Nicht-Jahr-Sampler (Bravo Hits usw.) bleiben gefiltert. |
+| `IGNORE_COMPILATIONS` | `1` | Compilation-Tracks beim Match ignorieren. Ein Präsenz-Guard verhindert aber (library- UND own-Modus) einen erneuten Download, sobald unter `<Künstler>/` bereits eine Kopie des Songs existiert – auch in einem Compilation-benannten Ordner (`Greatest Hits`) oder einem Lidarr-`(YYYY)`-Album. Die Jahreszahl-Ausnahme gilt nur für `Greatest Hits`; echte Sampler (`Various Artists`, `Bravo Hits` usw.) bleiben auch mit Jahreszahl gefiltert. Bei gleichem Match-Score gewinnt die Nicht-Compilation-Version, danach das Künstleralbum mit Jahreszahl, auch bei `0`. Vorhandene Musikdateien bleiben erhalten; own-Playlists wechseln beim nächsten Matching-Lauf auf den neu gewählten Pfad. |
 | `MB_ENABLED` | `1` | **library-Modus:** MusicBrainz-Jahresauflösung an/aus (für die Dekaden-NSPs). |
 | `MB_USER_AGENT_ENERGY` | `charts-energy/1.0 (self-hosted)` | User-Agent für die MusicBrainz-Abfrage (MB verlangt einen aussagekräftigen UA). |
 | `MB_RATE_SLEEP` | `1.1` | Pause (s) vor jeder MB-Abfrage (~1 req/s, höflich zu MusicBrainz). |

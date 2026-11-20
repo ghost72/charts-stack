@@ -45,7 +45,7 @@ identical for slskd and all charts services.
 ### 1. Choose the key + write it into the central `.env`
 
 ```bash
-cp .env.example .env            # central .env in the charts-stack root (if not there yet)
+test -e .env || (umask 077; cp .env.example .env)
 openssl rand -hex 32            # generates a random key - copy the output
 ```
 
@@ -55,6 +55,9 @@ from there. `SLSKD_HOST` defaults to `http://slskd:5030` (the container name on
 the project network) – that works automatically in the one-project setup.
 
 ### 2. Start slskd (creates the slskd.yml)
+
+Before starting, create the configured `SLSKD_CONFIG_DIR` and make it writable
+by the service user `PUID:PGID`. The default is `./slskd/slskd-config`.
 
 ```bash
 docker compose up -d slskd

@@ -58,15 +58,28 @@ default arrangement.
     persisted-query hash → red tile → signal "refresh `FLASHBACK_HASH`"; without
     a hash grey/muted) and **Energy (NRJ)** (⚡, live ICY reachability of the
     Swiss NRJ Icecast stream that [`charts-energy`](../charts-energy) reads).
+    **Swiss Hitparade** checks the current singles page
+    (`https://hitparade.ch/charts/singles`), not the nonexistent `/charts`
+    index. The tile shows reachability, not the success of the last weekly
+    run; that result is shown in the service tile.
+    **Apple Music Charts** has its own tile, separate from iTunes:
+    `APPLE_CHARTS_ENABLED=1` enables the public most-played feed live check
+    for `APPLE_CHARTS_COUNTRY` (default `ch`). HTTP errors, empty results or
+    invalid tracks turn it red; when disabled it stays grey with no request.
   - **Helper services** – metadata/recommendation helpers, not chart sources:
     **MusicBrainz** (🏷, live reachability of the metadata/year-lookup helper),
     iTunes (covers), Pushover and **ListenBrainz** (it provides recommendations,
     not charts, so it sits here rather than under chart sources).
-  - **Muted "not in use" state:** the **Energy (NRJ)** and **MusicBrainz** tiles
-    are not pinged when their feature is off; they show a greyed-out **"not in
-    use"** badge instead. This is driven by the existing `ENERGY_ENABLED` /
-    `MB_ENABLED` flags (set one to `0` and the matching tile is muted rather than
-    probed).
+  - **Not configured:** slskd, Lidarr, Last.fm, Apple Music Charts, FLASHBACK FM,
+    Energy, Swiss Hitparade, MusicBrainz and Pushover consistently show a grey
+    **"not configured"** status when required credentials/URLs are missing or
+    their live check is disabled. An additional reason such as "no API key"
+    appears at most once. Unconfigured connections are not probed; slskd also
+    hides connection/download counters. Public services requiring no credentials
+    (Deezer, ListenBrainz, iTunes) retain their live status. Existing warning
+    colours for metadata-only helpers remain unchanged.
+    Transport failures show status and diagnosis separately, for example
+    "not reachable" and "Error: ReadTimeout", without repeating the status text.
 
   One glance shows every possible connection and its live state.
 - **Services:** per container the Docker state (running / healthy / stopped) in
@@ -91,8 +104,8 @@ in the monitoring zone so you can see at a glance whether that service is up.
   **not** directly via the Docker socket.
 - **slskd / Lidarr:** direct API query (`/api/v0/server` and `system/status`).
 - **External live checks:** cheap pings against ListenBrainz, Deezer, Last.fm,
-  iTunes, Pushover and FLASHBACK FM – cached (default 120 s, decoupled from the
-  15 s poll). ListenBrainz/Deezer/Last.fm **heal** a stored `error` of the related
+  optional Apple Music Charts, iTunes, Pushover and FLASHBACK FM – cached (default 120 s, decoupled from the
+  15 s poll). ListenBrainz/Deezer/Last.fm/Apple Music **heal** a stored `error` of the related
   service: if the source is live-reachable, the service tile turns **yellow**
   ("running again") instead of hard **red**. FLASHBACK FM is checked via its
   GraphQL LastPlayed query and heals `charts-flashback` the same way; a dead
@@ -102,6 +115,9 @@ in the monitoring zone so you can see at a glance whether that service is up.
   `validate` call (consumes no message budget) instead of only showing a
   configured flag. Last.fm needs an API key – without one the tile stays grey
   (not red).
+  This live display does not retroactively make the failed run successful:
+  the service must complete another successful run to update its stored run
+  status and allow the corresponding watchdog all-clear.
 - **Run stats:** each charts service writes a small JSON file to
   `Charts/.charts-status/<service>.json` at the end of a run. The dashboard only
   reads these files – no log parsing, no runtime coupling to the services.
@@ -130,6 +146,8 @@ Without a valid login the service refuses to start (the page may be exposed).
 | `SLSKD_API_KEY` | – | for slskd status (required in the stack) |
 | `LIDARR_URL` / `LIDARR_API_KEY` | – | optional, for the Lidarr check |
 | `LASTFM_API_KEY` | – | optional, for the Last.fm live check (empty = tile grey) |
+| `APPLE_CHARTS_ENABLED` | `0` | Monitor Apple Music charts; does not itself enable a sync feed |
+| `APPLE_CHARTS_COUNTRY` | `ch` | Country to monitor; match the desired Apple feed |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | – | optional, for the Pushover `validate` check |
 | `ENERGY_ENABLED` | `0` | existing charts-energy flag – `0` mutes the Energy (NRJ) tile ("not in use") instead of pinging it |
 | `MB_ENABLED` | `1` | existing stack-wide flag – `0` mutes the MusicBrainz tile ("not in use") instead of pinging it |

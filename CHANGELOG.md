@@ -12,6 +12,56 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+### Added
+- **charts-config: authenticated `.env` editor.** Settings are grouped and
+  documented from `.env.example`; saving rebuilds the central file while
+  carrying forward personal and unknown active values and preserving existing
+  Compose expressions. Secret values are masked, actual writes are backed up in
+  an ignored private directory, and affected-service recreate commands are
+  shown without executing them.
+- **charts-config: Mundart artist inventory and opt-in scene filter.**
+  `charts-sync` records main artists and Deezer features from `mundart.m3u`
+  feeds; the authenticated artist panel verifies Deezer identities, stores
+  local scene selections, and supports manual artists. Filtering stays off
+  until explicitly enabled. Runtime inventory/selection files are separate
+  from `.env` and `charts.json`; no GitHub tag or release is implied.
+- **Apple Music monitoring and source finder.** A separate optional dashboard
+  chart tile and watchdog outage/recovery check use the public country-chart
+  endpoint, not iTunes search. `APPLE_CHARTS_ENABLED` defaults to `0`;
+  `APPLE_CHARTS_COUNTRY` selects the monitored country (default `ch`).
+  The authenticated source finder validates CH/DE/GB/US charts on demand,
+  previews tracks and offers copyable source snippets with a 1–100 limit.
+  English, German and French UI strings are included.
+- **charts-sync: optional Apple Music country charts without an API key.**
+  `{"service":"apple","country":"ch","limit":100}` reads the public most-played
+  feed (at most 100 tracks), using existing deduplication, matching and artist
+  exclusions. Source logs and Pushover include Apple contributions. Existing
+  defaults, optional Last.fm support and the optional genre filter remain
+  unchanged; documentation now notes Last.fm's announced Pro requirement for
+  key owners from 1 December 2026.
+
+### Fixed
+- **charts-energy: report unique library download candidates accurately.**
+  Repeated spins of the same normalized artist/title are deduplicated across
+  library channels. Pushover's "N more" count now excludes already-present
+  tracks instead of adding them to the missing-download count.
+- **charts-energy: do not download continuous audio during liveness checks.**
+  Both the scheduled probe and discovery CLI now close the streamed GET after
+  inspecting HTTP headers. Previously, a live stream could block the single
+  scheduler thread for hours, stopping polling and allowing handoff files to
+  expire in charts-sync despite the last run still showing `ok`.
+
+- **Library matching: prefer an artist release over an equally good compilation
+  copy.** Dated sampler folders such as `Various Artists/Bravo Hits 67 (2009)`
+  no longer bypass compilation detection. The year-folder exception still
+  keeps artist `Greatest Hits` albums eligible. Applied consistently to sync,
+  hitparade, energy, flashback and recommend; artist thresholds and music files
+  are unchanged. Existing playlists update on their next matching run.
+
+- **charts-dashboard: avoid a false Hitparade HTTP 404 alert.** Check the
+  current `/charts/singles` page instead of the nonexistent `/charts` index.
+  The weekly chart fetch is unchanged; genuine HTTP errors remain visible.
+
 ## [2.3.0] - 2026-11-12
 
 ### Changed

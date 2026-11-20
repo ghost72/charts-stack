@@ -89,10 +89,12 @@ Before a song is written to `missing-hitparade.txt`, a **presence guard**
 hitparade) checks whether the song already exists anywhere under
 `Music/<Artist>/` – regardless of album folder and **ignoring** the compilation
 filter. If it does, the song still lands in the playlist (via the existing path)
-but is not re-downloaded. In addition, `_looks_like_compilation` now
-**short-circuits to `False` for any Lidarr `(YYYY)` album folder**, so a song
-whose only surviving copy lives in a curated `Greatest Hits (2008)/` album is no
-longer mistaken for a sampler and re-fetched as a single.
+but is not re-downloaded. The year-folder exception applies only to
+`Greatest Hits`; `Various Artists` and `Bravo Hits` remain compilations even
+with `(YYYY)` in their path. Equal match scores prefer the non-compilation
+release, then an artist album with a year. This also applies with
+`IGNORE_COMPILATIONS=0`. No files are deleted; the playlist link is selected
+again on the next run/cached resync.
 
 > A repo-root parity test (`tests/test_shared_helper_parity.py`) now enforces
 > that these duplicated helpers (`presence.py`, `_title_key`, `_artist_key`,

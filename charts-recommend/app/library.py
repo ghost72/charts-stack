@@ -70,17 +70,14 @@ def _looks_like_compilation(path: str, album: str, albumartist: str) -> bool:
     compilation. The most reliable signal is the AlbumArtist "Various Artists"
     (standard tag for samplers).
 
-    Option B hardening: a Lidarr "(YYYY)" album folder is a curated
-    single-artist album even when its name contains a marker word like
-    "Greatest Hits", so it is never a Various-Artists sampler - short-circuit to
-    False for such paths. This keeps IGNORE_COMPILATIONS filtering genuine
-    non-year sampler folders (Bravo Hits etc.) while no longer hiding a song
-    that only survives as a Lidarr album track (the re-download bug).
+    A year in the path exempts only the ambiguous "Greatest Hits" marker:
+    curated single-artist albums stay eligible, but dated Various Artists /
+    Bravo Hits samplers remain compilations.
     """
-    if _in_year_album(path):
-        return False
     haystack = normalize(f"{path} {album} {albumartist}".replace("\\", "/"))
-    return any(marker in haystack for marker in _COMPILATION_MARKERS)
+    year_album = _in_year_album(path)
+    return any(marker in haystack for marker in _COMPILATION_MARKERS
+               if not (year_album and marker == "greatest hits"))
 
 
 _YEAR_DIR_RE = re.compile(r"\(\d{4}\)")
@@ -162,7 +159,9 @@ class Library:
                 best_score = score
                 best = track
             elif (score == best_score and best is not None
-                  and track.in_year_album and not best.in_year_album):
+                  and (not track.is_compilation, track.in_year_album)
+                  > (not best.is_compilation, best.in_year_album)):
+                # Prefer artist releases over samplers, then dated albums.
                 best = track
 
         if best is not None and best_score >= threshold:

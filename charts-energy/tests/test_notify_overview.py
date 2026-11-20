@@ -166,7 +166,7 @@ def test_twenty_channels_every_missing_count_in_head(monkeypatch):
         assert f"✅{100 + i}" in overview
 
 
-def test_library_present_list_cut_with_exact_more_count(monkeypatch):
+def test_omitted_present_library_songs_are_not_reported_as_missing(monkeypatch):
     sent = _capture(monkeypatch)
     monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
     main._notify([], [], _library(0, 120))
@@ -175,10 +175,25 @@ def test_library_present_list_cut_with_exact_more_count(monkeypatch):
     shown = sum(1 for ln in lines if ln.startswith("\u266a "))
     assert 0 < shown < 120
     assert notify_budget.measure([msg]) <= 1024
-    assert lines[-1] == t("notify.more", count=120 - shown)
+    assert not any(line.startswith("… and ") for line in lines)
     # Library is the only item -> no overview line; its section carries the count.
     assert lines[1] == ""
     assert t("energy.notify.library_done", matched=120, missing=0) in msg
+
+
+def test_library_more_count_excludes_present_songs(monkeypatch):
+    sent = _capture(monkeypatch)
+    monkeypatch.setattr(config, "NOTIFY_MISSING_LIMIT", 40)
+    library = _library(504, 1698)
+    main._notify([], [], library)
+    lines = sent["msg"].split("\n")
+    shown_missing = sum(
+        1 for line in lines if line.startswith("\u266a LArt "))
+
+    assert t("energy.notify.library_to_load_header", count=504) in lines
+    assert shown_missing < 504
+    assert lines[-1] == t("notify.more", count=504 - shown_missing)
+    assert notify_budget.measure([sent["msg"]]) <= 1024
 
 
 def test_missing_limit_zero_no_song_lines_no_more(monkeypatch):

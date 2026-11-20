@@ -13,6 +13,12 @@ and the charts-energy status JSON (a mounted read-only file).
 import os
 
 
+# Fixed paths keep the authenticated editor scoped to these dedicated mounts.
+ENV_FILE = "/config/.env"
+ENV_EXAMPLE_FILE = "/config/.env.example"
+ENV_BACKUP_DIR = "/config/.env-backups"
+
+
 def _get_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, str(default)))
@@ -25,6 +31,9 @@ def _get_int(name: str, default: int) -> int:
 # folder as STATUS_DIR of the other services (/volume2/music/Charts/
 # .charts-status), mounted read-only here. Used for the Energy live status.
 STATUS_DIR = os.environ.get("STATUS_DIR", "/charts/.charts-status")
+
+# Persistent inventory and per-install scene selection shared with charts-sync.
+ARTIST_DATA_DIR = os.environ.get("ARTIST_DATA_DIR", "/charts")
 
 # --- Last.fm (optional; tag check + graying the Last.fm box) ---
 # Used only for the Last.fm tag validation. Empty = the Last.fm box is grayed

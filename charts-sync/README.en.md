@@ -15,6 +15,9 @@ are logged in a `missing.txt`.
 
 You can define any number of playlists, and each one can bundle several chart
 sources (see [Configuration](#konfiguration)).
+Public **Apple Music country charts without an API key** are also optional.
+Last.fm remains supported with the user's own key; according to Last.fm's
+announcement the key owner needs Pro from 1 December 2026.
 
 ---
 
@@ -122,7 +125,7 @@ prompts charts-sync to run within ~1 minute (resync trigger).
 
 | Property               | Value |
 |------------------------|------|
-| Chart source           | Deezer (open REST API, no account/key) + optional Last.fm (API key) |
+| Chart source           | Deezer + optional Apple Music (both without a key), Last.fm (own key/Pro) and Energy handoffs |
 | Playlists              | Default: 2 (`charts.m3u` = Global + Switzerland + DE + UK, `mundart.m3u`); freely configurable. Decades (80s/90s etc.) now run through charts-flashback. |
 | Base image             | `python:3.12-slim` |
 | Dependencies           | `httpx`, `mutagen` |
@@ -174,6 +177,7 @@ charts-sync/
 │   ├── config.py         # configuration from environment variables
 │   ├── deezer.py         # Deezer chart client + feed dispatcher + genre filter
 │   ├── lastfm.py         # Last.fm client (chart/geo/tag/user + genre tags)
+│   ├── apple.py          # public Apple Music country charts without a key
 │   ├── library.py        # library scan + matching (mutagen + difflib)
 │   ├── playlist.py       # writes the .m3u playlists and missing files
 │   ├── notify.py         # optional Pushover notification
@@ -197,8 +201,8 @@ a clearly delimited responsibility.
 ### `config.py`
 
 Reads all settings from environment variables. Parses the `CHARTS` list
-(JSON) into `ChartSource` objects with `Feed` objects per source (Deezer or
-Last.fm, with an `enabled` switch); if `CHARTS` is not set, the default
+(JSON) into `ChartSource` objects with `Feed` objects per source (Deezer, Last.fm,
+Apple Music or Energy, with an `enabled` switch); if `CHARTS` is not set, the default
 playlists apply (charts.m3u = Global + Switzerland, mundart.m3u).
 It also reads the optional `exclude_artists` per playlist (per-playlist artist
 exclusion). It additionally contains the genre filter settings (`GENRE_FILTER`,
@@ -210,7 +214,8 @@ recognized as music (`AUDIO_EXTENSIONS`).
 Encapsulates access to the Deezer API **and** is the feed dispatcher.
 `fetch_chart(chart_source)` loads all **active** feeds of a playlist – per feed
 either Deezer (`/chart/<id>/tracks` or `/playlist/<id>/tracks`) or, for
-`type: lastfm`, delegates to `lastfm.py` – merges them deduplicated and
+`type: lastfm`, delegates to `lastfm.py`; `service: apple` uses `apple.py`,
+`service: energy` reads the local handoff – merges them deduplicated and
 optionally applies the genre filter. Returns `ChartTrack` objects (position,
 artist, title). API errors (Deezer sometimes reports them with HTTP 200 and an
 `error` field) are detected; a single failed feed does not abort the run.
@@ -337,7 +342,10 @@ the AlbumArtist `Various Artists`. That way a chart song you only have as part
 of a compilation counts as **missing** and gets re-fetched by `charts-download`
 as a clean single/album version. During index building the log records how many
 tracks are detected as compilations and ignored. With `IGNORE_COMPILATIONS=0`
-the compilation version counts as present too.
+the compilation version counts as present too. Equal match scores still
+prefer a non-compilation release; only then does the existing preference for
+an artist album with `(YYYY)` in its path apply. Both files are preserved.
+Existing playlists switch to the newly selected path on the next sync/resync.
 
 **Re-download guard (presence check):** before a song is reported missing,
 charts-sync additionally checks – regardless of the compilation filter – whether
@@ -345,10 +353,10 @@ a file for it already exists under `<Artist>/` (same logic as charts-songrequest
 resolve the artist folder, recurse every album subfolder including Lidarr CD
 folders, compare normalized titles). If the guard finds an existing copy – even
 inside a compilation-named folder like `Greatest Hits` or a Lidarr `(YYYY)`
-album – the song is **not** re-downloaded. In addition, a Lidarr `(YYYY)` album
-is no longer treated as a compilation even when its name contains a marker word;
-genuine non-year samplers (Bravo Hits etc.) stay filtered via
-`IGNORE_COMPILATIONS`.
+album – the song is **not** re-downloaded. The year-folder exception applies
+only to the ambiguous `Greatest Hits` marker, keeping curated artist albums
+eligible. Other compilation markers (`Various Artists`, `Bravo Hits`, etc.)
+still apply even with `(YYYY)` in the path.
 
 ---
 
@@ -470,14 +478,14 @@ deduplicated list. The default is **two** playlists:
 
 | Field             | Meaning |
 |-------------------|-----------|
-| `sources`         | List of sources to merge (Deezer **and/or** Last.fm). |
-| `sources[].service`| Optional, recommended: `deezer`, `lastfm` or `energy` – makes the source unambiguous. **Backward-compatible:** if `service` is missing it is derived from `type`/`method` (old config without `service` behaves exactly as before). An explicit `service` overrides the heuristic (a conflict triggers a warning). |
+| `sources`         | List of sources to merge (Deezer, Last.fm, Apple Music and/or Energy). |
+| `sources[].service`| Optional, recommended: `deezer`, `lastfm`, `apple` or `energy` – makes the source unambiguous. **Backward-compatible:** if `service` is missing it is derived from `type`/`method` (old config without `service` behaves exactly as before). An explicit `service` overrides the heuristic (a conflict triggers a warning). |
 | `sources[].type`  | Deezer: `chart` (chart ID, `0` = global) or `playlist` (playlist ID). Last.fm: `lastfm`. |
 | `sources[].source`| Deezer: the ID as a string. |
 | `sources[].limit` | Optional; max. tracks **for exactly this source** (`"all"` or a number). If missing, the entry's `limit` applies, otherwise `CHART_LIMIT`. |
 | `sources[].enabled`| Optional (default `true`). `false` = the source is skipped without deleting it. This lets you, for example, switch off all Deezer feeds and enable only Last.fm (or vice versa). |
 | `sources[].method`| Last.fm only: `chart.getTopTracks`, `geo.getTopTracks`, `tag.getTopTracks`, `user.getTopTracks`. |
-| `sources[].country` / `.tag` / `.user` / `.period` | Last.fm only: the parameter matching the method (e.g. `"country": "Switzerland"`, `"tag": "80s"`, `"user": "deinname"`, `"period": "3month"`). |
+| `sources[].country` / `.tag` / `.user` / `.period` | Last.fm: the parameter matching the method (e.g. `"country": "Switzerland"`, `"tag": "80s"`, `"user": "deinname"`, `"period": "3month"`). Apple: only `country`, as a two-letter code such as `"ch"`. |
 | `sources[].theme` | `energy` only: the handoff-file theme key that `charts-energy` writes (e.g. `"mundart"`). |
 | `name`            | File name of the `.m3u` (lands in `PLAYLIST_DIR`). |
 | `title`           | Display name in Navidrome (emojis allowed, `{date}` = current date). |
@@ -512,10 +520,12 @@ Calculation example `charts.m3u` (Global Top 100 + Switzerland complete):
 - Result: **about ~135 unique songs** – the worldwide top hits plus the
   Switzerland-typical ones, without the global longtail.
 
-`mundart.m3u` contains the ~140 songs of the Deezer playlist "Swiss Mundart
-Hits". Note: many pure Mundart titles cannot be found via slskd in sufficient
-quality (≥256 kbps) and therefore first land in `missing-mundart.txt`; every run
-tries to find them again.
+`mundart.m3u` contains the tracks from its currently configured Deezer/Energy
+feeds; it is not a complete directory of Swiss Mundart artists. Classics appear
+only when they are in an active feed or have been manually added as a Deezer
+artist. Many pure Mundart titles cannot be found via slskd in sufficient quality
+(≥256 kbps) and therefore first land in `missing-mundart.txt`; every run tries
+to find them again.
 
 The decades (80s/90s etc.) no longer run through charts-sync. Instead of a
 `80er-90er.m3u`, the backfill service **charts-flashback** (FLASHBACK FM) grows
@@ -534,13 +544,33 @@ in the web link (`https://www.deezer.com/…/playlist/<ID>`); official country
 charts can be found via the "Deezer Charts" account. Known IDs:
 `1313617925` = "Top Switzerland", `658561775` = "Swiss Mundart Hits".
 
+### Apple Music as an additional source (optional)
+
+Append, for example, `{"service":"apple","country":"ch","limit":100}` to the
+existing `sources` list. The public most-played JSON feed returns at most
+100 tracks per country, without an Apple subscription or API key.
+Limits 1–100 and `"all"` (= at most 100) are supported.
+Malformed/empty responses are logged as feed errors; other sources continue
+to be processed. Source logs and Pushover show Apple's contribution.
+Transport errors and HTTP 5xx trigger at most three attempts with warnings and
+1 then 2 seconds of backoff. HTTP 4xx and invalid content are not retried;
+persistent failures are not treated as empty successes. The country and source
+remain unchanged. Separate live checks are independent of these retries.
+Matching and ordering (first occurrence wins, Energy last) are unchanged.
+Default sources are not expanded automatically.
+See [CHARTS-SOURCES.en.md](../CHARTS-SOURCES.en.md) for examples and running without Last.fm.
+
 ### Last.fm as a second source (optional)
 
 Besides Deezer, charts-sync can fetch chart/tag/country lists from **Last.fm**
-(listener-/scrobble-based instead of streaming-based). For that you need a free
+(listener-/scrobble-based instead of streaming-based). For that you need your own
 API key from <https://www.last.fm/api/account/create> and enter it as
 `LASTFM_API_KEY` in the `.env`. Last.fm delivers – like Deezer – only metadata
 (artist + title), no audio data.
+According to Last.fm's announcement the key owner needs Last.fm Pro from
+1 December 2026. To run without Last.fm, disable its feeds, switch off the
+genre filter both globally and per playlist and clear the key locally;
+support remains available to other installations.
 
 A Last.fm feed looks like this (examples):
 
@@ -655,6 +685,30 @@ Note: `exclude_artists` prevents an artist from being **newly** written into the
 playlist. Already present entries disappear automatically on the next sync,
 because the `.m3u` is rewritten on every run (the music files in the library
 stay untouched).
+
+### Mundart artist inventory and scene filter
+
+For `mundart.m3u`, charts-sync records all main artists and Deezer feature
+credits after each successful feed fetch in
+`CHARTS_DIR/.charts-artist-inventory.json`. Feed sources, track counts, and
+timestamps are retained; a temporary feed failure does not erase candidates.
+Deezer artist IDs provide stable identities. Name-only entries (especially
+Energy handoff names) remain separate and unverified until linked to an exact
+Deezer search result in charts-config.
+
+The password-protected charts-config stores local scene assignments and
+selections separately in `CHARTS_DIR/.charts-artist-selection.json`.
+`filter_enabled` is **off by default**, so the existing playlist is unchanged
+until explicitly enabled. Once active, only tracks with at least one linked,
+enabled credit in the target scene remain. Scene assignment is a human
+decision; feed metadata does not prove a song's language or an artist's scene
+membership. An optional evidence note can be recorded in charts-config.
+
+Manually added Deezer artists contribute up to 50 top tracks each; at most 50
+manual artists are allowed. These additional feeds are fetched only while the
+scene filter is enabled. Their tracks are matched against the library like
+other feed tracks. The filter only affects `mundart.m3u`, does not download
+audio, and does not change `charts.json` or `.env`.
 
 ### Further settings (`.env`)
 
@@ -876,7 +930,8 @@ presence guard, though: if any file for the song already exists under
 `<Artist>/` – even inside a compilation-named folder (`Greatest Hits`) or a
 Lidarr `(YYYY)` album – it is **no longer** re-downloaded. A re-download now
 only happens when **no** copy exists at all. Lidarr `(YYYY)` albums are also not
-classified as compilations in the first place.
+classified as compilations solely for a `Greatest Hits` name; a year alone
+does not turn a genuine sampler into an artist album.
 
 **A regular song is wrongly detected as a compilation.**
 The detection is a heuristic over path/tag markers. If that happens with an

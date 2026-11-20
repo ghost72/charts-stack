@@ -72,6 +72,11 @@ docker compose run --rm charts-energy python -m app.discover --probe energypop
 
 `--list` prints the confirmed slugs (display | slug | genre); `--probe <slug>`
 checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
+Both the CLI probe and daily liveness check read only the HTTP headers and
+immediately close the stream without reading audio. A normal, fully buffered
+GET against a continuous radio stream would block the single scheduler thread,
+including polling and feed refreshes; a read timeout only limits pauses between
+incoming data chunks.
 
 > **Honest limitation (liveness re-check, G2):** the daily liveness check
 > (`ENERGY_LIVENESS_*`) only re-validates the **already-known** slugs from
@@ -86,6 +91,11 @@ checks a guessed slug (HTTP 200 + an `icy-name` header ⇒ a real channel).
 
 Below the header an **overview** lists every own channel, feed and the library part with its counts (`Channel ✅matched ⬇missing`, `theme ➡n`, `📚 Library ✅n ⬇n`). Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line. With very many entries it switches to a compact one-line form (`✅n ⬇n`); beyond roughly 35 entries the line ends with " …" (theoretical bound). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
+In **library mode**, repeated spins of the same normalized artist/title across
+channels are counted and written to the shared missing file only once. The
+"N more" tail counts only omitted missing songs; already-present library songs
+do not inflate the download backlog.
+
 ## Configuration (central `.env`)
 
 | Variable | Default | Purpose |
@@ -99,7 +109,7 @@ Below the header an **overview** lists every own channel, feed and the library p
 | `ENERGY_MAX_TRACKS_PER_CHANNEL` | `500` | Per-channel cap (keep the newest). |
 | `MATCH_THRESHOLD` | `87` | match threshold (like charts-sync). |
 | `ARTIST_MIN_SCORE` | `60` | artist minimum score. |
-| `IGNORE_COMPILATIONS` | `1` | ignore compilation tracks when matching. A presence guard still suppresses a re-download (library AND own mode) whenever a copy of the song already exists under `<Artist>/` – even inside a compilation-named folder (`Greatest Hits`) or a Lidarr `(YYYY)` album; Lidarr `(YYYY)` albums are not classified as compilations in the first place. Genuine non-year samplers (Bravo Hits etc.) stay filtered. |
+| `IGNORE_COMPILATIONS` | `1` | Ignore compilation tracks when matching. A presence guard still suppresses a re-download (library AND own mode) whenever a copy already exists under `<Artist>/`, even inside a compilation-named folder (`Greatest Hits`) or a Lidarr `(YYYY)` album. The year-folder exception applies only to `Greatest Hits`; genuine samplers (`Various Artists`, `Bravo Hits`, etc.) stay filtered even with a year. Equal match scores prefer the non-compilation release, then an artist album with a year, including with `0`. Existing music files are preserved; own playlists switch to the newly selected path on the next matching run. |
 | `MB_ENABLED` | `1` | **library mode:** MusicBrainz year resolution on/off (for the decade NSPs). |
 | `MB_USER_AGENT_ENERGY` | `charts-energy/1.0 (self-hosted)` | User-Agent for the MusicBrainz lookup (MB requires a meaningful UA). |
 | `MB_RATE_SLEEP` | `1.1` | Sleep (s) before each MB request (~1 req/s, polite to MusicBrainz). |

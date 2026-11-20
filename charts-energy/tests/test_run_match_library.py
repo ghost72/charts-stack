@@ -85,7 +85,8 @@ def test_two_library_channels_share_missing_file(monkeypatch, tmp_charts):
     ch90 = config.Channel(slug="energy90s", mode="library")
     _wire(monkeypatch, [ch80, ch90],
           {"energy80s": [_track("Madonna", "Vogue")],
-           "energy90s": [_track("Nirvana", "Lithium")]},
+           "energy90s": [_track("Nirvana", "Lithium"),
+                         _track("madonna", "VOGUE")]},
           present=[])
 
     result = main.run_match()

@@ -57,8 +57,8 @@ def _parse_limit(value, default: int = _ALL_LIMIT) -> int:
 CHART_LIMIT = _parse_limit(os.environ.get("CHART_LIMIT"), _ALL_LIMIT)
 
 # --- Last.fm (optional, second chart source alongside Deezer) ---
-# Free API key from https://www.last.fm/api/account/create.
-# Only needed when at least one feed of type "lastfm" is active.
+# API key from https://www.last.fm/api/account/create. From 2026-12-01,
+# Last.fm requires Pro for the key owner. Also used by the genre filter.
 LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "").strip()
 
 # --- Genre filter (optional) ---
@@ -211,7 +211,7 @@ class Feed:
     """
     A single chart source within a playlist.
 
-    kind:    "deezer", "lastfm" or "energy".
+    kind:    "deezer", "lastfm", "apple" or "energy".
     enabled: False -> feed is skipped (without deleting it from the config). So
              you can e.g. turn off all Deezer feeds and only import Last.fm (or
              vice versa).
@@ -228,12 +228,14 @@ class Feed:
     Energy-specific:
       theme  = the handoff-file theme key charts-energy writes (e.g. "mundart").
                The reader opens CHARTS_DIR/.charts-energy-feed-<theme>.json.
+    Apple-specific:
+      country = two-letter storefront code (e.g. "ch"); limit is 1..100.
     """
 
     def __init__(self, kind: str, limit: int, enabled: bool = True,
                  deezer_type: str = "chart", source: str = "0",
                  method: str = "", params: dict | None = None,
-                 theme: str = ""):
+                 theme: str = "", country: str = ""):
         self.kind = kind
         self.limit = limit
         self.enabled = enabled
@@ -242,6 +244,7 @@ class Feed:
         self.method = method
         self.params = params or {}
         self.theme = theme
+        self.country = country
 
     def __repr__(self) -> str:
         state = "on" if self.enabled else "OFF"
@@ -249,6 +252,8 @@ class Feed:
             detail = f"{self.method}{self.params or ''}"
         elif self.kind == "energy":
             detail = f"theme:{self.theme}"
+        elif self.kind == "apple":
+            detail = f"country:{self.country}"
         else:
             detail = f"{self.deezer_type}:{self.source}"
         return f"Feed[{self.kind}/{state}]({detail} <={self.limit})"
@@ -256,8 +261,8 @@ class Feed:
 
 class ChartSource:
     """
-    A playlist definition. Can bundle ONE or MULTIPLE sources (Deezer and/or
-    Last.fm); multiple sources are merged into one playlist and deduplicated by
+    A playlist definition. Can bundle ONE or MULTIPLE sources (Deezer,
+    Last.fm, Apple Music or Energy), merged into one playlist and deduplicated by
     artist+title.
 
     feeds:   list of Feed objects.
@@ -291,8 +296,8 @@ class ChartSource:
         # default (see effective_genre_filter).
         self.genre_filter: bool | None = genre_filter
         # Populated by deezer.fetch_chart after the run (for Pushover):
-        # {"deezer_new": int, "lastfm_new": int, "energy_new": int,
-        #  "genre_filtered": int}
+        # {"deezer_new": int, "lastfm_new": int, "apple_new": int, "energy_new": int,
+        #  "genre_filtered": int, "artist_filtered": int}
         self.last_stats: dict[str, int] = {}
 
     @property
@@ -306,7 +311,7 @@ class ChartSource:
         (membership and length unchanged), so the active-source count in
         _parse_charts is unaffected; only fetch_chart's iteration order changes.
         Because fetch_chart keeps the first occurrence of a track, appending
-        energy last guarantees the curated Deezer/Last.fm feeds keep position
+        energy last guarantees the curated chart feeds keep position
         priority and energy only adds genuinely new tracks.
         """
         enabled = [f for f in self.feeds if f.enabled]
@@ -409,7 +414,7 @@ _VALID_LASTFM_METHODS = {
 def _build_feed(s: dict, entry_limit: int, context: str,
                 index: int, warnings: list[str]) -> Feed:
     """
-    Build a Feed object (Deezer or Last.fm) from a source dict.
+    Build a Feed object from a source dict.
 
     The effective service (feed.kind) is determined from the optional field
     "service"; if it is missing, the backward-compatible type heuristic applies.
@@ -424,6 +429,21 @@ def _build_feed(s: dict, entry_limit: int, context: str,
     method_raw = str(s.get("method", "")).strip().lower()
     limit = _parse_limit(s.get("limit"), entry_limit)
     enabled = bool(s.get("enabled", True))
+
+    if service == "apple":
+        country = str(s.get("country", "")).strip().lower()
+        if "limit" in s:
+            limit = _parse_limit(s["limit"], 0)
+        if limit == _ALL_LIMIT:
+            limit = 100
+        if (type_ not in ("", "chart") or len(country) != 2
+                or not country.isascii() or not country.isalpha()
+                or not 1 <= limit <= 100):
+            warnings.append(t("sync.config.apple_invalid",
+                               context=context, index=index,
+                               country=country, limit=limit))
+            enabled = False
+        return Feed(kind="apple", limit=limit, enabled=enabled, country=country)
 
     # Energy feed (handoff from charts-energy). Handled before the Deezer/Last.fm
     # heuristic: it carries a "theme" (no Deezer ID, no Last.fm method) and

@@ -399,10 +399,10 @@ function render(d) {
 
   // slskd (LAN, own live check d.slskd).
   const sl = d.slskd || {};
-  local.push(tile(sl.ok ? "ok" : "err", t("tile.title.slskd"), [
-    sl.ok ? t("tile.slskd.connected") : t("tile.slskd.disconnected"),
-    t("tile.slskd.status", {state: sl.state || "?"}),
-    sl.downloads_active != null ? t("tile.slskd.active_downloads", {n: sl.downloads_active}) : "",
+  local.push(tile(!sl.configured ? "muted" : (sl.ok ? "ok" : "err"), t("tile.title.slskd"), [
+    !sl.configured ? t("tile.not_configured") : (sl.ok ? t("tile.slskd.connected") : t("tile.slskd.disconnected")),
+    sl.configured ? t("tile.slskd.status", {state: sl.state || "?"}) : "",
+    sl.configured && sl.downloads_active != null ? t("tile.slskd.active_downloads", {n: sl.downloads_active}) : "",
     sl.detail || "",
   ].filter(Boolean)));
 
@@ -410,7 +410,7 @@ function render(d) {
   const li = d.lidarr || {};
   local.push(tile(!li.configured ? "muted" : (li.ok ? "ok" : "err"), t("tile.title.lidarr"), [
     !li.configured ? t("tile.not_configured") : (li.ok ? t("tile.reachable") : t("tile.not_reachable")),
-    li.detail || "",
+    li.configured ? li.detail || "" : "",
   ].filter(Boolean)));
 
   // --- Group 2: chart sources (external APIs/streams the music comes from) -
@@ -423,10 +423,16 @@ function render(d) {
     dz.detail || "",
   ].filter(Boolean)));
 
+  const apple = ext.apple || {};
+  sources.push(tile(!apple.configured ? "muted" : (apple.ok ? "ok" : "err"), t("tile.title.apple"), [
+    !apple.configured ? t("tile.not_configured") : (apple.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    apple.detail || "",
+  ].filter(Boolean)));
+
   // Last.fm (WAN, live ping; needs an API key). Without a key -> muted, never red.
   const lf = ext.lastfm || {};
   sources.push(tile(!lf.configured ? "muted" : (lf.ok ? "ok" : "err"), t("tile.title.lastfm"), [
-    !lf.configured ? t("tile.lastfm.no_api_key") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    !lf.configured ? t("tile.not_configured") : (lf.ok ? t("tile.reachable") : t("tile.not_reachable")),
     lf.detail || "",
   ].filter(Boolean)));
 
@@ -434,7 +440,7 @@ function render(d) {
   // a dead persisted-query hash -> red (then fetch a fresh FLASHBACK_HASH).
   const fb = ext.flashback || {};
   sources.push(tile(!fb.configured ? "muted" : (fb.ok ? "ok" : "err"), t("tile.title.flashback"), [
-    !fb.configured ? t("tile.flashback.no_hash") : (fb.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    !fb.configured ? t("tile.not_configured") : (fb.ok ? t("tile.reachable") : t("tile.not_reachable")),
     fb.detail || "",
   ].filter(Boolean)));
 
@@ -444,7 +450,7 @@ function render(d) {
   // the two radio sources stay together.
   const en = ext.energy || {};
   sources.push(tile(!en.configured ? "muted" : (en.ok ? "ok" : "err"), t("tile.title.energy"), [
-    !en.configured ? t("tile.not_in_use") : (en.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    !en.configured ? t("tile.not_configured") : (en.ok ? t("tile.reachable") : t("tile.not_reachable")),
     en.detail || "",
   ].filter(Boolean)));
 
@@ -452,7 +458,7 @@ function render(d) {
   // (HITPARADE_ENABLED=false) -> muted; otherwise reachable/not reachable.
   const hp = ext.hitparade || {};
   sources.push(tile(!hp.configured ? "muted" : (hp.ok ? "ok" : "err"), t("tile.title.hitparade"), [
-    !hp.configured ? t("tile.not_in_use") : (hp.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    !hp.configured ? t("tile.not_configured") : (hp.ok ? t("tile.reachable") : t("tile.not_reachable")),
     hp.detail || "",
   ].filter(Boolean)));
 
@@ -480,7 +486,7 @@ function render(d) {
   let mbCls = "muted";
   if (mb.configured) mbCls = mb.ok ? "ok" : "warn";
   helpers.push(tile(mbCls, t("tile.title.musicbrainz"), [
-    !mb.configured ? t("tile.not_in_use") : (mb.ok ? t("tile.reachable") : t("tile.not_reachable")),
+    !mb.configured ? t("tile.not_configured") : (mb.ok ? t("tile.reachable") : t("tile.not_reachable")),
     mb.detail || "",
   ].filter(Boolean)));
 
@@ -499,7 +505,7 @@ function render(d) {
   // verdict (valid/invalid), so showing the server detail too would double the
   // sentence in the tile (see collector.py comment).
   helpers.push(tile(!pu.configured ? "muted" : (pu.ok ? "ok" : "err"), t("tile.title.pushover"), [
-    !pu.configured ? t("tile.pushover.not_configured")
+    !pu.configured ? t("tile.not_configured")
                    : (pu.ok ? t("tile.pushover.valid") : t("tile.pushover.invalid")),
   ].filter(Boolean)));
 
@@ -514,12 +520,12 @@ function render(d) {
 
   // Service -> external source(s): which live checks may heal a stored "error"
   // of a service. charts-recommend draws from ListenBrainz (+ Last.fm, if used),
-  // charts-sync from Deezer + Last.fm. Services without a mapping keep the old
+  // charts-sync from Deezer + Last.fm + Apple Music. Services without a mapping keep the old
   // hard red rule. iTunes + Pushover are deliberately NOT here -> they heal NO
   // service red (iTunes = best-effort cover art, Pushover = notification sink).
   const EXT_SOURCES = {
     "charts-recommend": ["listenbrainz", "lastfm"],
-    "charts-sync": ["deezer", "lastfm"],
+    "charts-sync": ["deezer", "lastfm", "apple"],
     "charts-flashback": ["flashback"],
   };
 
