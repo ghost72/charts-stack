@@ -12,6 +12,8 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-20
+
 ### Added
 - **charts-config: authenticated `.env` editor.** Settings are grouped and
   documented from `.env.example`; saving rebuilds the central file while
@@ -24,7 +26,7 @@ deployed together, so a single stack version is the honest unit.
   feeds; the authenticated artist panel verifies Deezer identities, stores
   local scene selections, and supports manual artists. Filtering stays off
   until explicitly enabled. Runtime inventory/selection files are separate
-  from `.env` and `charts.json`; no GitHub tag or release is implied.
+  from `.env` and `charts.json`.
 - **Apple Music monitoring and source finder.** A separate optional dashboard
   chart tile and watchdog outage/recovery check use the public country-chart
   endpoint, not iTunes search. `APPLE_CHARTS_ENABLED` defaults to `0`;
