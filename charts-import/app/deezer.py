@@ -281,7 +281,7 @@ def _get_json(client, url: str) -> "dict | None":
     return payload
 
 
-def resolve_release_meta(artist: str, title: str):
+def resolve_release_meta(artist: str, title: str, *, refresh: bool = False):
     """
     Resolve (year, album, album_year, track) for a song via Deezer. Returns a
     resolve.ResolvedMeta; an all-empty one on no reliable hit / network error
@@ -302,7 +302,7 @@ def resolve_release_meta(artist: str, title: str):
 
     cache = _load_cache()
     mk = _meta_key(a, ti)
-    if mk in cache:
+    if not refresh and mk in cache:
         cached = cache[mk]
         if isinstance(cached, list) and len(cached) == 4:
             return resolve.ResolvedMeta(year=cached[0], album=cached[1],
@@ -415,7 +415,7 @@ def resolve_release_meta(artist: str, title: str):
         logger.debug(t("import.deezer.lookup_failed", artist=a, title=ti, error=e))
         return resolve.ResolvedMeta()
 
-    if cacheable:
+    if cacheable and not refresh:
         cache[mk] = [year, album, album_year, track]
         _save_cache()
     return resolve.ResolvedMeta(year=year, album=album, album_year=album_year,

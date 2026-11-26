@@ -350,6 +350,8 @@ def _services_for(key: str, groups: list[str]) -> list[str]:
         return ["charts-dashboard", "charts-energy"]
     if key.startswith(("BACKFILL_", "YEAR_", "METADATA_", "IMPORT_")):
         return ["charts-import"]
+    if key == "CHARTS_ARTIST_PLAYLIST":
+        return ["charts-sync", "charts-config"]
     if key.startswith(("CHARTS_", "SYNC_")) or key in {
             "CHARTS", "CHART_LIMIT", "PLAYLIST_ORDER", "GENRE_FILTER",
             "EXCLUDE_TAGS", "EXCLUDE_TAG_TOP_N", "EXCLUDE_TAG_MIN_COUNT",

@@ -4,6 +4,7 @@ import importlib
 import json
 import pathlib
 import stat
+import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,39 @@ from app import env_editor, i18n
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LANG_DIR = ROOT / "lang"
 TEMPLATE = ROOT / ".env.example"
+
+
+def test_multiline_editor_fields_span_the_row_without_changing_values_or_secrets():
+    html = ROOT / "charts-config/app/static/index.html"
+    process = subprocess.run(["node", "-e", """
+const fs = require('fs'), vm = require('vm'), assert = require('node:assert/strict');
+const html = fs.readFileSync(process.argv[1], 'utf8');
+const roots = {};
+const context = vm.createContext({
+  document: {getElementById: id => roots[id] ||= {innerHTML: ''}},
+  t: key => key, applyEnvFilter: () => {},
+});
+for (const name of ['esc', 'envDocLink', 'renderEnvEditor']) {
+  const start = html.indexOf('function ' + name + '(');
+  vm.runInContext(html.slice(start, html.indexOf('\\n}', start) + 2), context);
+}
+const value = '[{"title":"Swiss <mix>","name":"mundart.m3u"}]';
+const field = {type: 'string', secret: false, optional: false, is_set: true,
+  source: 'env', groups: ['sync'], links: []};
+context.renderEnvEditor({groups: [{name: 'sync', fields: [
+  {...field, key: 'CHARTS', type: 'json', value},
+  {...field, key: 'CHARTS_FILE', value: '/config/charts.json'},
+  {...field, key: 'PASSWORD', secret: true, configured: true, value: 'private'.repeat(40)},
+]}]});
+const output = roots['env-groups'].innerHTML;
+assert.equal((output.match(/class="env-field env-field-wide"/g) || []).length, 1);
+assert.equal((output.match(/class="env-field"/g) || []).length, 2);
+assert.ok(output.includes('data-original="' + context.esc(value) + '"'));
+assert.ok(output.includes('>' + context.esc(value) + '</textarea>'));
+assert.ok(output.includes('id="env-PASSWORD" type="password"'));
+assert.ok(!output.includes('private'));
+""", str(html)], capture_output=True, text=True)
+    assert process.returncode == 0, process.stderr
 
 
 @pytest.fixture
@@ -81,6 +115,19 @@ def test_configuration_hides_secret_values_and_lists_custom_names(env_files):
     assert configuration["unknown"] == [
         {"key": "CUSTOM_TOKEN", "configured": True},
     ]
+
+
+def test_artist_playlist_change_recreates_both_services(env_files):
+    env_file, _backup_dir = env_files
+    rebuilt = env_editor.save_configuration(
+        _payload(env_editor.get_configuration()), "test-user")
+    saved = env_editor.save_configuration(
+        _payload(rebuilt, values={"CHARTS_ARTIST_PLAYLIST": "chanson.m3u"}),
+        "test-user",
+    )
+
+    assert saved["services"] == ["charts-config", "charts-sync"]
+    assert "CHARTS_ARTIST_PLAYLIST=chanson.m3u" in env_file.read_text(encoding="utf-8")
 
 
 def test_existing_download_limit_and_lastfm_switch_are_editable(env_files):

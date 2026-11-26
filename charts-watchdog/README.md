@@ -5,6 +5,22 @@ Pushover-Meldung, wenn einer ausfällt – und eine Entwarnung, wenn er sich wie
 erholt. Kein UI, kein eigenes Image (nutzt `docker:cli` + ein kleines
 Shell-Skript).
 
+**Rohe Schlüssel wie `watchdog.notify.recovered_title` im Push?**
+Die Recovery-Texte sind in den zentralen DE/EN/FR-Dateien enthalten. Prüfe den
+tatsächlich gemounteten Stand auf der NAS; ein alter Script-/Sprachdateistand
+ist eine mögliche Ursache, keine anhand eines Screenshots bestätigte Diagnose.
+Kopiere das aktuelle `watch.sh` und `lang/`, dann erstelle den Watchdog neu,
+damit auch ein per Dateiaustausch aktualisierter Bind-Mount neu geöffnet wird:
+
+```sh
+cd /volume1/docker-ghost/charts-stack &&
+docker compose up -d --force-recreate --no-deps charts-watchdog
+```
+
+**Kein Rebuild nötig:** Der Watchdog hat kein eigenes Build-Image. Stop-Meldungen
+während eines absichtlichen längeren Service-Stopps sind erwartetes Monitoring,
+nicht automatisch ein neuer Defekt.
+
 Gegenstück zu [`charts-dashboard`](../charts-dashboard) (Status-UI zum
 Nachschauen); der Watchdog meldet sich **aktiv**, wenn etwas nicht stimmt.
 
@@ -90,11 +106,27 @@ Dienste gehalten (nicht mehr das nüchterne `OK:`/`Problem:` von früher):
   mit `🎉`.
 - **Container ausgefallen:** `🚨 <dienst> ausgefallen`.
 - **Externer Dienst nicht erreichbar:** `📡 <dienst> nicht erreichbar`.
-- **Dienst meldet `status=error`:** `⚠️ Quelle von <dienst> defekt`. Der Text
-  zeigt die **lesbare** Ursache (z. B. „Verbindung zu slskd fehlgeschlagen") auf
+- **Dienst meldet `status=error`:** z. B.
+  `⚠️ charts-sync: Berechtigungsproblem`. Eindeutige Fehlermeldungen werden als
+  Berechtigungsproblem, fehlender Speicherplatz, schreibgeschütztes Dateisystem
+  oder nicht verfügbare Datei/Ordner eingeordnet. Andere Meldungen bleiben
+  neutral **Dienstfehler**, statt jede Störung als Quellenfehler zu bezeichnen.
+  Der Text zeigt den **lesbaren Dienst-Fehlertext** inklusive betroffenen Pfads auf
   einer eigenen Zeile – der rohe `HTTPConnectionPool(...) / Max retries
   exceeded …`-Dump von urllib3/requests wird gekürzt, damit die Push-Meldung
-  nicht zur Textwand wird (sehr lange Meldungen werden hart abgeschnitten).
+  nicht zur Textwand wird (sehr lange Meldungen werden nach ca. 160 Zeichen
+  gekürzt). Anführungszeichen und Backslashes bleiben erhalten; Zeilenumbrüche
+  werden zu Leerzeichen. Fehlt ein Fehlertext, fordert die Meldung ausdrücklich
+  zur Prüfung des Dienst-Logs auf.
+
+Der Watchdog liest dafür ausschliesslich `message` aus der Statusdatei,
+keine vollständigen Container-Logs oder Tracebacks. Er verändert keine Rechte.
+Die Kategorie beschreibt den gemeldeten Fehler, nicht automatisch dessen
+Ursache: Bei `Permission denied` müssen Benutzer, Mount und Rechte geprüft werden.
+Zum Übernehmen `charts-watchdog/watch.sh` und die zentralen `lang/`-Dateien
+kopieren und den Watchdog mit dem oben angegebenen Befehl **neu erstellen**.
+Kein Build und kein Neustart der übrigen Dienste nötig. Einen produktiven
+Dienst nicht absichtlich für einen Test beschädigen.
 
 Alle sichtbaren Texte liegen in `lang/{en,de,fr}.json` (siehe „Sprache") – die
 Emojis/Formulierungen sind dort hinterlegt, der Code enthält keine

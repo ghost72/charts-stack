@@ -3,6 +3,7 @@ charts-upgrade Pushover summary: entries are atomic three-line blocks, the
 per-run cap keeps its note and the 1024-char budget cuts only between entries.
 All tests run WITHOUT network/Docker (notify.send is stubbed).
 """
+import json
 import pathlib
 
 from app import config, i18n, main, notify_budget
@@ -55,3 +56,29 @@ def test_fifteen_long_entries_within_budget_never_split(monkeypatch):
     assert len(artists) == len(reasons) > 0
     assert len(artists) < 15
     assert lines[-1] == i18n.t("upgrade.notify.more", count=15 - len(artists))
+
+
+def test_missing_metadata_notification_uses_snapshot_and_reports_fields(monkeypatch, tmp_path):
+    sent = _setup(monkeypatch, dry_run=True)
+    monkeypatch.setattr(main.status, "STATUS_DIR", str(tmp_path))
+    (tmp_path / "missing-metadata.json").write_text(json.dumps({
+        "version": 1, "generated_at": "2026-11-24T12:00:00+00:00",
+        "songs": [{"missing": ["year", "track"]}, {"missing": ["year", "album"]},
+                  {"unreadable": True}],
+    }), encoding="utf-8")
+    main._notify_missing_metadata()
+    assert "Year: 2" in sent["msg"]
+    assert "Album: 1" in sent["msg"]
+    assert "Track number: 1" in sent["msg"]
+    assert "Unreadable tags: 1" in sent["msg"]
+    assert "2026-11-24" in sent["msg"]
+    assert notify_budget.measure([sent["msg"]]) <= 1024
+
+
+def test_missing_metadata_notification_rejects_broken_snapshot(monkeypatch, tmp_path):
+    sent = _setup(monkeypatch, dry_run=True)
+    monkeypatch.setattr(main.status, "STATUS_DIR", str(tmp_path))
+    (tmp_path / "missing-metadata.json").write_text('{"version":1,"songs":{}}',
+                                                    encoding="utf-8")
+    main._notify_missing_metadata()
+    assert sent == {}

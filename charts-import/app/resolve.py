@@ -417,10 +417,12 @@ def _merge(primary: ResolvedMeta, fallback: ResolvedMeta) -> ResolvedMeta:
     )
 
 
-def _deezer_meta(artist: str, title: str) -> ResolvedMeta:
+def _deezer_meta(artist: str, title: str, *, refresh: bool = False) -> ResolvedMeta:
     """Deezer adapter wrapped so any exception yields an empty ResolvedMeta."""
     try:
         from . import deezer
+        if refresh:
+            return deezer.resolve_release_meta(artist, title, refresh=True)
         return deezer.resolve_release_meta(artist, title)
     except Exception as e:  # never raise into the import path
         logger.debug(t("import.resolve.adapter_failed", source="deezer",
@@ -428,10 +430,12 @@ def _deezer_meta(artist: str, title: str) -> ResolvedMeta:
         return ResolvedMeta()
 
 
-def _mb_meta(artist: str, title: str) -> ResolvedMeta:
+def _mb_meta(artist: str, title: str, *, refresh: bool = False) -> ResolvedMeta:
     """MusicBrainz adapter wrapped so any exception yields an empty ResolvedMeta."""
     try:
         from . import mbyear
+        if refresh:
+            return mbyear.resolve_mb_meta(artist, title, refresh=True)
         return mbyear.resolve_mb_meta(artist, title)
     except Exception as e:  # never raise into the import path
         logger.debug(t("import.resolve.adapter_failed", source="musicbrainz",
@@ -439,7 +443,7 @@ def _mb_meta(artist: str, title: str) -> ResolvedMeta:
         return ResolvedMeta()
 
 
-def resolve_metadata(artist: str, title: str) -> ResolvedMeta:
+def resolve_metadata(artist: str, title: str, *, refresh: bool = False) -> ResolvedMeta:
     """
     Resolve release year + album + album_year + track for a song. Deezer first,
     MusicBrainz as a per-field fallback. Returns an all-empty ResolvedMeta when
@@ -454,9 +458,9 @@ def resolve_metadata(artist: str, title: str) -> ResolvedMeta:
         # VA/unknown file artist: never resolve, and never reach _mb_meta below
         # (so MusicBrainz is not queried for a Various-Artists file).
         return ResolvedMeta()
-    primary = _deezer_meta(a, ti)
+    primary = _deezer_meta(a, ti, refresh=True) if refresh else _deezer_meta(a, ti)
     # Only pay for MB when Deezer left a field empty.
     if primary.year and primary.album and primary.track:
         return primary
-    fallback = _mb_meta(a, ti)
+    fallback = _mb_meta(a, ti, refresh=True) if refresh else _mb_meta(a, ti)
     return _merge(primary, fallback)

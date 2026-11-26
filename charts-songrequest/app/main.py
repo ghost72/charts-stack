@@ -80,6 +80,14 @@ def _record_request(label: str) -> None:
 
 app = FastAPI(title="charts-songrequest", docs_url=None, redoc_url=None)
 
+
+@app.middleware("http")
+async def prevent_search_indexing(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 # --- Frontend i18n handoff -------------------------------------------------

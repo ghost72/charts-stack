@@ -34,6 +34,7 @@ STATUS_DIR = os.environ.get("STATUS_DIR", "/charts/.charts-status")
 
 # Persistent inventory and per-install scene selection shared with charts-sync.
 ARTIST_DATA_DIR = os.environ.get("ARTIST_DATA_DIR", "/charts")
+CHARTS_ARTIST_PLAYLIST = os.environ.get("CHARTS_ARTIST_PLAYLIST", "").strip() or "mundart.m3u"
 
 # --- Last.fm (optional; tag check + graying the Last.fm box) ---
 # Used only for the Last.fm tag validation. Empty = the Last.fm box is grayed

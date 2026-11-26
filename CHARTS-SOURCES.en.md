@@ -133,7 +133,16 @@ Energy is still merged last. Apple's contribution appears as `apple`
 in source logs and as `Apple Music` in notifications.
 
 The [`charts-config`](charts-config/README.en.md) source finder checks
-CH/DE/GB/US feeds on demand, with a preview and copyable snippet. To enable
+CH/DE/FR/GB/US feeds on demand, with a preview and copyable snippet.
+
+For a language or regional scene, choose suitable sources and set
+`CHARTS_ARTIST_PLAYLIST` to the exact playlist `name`. For example, use
+`deutsch.m3u` with a curated German pop source and target scene `Deutschpop`,
+`chanson.m3u` with a chanson source and `Chanson française`, or `uk-indie.m3u`
+with a British indie source and `UK Indie`. Apple country charts can add
+tracks but do not filter by language.
+
+To enable
 the separate dashboard tile and watchdog outage/recovery notifications, set
 `APPLE_CHARTS_ENABLED=1` and `APPLE_CHARTS_COUNTRY=ch` in the existing `.env`
 (match the desired feed's country), then recreate both services.

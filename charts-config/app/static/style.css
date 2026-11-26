@@ -9,6 +9,9 @@
   --err: #e05a5a;
   --info: #5a8fe0;
   --accent: #1e5fa8;
+  --header-padding-y: 14px;
+  --brand-badge-size: 38px;
+  --header-offset: calc(var(--brand-badge-size) + 2 * var(--header-padding-y) + 1px);
 }
 * { box-sizing: border-box; }
 body {
@@ -19,7 +22,7 @@ body {
 }
 header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 24px;
+  padding: var(--header-padding-y) 24px;
   background: linear-gradient(100deg, #1b4e8e 0%, #15406e 60%, #0f3357 100%);
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
@@ -29,7 +32,8 @@ header {
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-badge {
   display: flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px; border-radius: 10px; font-size: 1.2rem;
+  width: var(--brand-badge-size); height: var(--brand-badge-size);
+  border-radius: 10px; font-size: 1.2rem;
   background: rgba(255, 255, 255, .12);
   border: 1px solid rgba(255, 255, 255, .18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
@@ -109,7 +113,8 @@ section h2 {
   font-size: .95rem; text-transform: uppercase; letter-spacing: .05em;
   color: var(--muted); margin: 0 0 8px;
 }
-.pane-desc { margin: 0; }   /* .finder-hint supplies colour/size */
+.pane-summary { margin: 0 0 6px; font-size: .95rem; line-height: 1.45; }
+.pane-desc { margin: 0; line-height: 1.45; }
 
 /* On narrow screens, give every tab enough width for its label to wrap inside
    the button instead of letting text spill or requiring horizontal scrolling. */
@@ -131,9 +136,9 @@ b { font-weight: 600; }
 
 @media (max-width: 760px) {
   /* Header more compact on narrow viewports: subtitle hidden, less padding. */
-  header { padding: 12px 16px; }
+  :root { --header-padding-y: 12px; --brand-badge-size: 34px; }
+  header { padding-inline: 16px; }
   .brand-sub { display: none; }
-  .brand-badge { width: 34px; height: 34px; }
 }
 
 /* Login */
@@ -207,16 +212,19 @@ body.login {
 .finder-box form button:hover { filter: brightness(1.1); }
 /* Small secondary button (copy). */
 .btn-sm {
-  border: 1px solid #3a3350; border-radius: 6px;
-  background: #332b45; color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--accent); color: #fff;
   padding: 4px 8px; font-size: .75rem; cursor: pointer;
 }
 .btn-sm:hover { filter: brightness(1.15); }
+.btn-sm.danger, .btn-sm.te-trash-del {
+  background: #3a1616; border-color: #7a2a2a; color: #ffb4b4;
+}
 /* Chips (tag suggestions). */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chip {
-  border: 1px solid #3a3350; border-radius: 999px;
-  background: #2f2742; color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent); color: #fff;
   padding: 3px 10px; font-size: .78rem; cursor: pointer;
 }
 .chip:hover { filter: brightness(1.15); }
@@ -276,34 +284,103 @@ body.login {
 .lf-samples { margin: 0 0 8px 18px; padding: 0; font-size: .8rem; color: var(--fg); }
 
 /* Mundart artist inventory and local scene controls. */
+[data-pane="artists"] .finder {
+  grid-template-columns: minmax(0, 1fr); gap: 16px;
+}
+[data-pane="artists"] .finder-hint { line-height: 1.5; }
 .artist-scene-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  margin-bottom: 10px;
+  margin: 8px 0 14px;
 }
-.artist-filter-toggle { display: flex; align-items: center; gap: 7px; }
+.artist-section-header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px;
+}
+.artist-section-header h3 { margin: 0; }
+#genre-playlist-form {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px; margin: 18px 0 12px;
+}
+.genre-field { min-width: 0; }
+.genre-field-wide, .genre-actions { grid-column: 1 / -1; }
+.genre-field > label { display: block; margin-bottom: 8px; line-height: 1.4; }
+#genre-cancel[hidden] { display: none; }
+.genre-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.genre-actions button { min-height: 44px; }
+#genre-playlist-form .genre-field > input, #genre-playlist-form .genre-field > select {
+  box-sizing: border-box; display: block; width: 100%; max-width: 100%;
+  min-height: 44px; margin: 0; padding: 10px 12px; line-height: 1.4;
+  color-scheme: dark;
+}
+@media (max-width: 720px) {
+  #genre-playlist-form { grid-template-columns: minmax(0, 1fr); }
+}
+#genre-playlist-name[readonly] { opacity: .8; }
+.artist-assignments-header {
+  position: sticky; top: var(--header-offset); z-index: 2;
+  padding: 8px 0; background: var(--tile);
+}
+.artist-section-hint { color: var(--fg); font-size: .85rem; line-height: 1.5; }
+.artist-section-hint.error { color: var(--err); }
+[data-pane="artists"] p.artist-section-hint { margin: 0 0 12px; }
+[data-pane="artists"] #artist-playlist-options-hint,
+[data-pane="artists"] #artist-scene-playlists-hint { margin: 8px 0 12px; color: var(--muted); }
+#artist-playlists-status:empty, .artist-save-message:empty { display: none; }
+.artist-filter-toggle { display: flex; align-items: center; gap: 8px; line-height: 1.4; }
 .artist-filter-toggle input { accent-color: var(--accent); }
 .artist-target-label { color: var(--muted); font-size: .82rem; }
-.artist-scene-toolbar > input {
-  min-width: 180px; flex: 1 1 180px; padding: 7px 9px;
+.artist-scene-toolbar > input,
+.artist-download-limit input {
+  min-width: 0; padding: 7px 9px;
   border: 1px solid #3a3350; border-radius: 7px;
   background: var(--bg); color: var(--fg); font-size: .85rem;
 }
+.artist-scene-toolbar > input { flex: 1 1 180px; }
+.artist-download-limit {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  color: var(--muted); font-size: .82rem;
+}
+.artist-download-limit input { width: 5.5rem; color-scheme: dark; }
 .artist-msg { min-height: 1.3em; margin: 4px 0 8px; font-size: .82rem; }
 .artist-msg.error { color: var(--err); }
 .artist-msg.ok { color: var(--ok); }
+.artist-table-count { margin: 4px 0 10px; line-height: 1.5; }
 .artist-table-wrap { max-width: 100%; overflow-x: auto; }
-#artist-list .artist-table { width: 100%; min-width: 850px; border-collapse: collapse; }
-#artist-list .artist-table th, #artist-list .artist-table td {
-  padding: 7px 8px; border-bottom: 1px solid #453c5e;
-  text-align: left; vertical-align: middle;
+#artist-list .artist-table { display: block; width: 100%; min-width: 910px; }
+#artist-list .artist-table thead,
+#artist-list .artist-table tbody {
+  display: block; overflow: auto; scrollbar-gutter: stable;
 }
-#artist-list .artist-table th { color: var(--muted); font-size: .78rem; }
+#artist-list .artist-table thead { background: var(--tile); }
+#artist-list .artist-table tbody {
+  max-height: 50vh; max-height: 50dvh;
+  border-top: 4px solid var(--tile);
+}
+#artist-list .artist-table tr {
+  display: grid;
+  grid-template-columns: minmax(135px, 1.1fr) minmax(135px, 1fr)
+    minmax(150px, 1.15fr) minmax(186px, 1.1fr) 54px minmax(116px, .7fr) minmax(100px, .75fr);
+  align-items: center;
+  border-bottom: 1px solid #453c5e;
+}
+#artist-list .artist-table th, #artist-list .artist-table td {
+  min-width: 0; padding: 7px 8px; text-align: left; overflow-wrap: anywhere;
+}
+#artist-list .artist-table th {
+  color: var(--muted); font-size: .78rem;
+}
 #artist-list .artist-table td { font-size: .8rem; }
-.artist-table .artist-identity { white-space: nowrap; }
-.artist-table input[type="text"] {
+#artist-list .artist-table tbody tr:focus {
+  outline: 2px solid var(--info); outline-offset: -2px;
+}
+.artist-table input[type="text"],
+.artist-table .artist-scene {
   width: 100%; min-width: 100px; padding: 6px 7px;
   border: 1px solid #3a3350; border-radius: 6px;
   background: var(--bg); color: var(--fg); font-size: .78rem;
+}
+.artist-table .artist-scene {
+  min-width: 170px; resize: vertical; font-family: inherit; line-height: 1.35;
 }
 .artist-table input[type="checkbox"] { accent-color: var(--accent); }
 .artist-search-result {
@@ -312,7 +389,27 @@ body.login {
   font-size: .82rem;
 }
 .artist-search-result-name { min-width: 0; overflow-wrap: anywhere; }
+.artist-search-result { flex-wrap: wrap; }
+.artist-search-result-name { flex: 1 1 12rem; }
 .artist-search-result .btn-sm { flex: 0 0 auto; }
+#artist-link-target { margin: .4rem 0 .75rem; line-height: 1.5; }
+#artist-link-target:empty { display: none; }
+.artist-preview:not([hidden]) {
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: .55rem;
+  margin: .5rem 0 .75rem; padding: .7rem .85rem;
+  border-radius: 8px; background: var(--bg);
+}
+.artist-preview-title { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.artist-preview-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+  max-width: 100%;
+}
+.artist-preview audio { max-width: 100%; }
+.artist-preview .artist-preview-next {
+  width: 2.3rem; height: 2.3rem; padding: 0; border-radius: 50%;
+  font-size: 1.3rem; line-height: 1;
+}
+.artist-preview a { color: #91c6ff; }
 
 /* Energy channel status badge: a small inline pill like the chips. Active uses
    the shared green token, inactive the muted grey used by .tile.muted. */
@@ -454,6 +551,13 @@ body.login {
 .te-row:hover { background: #352b48; }
 .te-row-main { font-weight: 600; }
 .te-row-album { color: var(--muted); font-size: .82rem; }
+.te-metadata-text { font-size: .85rem; font-weight: 400; overflow-wrap: anywhere; }
+.te-metadata-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: .85rem; }
+.te-metadata-filter[hidden] { display: none; }
+.te-metadata-filter select {
+  padding: 7px 9px; border: 1px solid #3a3350; border-radius: 7px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+}
 /* Origin badge: stack songs (manifest/marker) vs. hand-curated files. */
 .badge {
   margin-left: auto; padding: 2px 8px; border-radius: 999px;
@@ -696,8 +800,8 @@ body.login {
   cursor: pointer;
 }
 .te-file-input::file-selector-button {
-  border: 1px solid #3a3350; border-radius: 6px;
-  background: #332b45; color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--accent); color: #fff;
   padding: 4px 10px; margin-right: 10px;
   font-size: .78rem; cursor: pointer;
 }
@@ -822,6 +926,20 @@ body.login {
   max-width: 480px; width: 100%; box-shadow: 0 8px 32px rgba(0, 0, 0, .4);
 }
 .te-modal-card h3 { margin: 0 0 .6rem; font-size: 1.05rem; }
+#artist-rename-dialog, #artist-delete-dialog {
+  color: var(--fg); border: 1px solid var(--border);
+  width: min(480px, calc(100% - 2rem)); max-height: calc(100% - 2rem);
+  overflow: auto; color-scheme: dark;
+}
+#artist-rename-dialog::backdrop, #artist-delete-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+#artist-rename-name {
+  display: block; width: 100%; margin: .5rem 0 1rem; padding: 9px 12px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 9px; font: inherit;
+}
+#artist-rename-name:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
 .te-modal-q { margin: 0 0 1rem; font-size: .9rem; line-height: 1.4; }
 /* Delete/restore confirm dialogs embed the path in a bordered .te-pathchip. Give
    those two warn paragraphs extra line spacing so a wrapped two-line chip does
@@ -829,8 +947,8 @@ body.login {
 #te-delete-warn, #te-trash-restore-warn { line-height: 1.8; }
 .te-modal-buttons { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
 .te-modal-btn {
-  padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--border, #3a3d45);
-  background: transparent; color: inherit; cursor: pointer; font-size: .85rem;
+  padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; cursor: pointer; font-size: .85rem;
 }
 .te-modal-btn.primary { background: var(--accent, #4f8cff); border-color: transparent; color: #fff; }
 /* Label legend under the button row: explains the two result badges. One
@@ -939,8 +1057,8 @@ body.login {
    position (flush at the column bottom with the left file-info line). */
 .te-download {
   display: inline-block; margin-top: 0; text-align: center;
-  padding: 5px 10px; border-radius: 8px; border: 1px solid #5a5172;
-  background: var(--bg); color: var(--fg); font-size: .8rem;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; font-size: .8rem;
   text-decoration: none; cursor: pointer;
 }
 .te-download:hover { border-color: var(--accent); }
@@ -958,8 +1076,8 @@ body.login {
      the value column's min-width:0 guarantee it keeps its space and never wraps
      onto its own line or overlaps the text. */
   flex: 0 0 auto; margin-left: auto;
-  padding: 4px 10px; border-radius: 8px; border: 1px solid #5a5172;
-  background: var(--bg); color: var(--fg); font-size: .78rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; font-size: .78rem; font-weight: 600;
   cursor: pointer; white-space: nowrap; line-height: 1.3;
 }
 .te-convert:hover { border-color: var(--accent); }
@@ -1099,6 +1217,7 @@ body.login {
   min-width: 0; padding: 10px; border-radius: 9px;
   background: var(--tile); border: 1px solid #3a3350;
 }
+.env-field-wide { grid-column: 1 / -1; }
 .env-field-label { display: block; font-size: .82rem; font-weight: 650; }
 .env-field-meta { margin: 4px 0 7px; color: var(--muted); font-size: .75rem; }
 .env-field input, .env-field textarea {
@@ -1106,7 +1225,7 @@ body.login {
   padding: 8px 9px; border: 1px solid #4a405e; border-radius: 7px;
   background: #15121c; color: var(--fg); font: .82rem ui-monospace, monospace;
 }
-.env-field textarea { min-height: 96px; resize: vertical; }
+.env-field textarea { min-height: 220px; line-height: 1.5; resize: vertical; }
 .env-description { margin-top: 7px; color: var(--muted); font-size: .76rem; line-height: 1.4; }
 .env-field-docs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: .72rem; }
 .env-field-docs a { color: #9dc8ff; }

@@ -423,18 +423,23 @@ Navidrome imports both formats equally and automatically.
 
 ## Pushover message layout
 
+Blank lines separate the source overview, its explanation and subsequent status.
+
 Below the header an **overview** shows the counts (`🆕 N new · ⬇ N missing`) when both categories exist (one category: omitted, the list header carries the count). They stay visible when the song lists are shortened. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration
 
-The **chart sources** (which playlists are created) are defined in the
-`compose.yml` via the `CHARTS` variable as a JSON list. All other settings come
-from the `.env` or the compose defaults.
+The **chart sources** (which main playlists are created) are defined by
+`CHARTS` in the central `.env`, editable in charts-config, or by the optional
+`CHARTS_FILE`. Compose passes those settings to the service. Scene/genre rules
+are managed separately in Artists & scenes. See the
+[playlist/library configuration overview](../README.md#playlist-configuration-and-library-only-sources).
 
 ### Chart sources (`CHARTS`)
 
 `CHARTS` is a JSON list. Each entry produces exactly **one** playlist and can
-bundle **several** Deezer sources (`sources`), which are merged into a
+bundle **several** Deezer, optional Last.fm, Apple Music or Energy sources
+(`sources`), which are merged into a
 deduplicated list. The default is **two** playlists:
 
 > 📖 **Full field and ID reference + ready-made examples** (country, 80s/90s,
@@ -445,8 +450,14 @@ deduplicated list. The default is **two** playlists:
 > **Config from a file instead of env (recommended for many playlists):**
 > Instead of the single-line `CHARTS` variable, the definition can be loaded from
 > a readable, multi-line file – set `CHARTS_FILE=/config/charts.json` and create
-> `charts.json` (template: [`charts.json.example`](charts.json.example) with
-> Pop/Country/Schlager). Priority: `CHARTS_FILE` > `CHARTS` > defaults.
+> `charts-sync/charts.json` from the project root (template:
+> [`charts.json.example`](charts.json.example)). Keep only the desired playlist
+> entries; the template includes additional examples. Priority:
+> `CHARTS_FILE` > `CHARTS` > defaults. To use the UI's CHARTS value, clear
+> `CHARTS_FILE` and recreate charts-sync. The UI does not edit the JSON file.
+> A missing configured file is logged and allows the environment fallback.
+> An unreadable or invalid file is logged and falls back to built-in defaults,
+> not to `CHARTS`; inspect startup logs rather than assuming the env value is used.
 >
 > **Startup validation:** charts-sync checks the `CHARTS` list on start. Broken
 > JSON or unusable sources (e.g. an unknown Last.fm method) are **named in the
@@ -686,9 +697,18 @@ playlist. Already present entries disappear automatically on the next sync,
 because the `.m3u` is rewritten on every run (the music files in the library
 stay untouched).
 
-### Mundart artist inventory and scene filter
+### Artist inventory and general scene playlists
 
-For `mundart.m3u`, charts-sync records all main artists and Deezer feature
+New artist state uses `My artists` as the neutral main-filter scene value.
+Existing saved scene names and filter targets are not changed.
+
+`CHARTS_ARTIST_PLAYLIST` selects one configured playlist by its `name` in
+`CHARTS` or `CHARTS_FILE` (default: `mundart.m3u`). Only the optional main artist
+filter applies to that playlist; inventory and additional scenes use all configured sources.
+Switching keeps the existing inventory and assignments; review them and the
+target scene before applying the filter to a different playlist.
+
+For all configured playlists, charts-sync records main and featured artist
 credits after each successful feed fetch in
 `CHARTS_DIR/.charts-artist-inventory.json`. Feed sources, track counts, and
 timestamps are retained; a temporary feed failure does not erase candidates.
@@ -705,10 +725,68 @@ decision; feed metadata does not prove a song's language or an artist's scene
 membership. An optional evidence note can be recorded in charts-config.
 
 Manually added Deezer artists contribute up to 50 top tracks each; at most 50
-manual artists are allowed. These additional feeds are fetched only while the
-scene filter is enabled. Their tracks are matched against the library like
-other feed tracks. The filter only affects `mundart.m3u`, does not download
-audio, and does not change `charts.json` or `.env`.
+manual artists are allowed. The original filter uses only target-scene artist
+feeds for `mundart.m3u`. With the separate **Create an additional M3U for each
+scene** option, charts-sync can also render other approved scenes to
+`charts-<scene-name>.m3u`. Those additional feeds do not affect `mundart.m3u` or its
+missing list. Scene playlists contain library matches only. Sync can optionally
+write a separate `.charts-scene-missing.txt` queue for missing Deezer top tracks
+by enabled, manually added artists in opted-in scenes. The scene limit
+(1–100 per artist, initially 50) governs this extra top-track lookup only;
+other feeds may still contribute tracks. Imported tracks appear on the next
+sync. Disabling a scene leaves previously
+generated files in place. The charts-config overview can queue individual files
+for permanent deletion: remove its artist assignments and download/genre rule,
+then remove any remaining M3U on the next sync. The temporary request disappears
+after processing, without a permanent block. Other scenes, artist identities
+and music files remain. The active main-filter scene is protected; old blocking
+API requests remain compatible.
+**Rename scene** updates both the M3U filename and display title to follow
+the new scene name.
+New scenes have no filename hash; filename collisions and reserved chart
+filenames are rejected. Existing `mundart-szene-*.m3u` files migrate to
+hashless `charts-<scene-name>.m3u` before fetching feeds. Migration retains
+all entries and never replaces an existing destination. A collision stops
+the run with a logged error. Navidrome may import the renamed M3U as a new playlist.
+Display titles are the chosen scene names without a fixed prefix. All sources
+are collected before writing the combined scene output. If a feed fails,
+the contents of the possibly already renamed scene M3Us are retained and the scene download queue stays empty.
+**Deezer genre playlists:** charts-config stores official `genre_id`,
+`genre_name` and per-playlist `limit` (1–100, suggested 50) in
+`.charts-artist-selection.json`. `/chart/<genre-id>/tracks` supplies metadata;
+only those titles are matched against the library, without local genre tags
+or Last.fm genre guesses as selection sources. Deezer can supply fewer titles.
+Existing library copies use the usual matching/presence helpers; paths are
+deduplicated in chart order into hashless `charts-<name>.m3u` files with
+`#CHARTS-STACK:GENRE-PLAYLIST`.
+Missing titles automatically enter `.charts-scene-missing.txt` with playlist
+names for download/manifest/Pushover provenance. Existing download/import
+filters, quotas and `DRY_RUN` remain effective. Genre charts do not depend on
+the main filter, extra-scene switch or successful regular `CHARTS` sources.
+Empty, invalid or failed genre responses preserve existing M3Us, enqueue
+no new downloads for the failed rule and surface a Sync error; other successful
+rules continue. Changes apply on the next sync. Legacy file-tag rules remain
+compatible but are no longer offered in Config; without such rules, no local
+genre catalog is published. Unavailable or partially unreadable library
+directories still abort collection instead of publishing partial playlists.
+Artist and genre writes share a file lock. Deletion requests run before the
+scan and disappear after successful removal. Unmanaged, reserved and symlink
+targets are protected. New genre files are installed atomically without
+replacing a destination that appeared concurrently. Without sources or genre rules the existing empty-CHARTS
+idle behavior remains unchanged.
+In `.charts-scene-missing.txt`, a `#SCENES:` comment before each missing track
+contains a JSON list of its active download scenes. This preserves provenance
+for tracks shared by multiple scenes. Only scenes whose configured top limit
+includes the track are listed; regular missing lists remain unchanged.
+This also applies to older managed M3Us without remaining artist assignments:
+their title and filename change while existing entries are preserved. Blocked, unmarked
+and symlinked files are not renamed.
+Artists assigned to multiple scenes can appear in multiple scene playlists;
+the main filter still checks only its configured target scene.
+When Pushover is enabled, each scene playlist with additions sends its own
+message with the playlist name, artists, and track titles. All entries count
+as new on first creation; subsequent runs compare with the previous M3U.
+Unchanged playlists and removals alone do not send a message.
 
 ### Further settings (`.env`)
 
@@ -980,6 +1058,15 @@ That way you also get a message with the updated missing list even if your match
 list has not changed at all. The message names the newly added songs and lists
 the missing songs. With `NOTIFY_ONLY_ON_CHANGE=0` a message comes after every
 run, regardless of changes.
+
+The source overview lists each active provider, including zero contributions.
+**Received** counts tracks returned by its feeds, including possible duplicates;
+**additional** counts candidates after earlier sources and artist exclusions,
+before genre filtering and library matching. Neither number means downloads or
+guaranteed playlist entries. Detected failed feeds are reported separately,
+even when another feed of that provider returned data. Disabled feeds are not
+listed. An empty Energy feed can also mean a missing, invalid or stale handoff;
+see the logs for details. The existing notification rule still applies.
 
 **How do I get the list of missing songs onto my phone?**
 The Pushover message lists the missing chart songs directly (numbered, artist -

@@ -21,6 +21,24 @@ def _key(artist: str, title: str) -> str:
     return f"{normalize(artist)}|{normalize(title)}"
 
 
+def energy_search_order(state: dict, artist: str, title: str) -> int:
+    return state.get("energy_search_order", {}).get(_key(artist, title), 0)
+
+
+def mark_energy_search(state: dict, artist: str, title: str) -> None:
+    orders = state.setdefault("energy_search_order", {})
+    orders[_key(artist, title)] = max(orders.values(), default=0) + 1
+
+
+def prune_energy_search_order(state: dict, entries: list[tuple]) -> None:
+    orders = state.get("energy_search_order")
+    if orders is not None:
+        active = {_key(artist, title) for _, artist, title, _ in entries}
+        state["energy_search_order"] = {
+            key: value for key, value in orders.items() if key in active
+        }
+
+
 def load() -> dict:
     """Loads the state. Empty dict if the file is missing/invalid."""
     try:

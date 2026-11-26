@@ -33,8 +33,8 @@ import time
 
 from mutagen import File as MutagenFile
 
-from . import (backfill_metadata, config, cover, mbyear, recanon, replaygain,
-               resolve, tags, yearmap)
+from . import (backfill_metadata, config, cover, mbyear, metadata_report, recanon,
+               replaygain, resolve, status, tags, yearmap)
 from .backfill_covers import (_iter_manifest_mp3, _read_artist_title,
                               build_manifest_index)
 from .i18n import t
@@ -121,6 +121,11 @@ def run_once() -> dict:
 
     # --- Library-wide conservative metadata fill (year/album/track) ---
     meta_result = _metadata_pass(music_dir)
+
+    try:
+        metadata_report.publish(music_dir, status.STATUS_DIR)
+    except (OSError, ValueError, TypeError) as e:
+        logger.error(t("import.metafill.report_failed", error=e))
 
     # --- UPPERCASE flashback names against the official Deezer spelling ---
     recanon_fixed, recanon_manual = _recanon_pass(music_dir)
@@ -351,6 +356,7 @@ def _bump_or_give_up(data: dict, key: str, obj: dict, give_up_as: str,
 # write and fail-open load. Keyed by on-disk relpath (not artist|title) because
 # the pass spans the WHOLE library, not just pending year objects.
 _META_STATE_NAME = ".charts-metadata-backfill-state.json"
+_YEAR_RETRY_SECONDS = 30 * 24 * 60 * 60
 
 
 def _meta_state_path(music_dir: str) -> str:
@@ -398,6 +404,9 @@ def _meta_is_eligible(state: dict, relpath: str, mtime: str) -> bool:
         return True
     if rec.get("mtime") != mtime:
         return True
+    retry_after = rec.get("year_retry_after")
+    if rec.get("done") and isinstance(retry_after, (int, float)):
+        return time.time() >= retry_after
     return not rec.get("done", False)
 
 
@@ -443,6 +452,12 @@ def _metadata_pass(music_dir: str) -> dict:
         relpath = os.path.relpath(path, music_dir)
         mtime = _file_mtime(path)
         if not _meta_is_eligible(state, relpath, mtime):
+            rec = state.get(relpath)
+            if isinstance(rec, dict) and rec.get("done") and "year_retry_after" not in rec:
+                fstate = backfill_metadata.read_state(path)
+                if fstate is not None and not fstate.year:
+                    rec["year_retry_after"] = time.time() + _YEAR_RETRY_SECONDS
+                    dirty = True
             continue
         result["scanned"] += 1
 
@@ -465,11 +480,26 @@ def _metadata_pass(music_dir: str) -> dict:
                 continue
 
             # A live resolver call may happen now -> honour the per-pass budget.
-            meta = resolve.resolve_metadata(fstate.artist, fstate.title)
+            rec = state.get(relpath)
+            refresh = (not fstate.year and isinstance(rec, dict)
+                       and rec.get("done") and rec.get("mtime") == mtime
+                       and isinstance(rec.get("year_retry_after"), (int, float)))
+            if refresh:
+                if not config.IMPORT_RESOLVE_ENABLED:
+                    continue
+                deezer_ready = (config.DEEZER_CANONICAL_ENABLED
+                                and resolve.deezer_budget_available())
+                mb_ready = config.MB_ENABLED and resolve.mb_budget_available()
+                if not (deezer_ready or mb_ready):
+                    continue
+                meta = resolve.resolve_metadata(fstate.artist, fstate.title, refresh=True)
+            else:
+                meta = resolve.resolve_metadata(fstate.artist, fstate.title)
             empty = not (meta.year or meta.album_year or meta.album or meta.track)
             if empty:
                 # Resolver miss: retry a few passes, then give up (non-youtube).
-                dirty = _bump_meta_miss(state, relpath, mtime, plan) or dirty
+                dirty = _bump_meta_miss(state, relpath, mtime, plan,
+                                        retry_year=plan.fill_year) or dirty
                 _maybe_sleep()
                 continue
 
@@ -493,6 +523,10 @@ def _metadata_pass(music_dir: str) -> dict:
                     result["track_filled"] += 1
                 logger.info(t("import.metafill.corrected", artist=fstate.artist,
                               title=fstate.title, rel=relpath))
+            if plan.fill_year and not res.year_filled:
+                dirty = _bump_meta_miss(state, relpath, _file_mtime(path), plan,
+                                        retry_year=True) or dirty
+                continue
             # Settled: a confident resolve ran; whatever was fillable is filled.
             # Re-read the mtime (a write preserves it, but be robust).
             _mark_meta_done(state, relpath, _file_mtime(path))
@@ -517,7 +551,8 @@ def _mark_meta_done(state: dict, relpath: str, mtime: str) -> None:
     state[relpath] = {"done": True, "mtime": mtime}
 
 
-def _bump_meta_miss(state: dict, relpath: str, mtime: str, plan) -> bool:
+def _bump_meta_miss(state: dict, relpath: str, mtime: str, plan, *,
+                    retry_year: bool = False) -> bool:
     """
     Record a resolver miss: increment tries and, for a NON-youtube file, give up
     (mark done) once tries reaches METADATA_BACKFILL_MAX_TRIES so the sources
@@ -528,6 +563,8 @@ def _bump_meta_miss(state: dict, relpath: str, mtime: str, plan) -> bool:
     tries = int(rec.get("tries", 0)) + 1 if isinstance(rec, dict) else 1
     if not plan.is_youtube and tries >= config.METADATA_BACKFILL_MAX_TRIES:
         state[relpath] = {"done": True, "mtime": mtime, "tries": tries}
+        if retry_year:
+            state[relpath]["year_retry_after"] = time.time() + _YEAR_RETRY_SECONDS
     else:
         state[relpath] = {"done": False, "mtime": mtime, "tries": tries}
     return True

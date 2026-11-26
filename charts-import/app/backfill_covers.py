@@ -95,7 +95,7 @@ def _iter_mp3(root: str):
                 yield os.path.join(dirpath, name)
 
 
-def build_manifest_index(music_dir: str) -> "dict[str, list[str]]":
+def build_manifest_index(music_dir: str, *, strict: bool = False) -> "dict[str, list[str]]":
     """
     Build the manifest -> on-disk index of ALL songs ever loaded by
     charts-download, by reading the manifest (MANIFEST_FILE).
@@ -121,9 +121,14 @@ def build_manifest_index(music_dir: str) -> "dict[str, list[str]]":
     try:
         with open(config.MANIFEST_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
+        if strict and (not isinstance(data, dict)
+                       or not isinstance(data.get("entries"), dict)):
+            raise ValueError("Invalid manifest entries")
         entries = data.get("entries", {}) if isinstance(data, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
         logger.error(t("import.covers.manifest_unreadable", path=config.MANIFEST_FILE, error=e))
+        if strict:
+            raise
         return index
     if not entries:
         logger.warning(t("import.covers.manifest_empty", path=config.MANIFEST_FILE))

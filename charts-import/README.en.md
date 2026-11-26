@@ -372,8 +372,8 @@ Determines artist/album/title in this order:
    are skipped entirely (no year, no album, no track). It is
    strictly **conservative: it never overwrites an existing value** (a
    curated/Lidarr album, a resolver-set year, a positive track number are all
-   left untouched). An `album` counts as *missing* when it is absent, equals the
-   title (the single-as-album placeholder) or is `Unknown Album`; a resolved
+   left untouched). An `album` counts as *missing* when it is absent or is
+   `Unknown Album`; a present album is trusted even when it equals the title. A resolved
    compilation/sampler title is never written. The **one deliberate exception**
    is a year that came from a **YouTube** import (the yt-dlp upload/publish year,
    untrusted): such a file carries a durable `TXXX:CHARTS_SOURCE=youtube`
@@ -394,6 +394,19 @@ Determines artist/album/title in this order:
    `scripts/fix_youtube_years.py` fixes the year of **historical** YouTube songs
    (imported before the marker existed) selected via the durable manifest
    `source="youtube"` field — year-only, nothing else.
+
+   **Missing years and overview:** When a year remains missing, partial results
+   without a year no longer settle the file. For non-YouTube files, after the
+   retry limit a new attempt is made no sooner than 30 days later, bypassing
+   cached results from enabled Deezer and MusicBrainz sources without changing
+   those caches and respecting the existing budgets. Previously settled
+   records without a timestamp start
+   this interval when first detected after the update. A result is not
+   guaranteed; present years are not replaced (except YouTube as above).
+   After backfill, import publishes a dated snapshot of matching manifest MP3s
+   to `STATUS_DIR/missing-metadata.json`, including missing year, album and
+   track number and unreadable tags. Album equal to title is a placeholder.
+   Unmatched manifest entries and other files are outside this coverage.
 
    **Album re-correction (opt-in, `scripts/backfill_metadata.py
    --recorrect-albums`):** by default the backfill only ever *fills* a missing
@@ -580,6 +593,21 @@ X songs imported, Y old downloads removed.)
 ---
 
 ## Pushover message layout
+
+Scene downloads retain their actual scene names from the manifest, such as
+**Playlist: Mundart-Pop**. Multiple assignments remain one combined group,
+without counting the same import twice. Scene names are escaped for HTML
+messages so special characters cannot alter their formatting.
+
+The import summary shows ♪ artist and title instead of long paths while
+retaining the source heading. If artist or title is missing, it shows the
+filename instead. For uncertain UPPERCASE spelling, ♪ marks each song to
+review manually.
+
+The rejection message shows each file on a ♪ line and its unchanged reason
+below with ↳, separated from the next entry by a blank line. The file and
+reason are kept together when the message is truncated. This does not change
+quality checks or quarantine behavior.
 
 The breakdown (`N from <playlist>`) is the overview and always stays complete. Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line.  The 10-entry cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 

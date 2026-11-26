@@ -16,6 +16,7 @@ Pinned:
 """
 
 import importlib
+import json
 import pathlib
 
 import pytest
@@ -92,6 +93,7 @@ def test_routes_require_auth(app_and_song):
     main_mod, path = app_and_song
     anon = TestClient(main_mod.app)
     for method, url in (("get", "/api/tageditor/search?q=old"),
+                        ("get", "/api/tageditor/missing-metadata"),
                         ("get", f"/api/tageditor/song?path={path}")):
         r = getattr(anon, method)(url)
         assert r.status_code == 401
@@ -99,6 +101,57 @@ def test_routes_require_auth(app_and_song):
     r = anon.post("/api/tageditor/save", data={"path": path, "title": "X"})
     assert r.status_code == 401
     assert r.json()["error"] == i18n.t("config.api.not_authed")
+
+
+def test_missing_metadata_list_refreshes_after_manual_edit(app_and_song, tmp_path, monkeypatch):
+    main_mod, path = app_and_song
+    from app import config
+    monkeypatch.setattr(config, "STATUS_DIR", str(tmp_path))
+    rel = str(pathlib.Path(path).relative_to(config.MUSIC_DIR))
+    (tmp_path / "missing-metadata.json").write_text(json.dumps({
+        "version": 1, "generated_at": "2026-11-24T12:00:00+00:00", "checked": 1,
+        "songs": [{"path": rel, "missing": ["year", "track"]}],
+    }), encoding="utf-8")
+    client = _authed_client(main_mod)
+    response = client.get("/api/tageditor/missing-metadata")
+    assert response.status_code == 200
+    assert response.json()["songs"][0]["missing"] == ["year", "track"]
+    saved = client.post("/api/tageditor/save", data={
+        "path": path, "year": "1997", "track": "1",
+    })
+    assert saved.status_code == 200
+    assert client.get("/api/tageditor/missing-metadata").json()["songs"] == []
+
+
+def test_missing_metadata_report_rejects_outside_path(app_and_song, tmp_path, monkeypatch):
+    main_mod, _ = app_and_song
+    from app import config
+    monkeypatch.setattr(config, "STATUS_DIR", str(tmp_path))
+    (tmp_path / "missing-metadata.json").write_text(json.dumps({
+        "version": 1, "generated_at": "2026-11-24T12:00:00+00:00", "checked": 1,
+        "songs": [{"path": "../outside.mp3"}],
+    }), encoding="utf-8")
+    assert _authed_client(main_mod).get("/api/tageditor/missing-metadata").status_code == 503
+
+
+def test_missing_metadata_omits_complete_song_with_album_matching_title(app_and_song, tmp_path, monkeypatch):
+    main_mod, path = app_and_song
+    from mutagen import File as MutagenFile
+    from app import config
+    audio = MutagenFile(path, easy=True)
+    audio["album"] = "Old Title"
+    audio["date"] = "1997"
+    audio["tracknumber"] = "4"
+    audio.save()
+    monkeypatch.setattr(config, "STATUS_DIR", str(tmp_path))
+    rel = str(pathlib.Path(path).relative_to(config.MUSIC_DIR))
+    (tmp_path / "missing-metadata.json").write_text(json.dumps({
+        "version": 1, "generated_at": "2026-11-24T12:00:00+00:00", "checked": 1,
+        "songs": [{"path": rel, "missing": ["year"]}],
+    }), encoding="utf-8")
+    response = _authed_client(main_mod).get("/api/tageditor/missing-metadata")
+    assert response.status_code == 200
+    assert response.json()["songs"] == []
 
 
 # --- authenticated happy path ------------------------------------------------

@@ -24,6 +24,7 @@ import os
 import time
 import unicodedata
 import re
+from html import escape
 
 from . import (backfill, cleanup, config, importer, lidarr, notify,
                notify_budget, status)
@@ -275,10 +276,8 @@ def _notify_rejected(rejected: list[dict]) -> None:
     for entry in rejected:
         base = os.path.basename(entry.get("path", ""))
         reason = entry.get("reason", "?")
-        # Separate the reason with a dash (not in parentheses) so reasons that
-        # themselves contain parentheses (e.g. "zu kurz (24s < 90s)") do not
-        # create double parentheses.
-        entries.append(t("import.notify.rejected_entry", base=base, reason=reason))
+        item = t("import.notify.rejected_entry", base=base, reason=reason)
+        entries.append(("\n" if entries else "") + item)
     message = _capped_message(
         [t("import.notify.rejected_header", count=count)], [([""], entries)], 10)
     notify.send(title, message)
@@ -313,15 +312,13 @@ def _notify_imported(imported: "list[tuple[str, str, str, str, str, str]]") -> N
 
     # Group songs by playlist (order: largest group first).
     groups: dict[str, list[str]] = {}
-    for path, source, _artist, _title, _album, _dev in imported:
-        label = source or t("import.notify.unknown_source")
-        try:
-            rel = os.path.relpath(path, config.MUSIC_DIR)
-        except ValueError:
-            rel = os.path.basename(path)
-        # Prefix each listed file with the music note, matching charts-digest's
-        # "\u266a " per-song style (shared across all song-listing services).
-        groups.setdefault(label, []).append(f"\u266a {rel}")
+    for path, source, artist, song_title, _album, _dev in imported:
+        label = escape(source or t("import.notify.unknown_source"))
+        if artist and artist.strip() and song_title and song_title.strip():
+            item = t("import.notify.imported_entry", artist=artist, title=song_title)
+        else:
+            item = t("import.notify.imported_file", filename=os.path.basename(path))
+        groups.setdefault(label, []).append(item)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
 
     # Breakdown by playlist (e.g. "3 aus 80er-90er, 3 aus charts"). It is the

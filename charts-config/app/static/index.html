@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config29">
+<link rel="stylesheet" href="/static/style.css?v=config42">
+<script src="/static/genre-playlists.js?v=4"></script>
 </head>
 <body>
 <header>
@@ -59,6 +60,7 @@
        textContent for the plain-text ones. -->
   <div class="pane-head">
     <h2 class="pane-title" id="pane-title"></h2>
+    <p class="pane-summary" id="pane-summary"></p>
     <div class="pane-desc finder-hint" id="pane-desc"></div>
   </div>
 
@@ -104,6 +106,7 @@
           <select id="apple-country">
             <option value="ch">CH</option>
             <option value="de">DE</option>
+            <option value="fr">FR</option>
             <option value="gb">GB</option>
             <option value="us">US</option>
           </select>
@@ -147,25 +150,6 @@
     <div class="finder-hint" data-i18n="artists.run_hint"></div>
     <div class="finder finder-full">
       <div class="finder-box">
-        <div class="artist-scene-toolbar">
-          <label class="artist-filter-toggle">
-            <input id="artist-filter-enabled" type="checkbox">
-            <span data-i18n="artists.filter_enabled">Filter aktivieren</span>
-          </label>
-          <label class="artist-target-label" for="artist-target-scene"
-                 data-i18n="artists.target_scene">Zielszene</label>
-          <input id="artist-target-scene" maxlength="80"
-                 data-i18n-ph="artists.target_scene_placeholder"
-                 placeholder="Swiss German Mundart">
-          <button type="button" id="artist-save-settings" class="btn-sm"
-                  data-i18n="artists.save">Speichern</button>
-        </div>
-        <div id="artist-msg" class="artist-msg" role="status"></div>
-        <div id="artist-list">
-          <div class="muted-txt" data-i18n="artists.loading"></div>
-        </div>
-      </div>
-      <div class="finder-box">
         <h3 data-i18n="artists.search_heading">Deezer-Künstler hinzufügen / verknüpfen</h3>
         <div id="artist-link-target" class="muted-txt"></div>
         <form id="artist-search-form">
@@ -175,6 +159,114 @@
           <button type="submit" data-i18n="finder.btn.search">Suchen</button>
         </form>
         <div id="artist-search-results"></div>
+      </div>
+      <div class="finder-box">
+        <div class="artist-section-header">
+          <h3 data-i18n="artists.playlist_settings"></h3>
+          <button type="button" id="artist-save-playlist-settings" class="btn-sm"
+                  data-artist-save data-i18n="artists.save" disabled>Speichern</button>
+        </div>
+        <div class="artist-msg artist-save-message" role="status"></div>
+        <p id="artist-managed-playlist" class="artist-section-hint"></p>
+        <label class="artist-filter-toggle">
+          <input id="artist-filter-enabled" type="checkbox" aria-describedby="artist-playlist-options-hint">
+          <span data-i18n="artists.filter_enabled">Filter aktivieren</span>
+        </label>
+        <div class="artist-scene-toolbar">
+          <label class="artist-target-label" for="artist-target-scene"
+                 data-i18n="artists.target_scene">Szene für den Hauptfilter</label>
+          <input id="artist-target-scene" maxlength="80"
+                 aria-describedby="artist-playlist-options-hint"
+                 data-i18n-ph="artists.target_scene_placeholder"
+                 placeholder="My artists">
+        </div>
+        <p id="artist-playlist-options-hint" class="artist-section-hint"
+           data-i18n="artists.playlist_options_hint"></p>
+        <label class="artist-filter-toggle">
+          <input id="artist-scene-playlists" type="checkbox" aria-describedby="artist-scene-playlists-hint">
+          <span data-i18n="artists.scene_playlists"></span>
+        </label>
+        <p id="artist-scene-playlists-hint" class="artist-section-hint"
+           data-i18n="artists.scene_playlists_hint"></p>
+        <h4 data-i18n="artists.scene_downloads"></h4>
+        <p class="artist-section-hint" data-i18n="artists.scene_downloads_hint"></p>
+        <div id="artist-scene-downloads"></div>
+      </div>
+      <div class="finder-box">
+        <div class="artist-section-header">
+          <h3 data-i18n="artists.playlist_overview"></h3>
+          <button type="button" class="btn-sm" id="artist-playlists-refresh"
+                  data-i18n="artists.playlist_refresh"></button>
+        </div>
+        <p class="artist-section-hint" data-i18n="artists.playlist_hint"></p>
+        <div id="artist-playlists-status" class="artist-msg" role="status"></div>
+        <div id="artist-playlists"></div>
+        <p class="artist-section-hint" data-i18n="artists.general_hint"></p>
+      </div>
+      <div class="finder-box">
+        <h3 data-i18n="genres.heading">Genre-Playlists</h3>
+        <p class="artist-section-hint" data-i18n="genres.hint"></p>
+        <p id="genre-catalog-status" class="artist-section-hint" role="status"></p>
+        <form id="genre-playlist-form">
+          <div class="genre-field genre-field-wide">
+            <label for="genre-playlist-name" data-i18n="genres.name"></label>
+            <input id="genre-playlist-name" type="text" maxlength="80" required autocomplete="off"
+                   data-i18n-ph="genres.name_placeholder">
+          </div>
+          <div class="genre-field">
+            <label for="genre-select" data-i18n="genres.select"></label>
+            <select id="genre-select" required></select>
+          </div>
+          <div class="genre-field">
+            <label for="genre-limit" data-i18n="genres.limit"></label>
+            <input id="genre-limit" type="number" min="1" max="100" step="1" value="50" required>
+          </div>
+          <div class="genre-actions">
+            <button id="genre-save" type="submit" data-i18n="genres.save" disabled></button>
+            <button id="genre-cancel" type="button" class="btn-sm" data-i18n="artists.cancel" hidden></button>
+          </div>
+        </form>
+        <div id="genre-save-status" class="artist-msg" role="status"></div>
+      </div>
+      <dialog id="artist-delete-dialog" class="te-modal-card"
+              aria-labelledby="artist-delete-title" aria-describedby="artist-delete-detail">
+        <form method="dialog">
+          <h3 id="artist-delete-title" data-i18n="artists.playlist_delete_permanent"></h3>
+          <p id="artist-delete-detail" class="te-modal-q"></p>
+          <div class="te-modal-buttons">
+            <button type="submit" class="te-modal-btn danger" value="delete"
+                    data-i18n="artists.playlist_delete_permanent"></button>
+            <button type="submit" class="te-modal-btn" value="cancel"
+                    data-i18n="artists.cancel"></button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="artist-rename-dialog" class="te-modal-card"
+              aria-labelledby="artist-rename-title" aria-describedby="artist-rename-hint">
+        <form method="dialog" id="artist-rename-form">
+          <h3 id="artist-rename-title" data-i18n="artists.scene_rename"></h3>
+          <p id="artist-rename-hint" class="te-modal-q" data-i18n="artists.scene_rename_prompt"></p>
+          <label for="artist-rename-name" data-i18n="artists.scene_rename_name"></label>
+          <input id="artist-rename-name" type="text" maxlength="80" required autocomplete="off">
+          <div class="te-modal-buttons">
+            <button type="submit" class="te-modal-btn primary" value="rename"
+                    data-i18n="artists.scene_rename"></button>
+            <button type="submit" class="te-modal-btn" value="cancel" formnovalidate
+                    data-i18n="artists.cancel"></button>
+          </div>
+        </form>
+      </dialog>
+      <div class="finder-box">
+        <div class="artist-section-header artist-assignments-header">
+          <h3 id="artist-assignments-heading" data-i18n="artists.assignments"></h3>
+          <button type="button" id="artist-save-settings" class="btn-sm"
+                  data-artist-save data-i18n="artists.save" disabled>Speichern</button>
+        </div>
+        <p class="artist-section-hint" data-i18n="artists.multiple_scenes_hint"></p>
+        <div id="artist-msg" class="artist-msg artist-save-message" role="status"></div>
+        <div id="artist-list">
+          <div class="muted-txt" data-i18n="artists.loading"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -208,6 +300,19 @@
   <div class="tabpane" data-pane="tageditor" hidden>
     <div class="finder finder-full">
       <div class="finder-box">
+        <button type="button" id="te-missing-refresh" class="btn-sm"
+                data-i18n="tageditor.metadata.show"></button>
+        <div id="te-missing-filter-box" class="te-metadata-filter" hidden>
+          <label for="te-missing-filter" data-i18n="tageditor.metadata.filter"></label>
+          <select id="te-missing-filter">
+            <option value="all" data-i18n="tageditor.metadata.filter_all"></option>
+            <option value="year" data-i18n="tageditor.label.year"></option>
+            <option value="album" data-i18n="tageditor.label.album"></option>
+            <option value="track" data-i18n="tageditor.metadata.filter_track"></option>
+            <option value="unreadable" data-i18n="tageditor.metadata.filter_unreadable"></option>
+          </select>
+        </div>
+        <div id="te-missing" class="te-results"></div>
         <input id="te-search" autocomplete="off" data-i18n-ph="tageditor.ph.search"
                placeholder="Search artist or title…">
         <div id="te-results" class="te-results"></div>
@@ -802,21 +907,127 @@ async function loadEnergyChannels() {
 
 let _artistSceneState = null;
 let _artistLinkKey = "";
+let _artistSaving = false;
 
 function setArtistMessage(message, kind = "") {
-  const box = document.getElementById("artist-msg");
-  if (!box) return;
-  box.textContent = message;
-  box.className = `artist-msg${kind ? " " + kind : ""}`;
+  for (const box of document.querySelectorAll(".artist-save-message")) {
+    box.textContent = message;
+    box.classList.toggle("error", kind === "error");
+    box.classList.toggle("ok", kind === "ok");
+  }
 }
 
-function renderArtistCatalog(data) {
+function warnBeforeLeavingArtists(event) {
+  event.preventDefault();
+  event.returnValue = true;
+}
+
+function updateArtistSaveControls() {
+  for (const button of document.querySelectorAll("[data-artist-save]")) {
+    button.disabled = !_artistSceneState || _artistSaving || genreEditor.saving;
+  }
+  if (_artistSceneState && (_artistSaving || artistDraft().size > 0 || genreEditor.dirty || genreEditor.saving)) {
+    window.addEventListener("beforeunload", warnBeforeLeavingArtists);
+  } else {
+    window.removeEventListener("beforeunload", warnBeforeLeavingArtists);
+  }
+}
+
+function artistFormFields() {
+  const fields = new Map();
+  for (const id of ["artist-filter-enabled", "artist-scene-playlists", "artist-target-scene"]) {
+    fields.set(id, document.getElementById(id));
+  }
+  for (const field of document.querySelectorAll("#artist-scene-downloads input")) {
+    fields.set(field.name, field);
+  }
+  for (const row of document.querySelectorAll("#artist-list tr[data-artist-key]")) {
+    for (const name of ["scene", "enabled", "evidence"]) {
+      fields.set(`${name}:${row.dataset.artistKey}`, row.querySelector(`.artist-${name}`));
+    }
+  }
+  return fields;
+}
+
+function artistFormValues() {
+  return new Map([...artistFormFields()].map(([key, field]) =>
+    [key, field.type === "checkbox" ? field.checked : field.value]));
+}
+
+function artistDraft(baseline = null) {
+  const draft = new Map();
+  for (const [key, field] of artistFormFields()) {
+    const checkbox = field.type === "checkbox";
+    const value = checkbox ? field.checked : field.value;
+    const previous = baseline ? baseline.get(key) :
+      (checkbox ? field.defaultChecked : field.defaultValue);
+    if ((!baseline || baseline.has(key)) && !field.disabled && value !== previous) {
+      draft.set(key, value);
+    }
+  }
+  return draft;
+}
+
+function restoreArtistDraft(draft) {
+  for (const [key, field] of artistFormFields()) {
+    if (!draft.has(key) || field.disabled) continue;
+    if (field.type === "checkbox") field.checked = draft.get(key);
+    else field.value = draft.get(key);
+  }
+}
+
+function renderSceneDownloads() {
+  const box = document.getElementById("artist-scene-downloads");
+  const saved = _artistSceneState?.scene_downloads || {};
+  const existing = new Map([...box.children].map(row => [row.dataset.scene, row]));
+  const scenes = new Map();
+  for (const name of [...Object.keys(saved), ...[...document.querySelectorAll("#artist-list .artist-scene")]
+    .flatMap(field => field.value.split("\n").map(name => name.trim()).filter(Boolean))]) {
+    scenes.set(name.normalize("NFKC").toLowerCase().replace(/\s+/g, " "), name);
+  }
+  for (const [key, name] of scenes) {
+    if (existing.has(key)) {
+      existing.delete(key);
+      continue;
+    }
+    const row = document.createElement("div");
+    row.className = "artist-scene-toolbar";
+    row.dataset.scene = key;
+    const stored = Object.entries(saved).find(([scene]) =>
+      scene.normalize("NFKC").toLowerCase().replace(/\s+/g, " ") === key)?.[1];
+    row.innerHTML = `<label class="artist-filter-toggle">
+        <input type="checkbox" name="scene-download:${esc(key)}" ${stored ? "checked" : ""}>
+        <span>${esc(name)}</span></label>
+      <label class="artist-download-limit">${esc(t("artists.scene_download_limit"))}
+        <input type="number" min="1" max="100" step="1" required
+               name="scene-limit:${esc(key)}" value="${stored || 50}"></label>`;
+    box.append(row);
+  }
+  for (const row of existing.values()) row.remove();
+}
+
+function renderArtistCatalog(data, draft = artistDraft()) {
   _artistSceneState = data;
-  document.getElementById("artist-filter-enabled").checked = data.filter_enabled;
-  document.getElementById("artist-target-scene").value = data.target_scene || "";
+  renderGenreEditor(data);
+  document.getElementById("artist-managed-playlist").textContent =
+    t("artists.managed_playlist", {playlist: data.playlist || "mundart.m3u"});
+  const filter = document.getElementById("artist-filter-enabled");
+  const scenePlaylists = document.getElementById("artist-scene-playlists");
+  const target = document.getElementById("artist-target-scene");
+  filter.checked = filter.defaultChecked = data.filter_enabled === true;
+  scenePlaylists.checked = scenePlaylists.defaultChecked = data.scene_playlists === true;
+  target.value = target.defaultValue = data.target_scene || "";
   const box = document.getElementById("artist-list");
+  document.getElementById("artist-scene-downloads").replaceChildren();
+  const previousScroll = box.querySelector(".artist-table-wrap");
+  const scrollTop = previousScroll?.querySelector("tbody")?.scrollTop || 0;
+  const scrollLeft = previousScroll?.scrollLeft || 0;
   if (!Array.isArray(data.artists) || !data.artists.length) {
     box.innerHTML = `<div class="muted-txt">${t("artists.empty")}</div>`;
+    restoreArtistDraft(draft);
+    renderSceneDownloads();
+    restoreArtistDraft(draft);
+    updateArtistSaveControls();
     return;
   }
   const rows = data.artists.map(artist => {
@@ -830,53 +1041,74 @@ function renderArtistCatalog(data) {
       const count = Number(value && value.tracks);
       return `${esc(source)} (${Number.isFinite(count) ? count : 0})`;
     }).join("<br>") || t("artists.manual_source");
-    return `<tr data-artist-key="${key}">
-      <td>${name}</td>
-      <td>${sources}</td>
-      <td class="artist-identity">${identity}</td>
-      <td><input type="text" class="artist-scene" data-artist-key="${key}"
-                 maxlength="80" value="${esc(artist.scene || "")}"></td>
-      <td><input type="checkbox" class="artist-enabled" data-artist-key="${key}"
+    return `<tr role="row" data-artist-key="${key}" data-deezer-id="${verified ? esc(artist.deezer_id) : ""}">
+      <td role="cell">${name}</td>
+      <td role="cell">${sources}</td>
+      <td role="cell" class="artist-identity">${identity}</td>
+      <td role="cell"><textarea class="artist-scene" rows="3" maxlength="1620"
+                    aria-label="${esc(t("artists.col.scene"))}">${esc((artist.scenes || [artist.scene || ""]).join("\n"))}</textarea></td>
+      <td role="cell"><input type="checkbox" class="artist-enabled" data-artist-key="${key}"
                  ${artist.enabled ? "checked" : ""} ${verified ? "" : "disabled"}
                  aria-label="${esc(t("artists.include_aria", {artist: artist.name}))}"></td>
-      <td><input type="text" class="artist-evidence" data-artist-key="${key}"
+      <td role="cell"><input type="text" class="artist-evidence" data-artist-key="${key}"
                  maxlength="500" value="${esc(artist.evidence || "")}"
                  placeholder="${esc(t("artists.evidence_placeholder"))}"></td>
-      <td><button type="button" class="btn-sm artist-link"
+      <td role="cell"><button type="button" class="btn-sm artist-link"
                   data-artist-key="${key}" data-artist-name="${name}">
           ${verified ? t("artists.change_identity") : t("artists.verify")}
       </button></td>
     </tr>`;
   }).join("");
   box.innerHTML =
-    `<div class="muted-txt">${t("artists.count", {count: data.artists.length})}</div>` +
-    `<div class="artist-table-wrap"><table class="artist-table">
-      <thead><tr>
-        <th>${t("artists.col.artist")}</th>
-        <th>${t("artists.col.sources")}</th>
-        <th>${t("artists.col.identity")}</th>
-        <th>${t("artists.col.scene")}</th>
-        <th>${t("artists.col.include")}</th>
-        <th>${t("artists.col.evidence")}</th>
-        <th>${t("artists.col.action")}</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>`;
+    `<div class="muted-txt artist-table-count">${t("artists.count", {count: data.artists.length})}</div>` +
+    `<div class="artist-table-wrap" tabindex="0" role="region"
+          aria-labelledby="artist-assignments-heading"><table class="artist-table" role="table">
+      <thead role="rowgroup"><tr role="row">
+        <th role="columnheader">${t("artists.col.artist")}</th>
+        <th role="columnheader">${t("artists.col.sources")}</th>
+        <th role="columnheader">${t("artists.col.identity")}</th>
+        <th role="columnheader">${t("artists.col.scene")}</th>
+        <th role="columnheader">${t("artists.col.include")}</th>
+        <th role="columnheader">${t("artists.col.evidence")}</th>
+        <th role="columnheader">${t("artists.col.action")}</th>
+      </tr></thead><tbody role="rowgroup" tabindex="0">${rows}</tbody></table></div>`;
+  restoreArtistDraft(draft);
+  renderSceneDownloads();
+  restoreArtistDraft(draft);
+  updateArtistSaveControls();
+  const tableWrap = box.querySelector(".artist-table-wrap");
+  tableWrap.scrollLeft = scrollLeft;
+  tableWrap.querySelector("tbody").scrollTop = scrollTop;
+}
+
+function revealAddedArtist(deezerId) {
+  const row = document.querySelector(
+    `#artist-list tr[data-artist-key="${CSS.escape(`deezer:${deezerId}`)}"]`);
+  if (!row || !row.getClientRects().length) return;
+  row.tabIndex = -1;
+  row.focus({preventScroll: true});
+  row.scrollIntoView({block: "center", inline: "start"});
 }
 
 async function loadMundartArtists() {
   const box = document.getElementById("artist-list");
   if (!box) return;
-  box.innerHTML = `<div class="muted-txt">${t("artists.loading")}</div>`;
-  setArtistMessage("");
+  if (!_artistSceneState) {
+    box.innerHTML = `<div class="muted-txt">${t("artists.loading")}</div>`;
+    setArtistMessage("");
+  }
   try {
     const response = await fetch("/api/mundart/artists", {cache: "no-store"});
     const data = await response.json();
     if (!response.ok || !data || !data.ok) {
-      box.innerHTML = `<div class="s-err">${esc((data && data.error) || t("artists.load_error"))}</div>`;
+      setArtistMessage((data && data.error) || t("artists.load_error"), "error");
+      if (!_artistSceneState) box.replaceChildren();
       return;
     }
     renderArtistCatalog(data);
   } catch (error) {
-    box.innerHTML = `<div class="s-err">${t("artists.load_error")}</div>`;
+    setArtistMessage(t("artists.load_error"), "error");
+    if (!_artistSceneState) box.replaceChildren();
   }
 }
 
@@ -898,20 +1130,44 @@ async function searchArtistCatalog(query) {
     }
     const action = _artistLinkKey ? "link" : "add";
     const label = _artistLinkKey ? t("artists.link") : t("artists.add");
-    box.innerHTML = data.results.map(artist =>
+    box.innerHTML = data.results.filter(artist => /^[0-9]{1,20}$/.test(artist.id)).map(artist =>
       `<div class="artist-search-result">
         <span class="artist-search-result-name">${esc(artist.name)}
           <span class="muted-txt">· ${esc(artist.nb_fan)} fans · ID ${esc(artist.id)}</span>
         </span>
+        <button type="button" class="btn-sm" data-artist-preview="${esc(artist.id)}"
+                aria-expanded="false">${t("artists.preview")}</button>
         <button type="button" class="btn-sm" data-artist-action="${action}"
                 data-artist-id="${esc(artist.id)}">${label}</button>
-      </div>`).join("");
+      </div><div class="artist-preview muted-txt" aria-live="polite" hidden></div>`).join("");
   } catch (error) {
     box.innerHTML = `<div class="s-err">${t("artists.search_error")}</div>`;
   }
 }
 
+function sceneFilenameKey(scene, useSaved = true) {
+  const key = scene.normalize("NFKC").toLowerCase().replace(/ß/g, "ss").replace(/\s+/g, " ").trim();
+  const saved = Object.entries(_artistSceneState?.scene_filenames || {}).find(
+    ([name]) => name.normalize("NFKC").toLowerCase().replace(/ß/g, "ss").replace(/\s+/g, " ").trim() === key);
+  if (saved && useSaved) return saved[1];
+  const slug = key.normalize("NFKD").replace(/[^\x00-\x7F]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48).replace(/-$/g, "") || "scene";
+  return `charts-${slug}.m3u`;
+}
+
+function sceneFilenamesConflict(names) {
+  const files = new Map();
+  for (const name of names) {
+    const key = name.normalize("NFKC").toLowerCase().replace(/ß/g, "ss").replace(/\s+/g, " ").trim();
+    const file = sceneFilenameKey(name);
+    if (files.has(file) && files.get(file) !== key) return true;
+    files.set(file, key);
+  }
+  return false;
+}
+
 async function saveArtistSelection() {
+  if (!_artistSceneState || _artistSaving) return;
   const filterEnabled = document.getElementById("artist-filter-enabled").checked;
   if (filterEnabled && !_artistSceneState?.filter_enabled
       && !confirm(t("artists.confirm_enable"))) return;
@@ -919,14 +1175,33 @@ async function saveArtistSelection() {
     .map(row => ({
       key: row.dataset.artistKey,
       enabled: row.querySelector(".artist-enabled").checked,
-      scene: row.querySelector(".artist-scene").value,
+      scenes: row.querySelector(".artist-scene").value.split("\n").map(scene => scene.trim()).filter(Boolean),
       evidence: row.querySelector(".artist-evidence").value,
     }));
+  const sceneDownloads = [];
+  for (const row of document.querySelectorAll("#artist-scene-downloads > div")) {
+    if (!row.querySelector('input[type="checkbox"]').checked) continue;
+    const limit = row.querySelector('input[type="number"]');
+    if (!limit.reportValidity()) return;
+    sceneDownloads.push([row.querySelector("span").textContent, limit.valueAsNumber]);
+  }
   const payload = {
     filter_enabled: filterEnabled,
+    scene_playlists: document.getElementById("artist-scene-playlists").checked,
+    scene_downloads: Object.fromEntries(sceneDownloads),
     target_scene: document.getElementById("artist-target-scene").value,
     artists,
   };
+  if (sceneFilenamesConflict([
+    ...Object.keys(_artistSceneState?.scene_filenames || {}),
+    ...artists.flatMap(artist => artist.scenes), ...sceneDownloads.map(([scene]) => scene),
+  ])) {
+    setArtistMessage(t("artists.filename_conflict"), "error");
+    return;
+  }
+  const submitted = artistFormValues();
+  _artistSaving = true;
+  updateArtistSaveControls();
   setArtistMessage(t("artists.saving"));
   try {
     const response = await fetch("/api/mundart/settings", {
@@ -937,36 +1212,350 @@ async function saveArtistSelection() {
     });
     const data = await response.json();
     if (!response.ok || !data || !data.ok) {
-      setArtistMessage(esc((data && data.error) || t("artists.save_error")), "error");
+      setArtistMessage((data && data.error) || t("artists.save_error"), "error");
       return;
     }
-    renderArtistCatalog(data);
+    renderArtistCatalog(data, artistDraft(submitted));
     setArtistMessage(t("artists.saved"), "ok");
   } catch (error) {
     setArtistMessage(t("artists.save_error"), "error");
+  } finally {
+    _artistSaving = false;
+    updateArtistSaveControls();
+  }
+}
+
+async function showArtistPreview(button) {
+  const panel = button.parentElement.nextElementSibling;
+  if (!panel.hidden) {
+    panel.replaceChildren();
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    return;
+  }
+  const results = document.getElementById("artist-search-results");
+  for (const other of results.querySelectorAll(".artist-preview:not([hidden])")) {
+    other.replaceChildren();
+    other.hidden = true;
+    other.previousElementSibling.querySelector("[data-artist-preview]")
+      .setAttribute("aria-expanded", "false");
+  }
+  const id = button.dataset.artistPreview;
+  const link = document.createElement("a");
+  link.href = `https://www.deezer.com/artist/${id}`;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = t("artists.preview_deezer");
+  const status = document.createElement("div");
+  status.className = "artist-preview-title";
+  status.setAttribute("role", "status");
+  status.textContent = t("artists.loading");
+  panel.replaceChildren(status, link);
+  panel.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  try {
+    const response = await fetch(`/api/mundart/artist-preview?artist_id=${encodeURIComponent(id)}`,
+      {cache: "no-store"});
+    if (!response.ok) throw new Error("Preview unavailable");
+    const data = await response.json();
+    if (!panel.isConnected || !panel.contains(status)) return;
+    const previews = data.previews;
+    if (!Array.isArray(previews) || !previews.length) throw new Error("Preview unavailable");
+    const controls = document.createElement("div");
+    controls.className = "artist-preview-controls";
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "none";
+    let index = 0;
+    const selectPreview = (resume = false) => {
+      const selected = previews[index];
+      audio.pause();
+      status.textContent = selected.title;
+      audio.hidden = false;
+      audio.src = selected.url;
+      audio.load();
+      if (resume) {
+        audio.play().catch(error => {
+          if (error.name === "AbortError" || !audio.isConnected
+              || previews[index] !== selected || audio.error) return;
+          audio.pause();
+          status.textContent = `${selected.title} · ${t("artists.preview_press_play")}`;
+        });
+      }
+    };
+    audio.addEventListener("playing", () => {
+      status.textContent = previews[index].title;
+    });
+    audio.addEventListener("error", () => {
+      status.textContent = t("artists.preview_unavailable");
+      audio.hidden = true;
+    });
+    controls.append(audio);
+    if (previews.length > 1) {
+      const next = document.createElement("button");
+      next.type = "button";
+      next.className = "btn-sm artist-preview-next";
+      next.textContent = "↻";
+      next.title = t("artists.preview_next");
+      next.setAttribute("aria-label", next.title);
+      next.addEventListener("click", () => {
+        const resume = !audio.paused && !audio.ended;
+        index = (index + 1) % previews.length;
+        selectPreview(resume);
+      });
+      controls.append(next);
+    }
+    link.before(controls);
+    selectPreview();
+  } catch {
+    status.textContent = t("artists.preview_unavailable");
+  }
+}
+
+async function requestSceneRename() {
+  const dialog = document.getElementById("artist-rename-dialog");
+  const input = document.getElementById("artist-rename-name");
+  dialog.returnValue = "";
+  input.value = "";
+  input.setCustomValidity("");
+  const closed = new Promise(resolve => dialog.addEventListener("close", resolve, {once: true}));
+  dialog.showModal();
+  input.focus();
+  await closed;
+  return dialog.returnValue === "rename" ? input.value.trim() : null;
+}
+
+async function requestPlaylistDelete(name) {
+  const dialog = document.getElementById("artist-delete-dialog");
+  dialog.returnValue = "";
+  document.getElementById("artist-delete-detail").textContent =
+    t("artists.playlist_delete_prompt", {name});
+  const closed = new Promise(resolve => dialog.addEventListener("close", resolve, {once: true}));
+  dialog.showModal();
+  dialog.querySelector('button[value="cancel"]').focus();
+  await closed;
+  return dialog.returnValue === "delete";
+}
+
+async function loadScenePlaylists(button = null, manualRefresh = false) {
+  const box = document.getElementById("artist-playlists");
+  const feedback = document.getElementById("artist-playlists-status");
+  const refresh = document.getElementById("artist-playlists-refresh");
+  if (refresh.disabled || document.getElementById("artist-rename-dialog").open) return false;
+  const renaming = button?.dataset.rename === "true";
+  const deleting = !!button && !renaming;
+  const pane = box.closest('[data-pane="artists"]');
+  if (manualRefresh && (!_artistSceneState || _artistSaving || genreEditor.saving)) {
+    feedback.className = "artist-msg error";
+    feedback.textContent = t("artists.playlist_save_first");
+    return false;
+  }
+  const catalogBeforeRefresh = _artistSceneState;
+  let newScene;
+  if (renaming || deleting) {
+    if (!_artistSceneState || _artistSaving || artistDraft().size || genreEditor.dirty || genreEditor.saving) {
+      feedback.className = "artist-msg error";
+      feedback.textContent = t("artists.playlist_save_first");
+      return;
+    }
+    if (renaming) {
+      newScene = await requestSceneRename();
+      if (!newScene) return;
+    } else if (!await requestPlaylistDelete(button.dataset.title)) return;
+    // prevent edits against the pre-rename catalog while the request is in flight
+    pane.inert = true;
+  }
+  if (manualRefresh) pane.inert = true;
+  refresh.disabled = true;
+  box.setAttribute("aria-busy", "true");
+  feedback.className = "artist-msg";
+  feedback.textContent = t("artists.playlist_loading");
+  const url = "/api/mundart/scene-playlists";
+  const options = {cache: "no-store"};
+  if (button) {
+    options.method = "POST";
+    options.headers = {"Content-Type": "application/json"};
+    options.body = JSON.stringify({
+      name: button.dataset.name,
+      ...(renaming ? {new_scene: newScene} : {delete: true}),
+    });
+    button.disabled = true;
+  }
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok || !Array.isArray(data?.playlists)) {
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+    if (manualRefresh) {
+      const catalog = data.catalog;
+      if (!catalog || !catalog.scene_filenames || !catalog.genre_playlists
+          || !Array.isArray(catalog.reserved_playlists)) {
+        throw new Error(t("artists.playlist_refresh_error"));
+      }
+      if (_artistSceneState !== catalogBeforeRefresh || _artistSaving || genreEditor.saving) {
+        throw new Error(t("artists.playlist_save_first"));
+      }
+      // Refresh collision metadata without rebuilding the artist or genre forms.
+      _artistSceneState = {..._artistSceneState, scene_filenames: catalog.scene_filenames,
+        genre_playlists: catalog.genre_playlists, reserved_playlists: catalog.reserved_playlists,
+        genre_catalog: catalog.genre_catalog};
+    }
+    box.replaceChildren();
+    if (!data.playlists.length) box.textContent = t("artists.playlist_empty");
+    for (const item of data.playlists) {
+      const row = document.createElement("div");
+      row.className = "artist-search-result";
+      const name = document.createElement("div");
+      name.className = "artist-search-result-name";
+      const status = item.deleting ? "pending" :
+        item.disabled ? (item.present ? "pending" : "disabled") : item.present ? "present" : "planned";
+      const title = document.createElement("strong");
+      title.textContent = item.title;
+      const state = document.createElement("div");
+      state.className = "artist-section-hint";
+      state.textContent = t(`artists.playlist_${status}`);
+      name.append(title, state);
+      if (item.kind === "genre") {
+        const genres = document.createElement("div");
+        genres.className = "artist-section-hint";
+        genres.textContent = item.genre_id != null
+          ? t("genres.source_rule_summary", {genre: item.genre_name || item.genre_id, limit: item.limit})
+          : t("genres.legacy_rule_summary", {genres: (item.genres || []).join(", ")});
+        name.append(genres);
+      }
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "btn-sm danger";
+      action.dataset.name = item.name;
+      action.dataset.title = item.title;
+      action.disabled = item.deleting === true;
+      action.textContent = t("artists.playlist_delete_permanent");
+      row.append(name);
+      if (item.renameable) {
+        const rename = document.createElement("button");
+        rename.type = "button";
+        rename.className = "btn-sm";
+        rename.dataset.name = item.name;
+        rename.dataset.rename = "true";
+        rename.textContent = t("artists.scene_rename");
+        row.append(rename);
+      }
+      if (item.kind === "genre" && item.genre_id != null && !item.deleting) {
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "btn-sm";
+        edit.dataset.name = item.title;
+        edit.dataset.genreEdit = "true";
+        edit.textContent = t("genres.edit");
+        row.append(edit);
+      }
+      row.append(action);
+      box.append(row);
+    }
+    feedback.textContent = manualRefresh
+      ? t("artists.playlist_refreshed", {time: new Date().toLocaleTimeString()})
+      : "";
+    if (manualRefresh) feedback.classList.add("ok");
+    if (renaming || deleting) {
+      renderArtistCatalog(data.catalog);
+      feedback.classList.add("ok");
+      feedback.textContent = t(renaming ? "artists.scene_renamed" : "artists.playlist_deleted");
+    }
+    return true;
+  } catch (error) {
+    feedback.classList.add("error");
+    feedback.textContent = `${t("artists.playlist_refresh_error")} ${error.message || ""}`.trim();
+    return false;
+  } finally {
+    box.removeAttribute("aria-busy");
+    refresh.disabled = false;
+    if (button) button.disabled = false;
+    if (renaming || deleting || manualRefresh) {
+      pane.inert = false;
+      if (renaming || deleting) refresh.focus();
+    }
   }
 }
 
 function initArtistScenes() {
+  initGenrePlaylists();
+  document.getElementById("artist-delete-dialog").addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.currentTarget.close("cancel");
+    }
+  });
+  const renameDialog = document.getElementById("artist-rename-dialog");
+  renameDialog.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      renameDialog.close();
+    }
+  });
+  const renameInput = document.getElementById("artist-rename-name");
+  renameInput.addEventListener("input", () => renameInput.setCustomValidity(""));
+  document.getElementById("artist-rename-form").addEventListener("submit", event => {
+    if (event.submitter?.value === "cancel") return;
+    if (!renameInput.value.trim()) {
+      event.preventDefault();
+      renameInput.setCustomValidity(t("artists.scene_rename_name"));
+      renameInput.reportValidity();
+    }
+  });
+  document.getElementById("artist-list").addEventListener("input", event => {
+    const field = event.target;
+    if (!field.matches(".artist-scene, .artist-enabled")) return;
+    const id = field.closest("tr").dataset.deezerId;
+    for (const row of document.querySelectorAll("#artist-list tr[data-deezer-id]")) {
+      if (!id || row.dataset.deezerId !== id) continue;
+      if (field.matches(".artist-scene")) row.querySelector(".artist-scene").value = field.value;
+      else row.querySelector(".artist-enabled").checked = field.checked;
+    }
+    if (field.matches(".artist-scene")) renderSceneDownloads();
+  });
+  document.querySelector('[data-tab="artists"]')?.addEventListener(
+    "click", () => { loadScenePlaylists(); loadGenreSource(); });
+  document.getElementById("artist-playlists-refresh").addEventListener(
+    "click", () => loadScenePlaylists(null, true));
+  document.getElementById("artist-playlists").addEventListener("click", event => {
+    const button = event.target.closest("button[data-name]");
+    if (button?.dataset.genreEdit === "true") editGenrePlaylist(button.dataset.name);
+    else if (button && !button.disabled) loadScenePlaylists(button);
+  });
   const searchForm = document.getElementById("artist-search-form");
   searchForm.addEventListener("submit", event => {
     event.preventDefault();
     const query = document.getElementById("artist-search-q").value.trim();
     if (query) searchArtistCatalog(query);
   });
-  document.getElementById("artist-save-settings").addEventListener(
-    "click", saveArtistSelection);
+  document.querySelector('[data-pane="artists"]').addEventListener("input", event => {
+    if (event.target.closest("#artist-list, #artist-scene-downloads")
+        || event.target.matches("#artist-filter-enabled, #artist-scene-playlists, #artist-target-scene")) {
+      updateArtistSaveControls();
+    }
+  });
+  for (const button of document.querySelectorAll("[data-artist-save]")) {
+    button.addEventListener("click", saveArtistSelection);
+  }
   document.getElementById("artist-list").addEventListener("click", event => {
     const button = event.target.closest(".artist-link");
     if (!button) return;
     _artistLinkKey = button.dataset.artistKey;
     const name = button.dataset.artistName || "";
-    document.getElementById("artist-search-q").value = name;
+    const searchInput = document.getElementById("artist-search-q");
+    searchInput.value = name;
     document.getElementById("artist-link-target").textContent =
       t("artists.link_prompt", {artist: name});
+    searchInput.focus();
     searchArtistCatalog(name);
   });
   document.getElementById("artist-search-results").addEventListener("click", async event => {
+    const preview = event.target.closest("[data-artist-preview]");
+    if (preview) {
+      await showArtistPreview(preview);
+      return;
+    }
     const button = event.target.closest("[data-artist-action]");
     if (!button) return;
     const action = button.dataset.artistAction;
@@ -995,6 +1584,7 @@ function initArtistScenes() {
       document.getElementById("artist-search-results").innerHTML = "";
       renderArtistCatalog(data);
       setArtistMessage(t(action === "link" ? "artists.linked" : "artists.added"), "ok");
+      if (action === "add") revealAddedArtist(payload.deezer_id);
     } catch (error) {
       setArtistMessage(t("artists.save_error"), "error");
       button.disabled = false;
@@ -1060,7 +1650,7 @@ function renderEnvEditor(data) {
         const extraDocs = field.groups.length > 1
           ? field.links.filter(link => !groupUrls.has(link.url)).map(envDocLink).join(" ")
           : "";
-        return `<div class="env-field" data-env-search="${searchText}">` +
+        return `<div class="env-field${isLong ? " env-field-wide" : ""}" data-env-search="${searchText}">` +
           `<label class="env-field-label" for="env-${key}">${key}</label>` +
           `<div class="env-field-meta">${esc(status)}</div>` +
           `${input}` +
@@ -1341,6 +1931,11 @@ function initFinder(lastfm) {
 let _teDone = false;
 const TE_FIELDS = ["artist", "title", "album", "year", "track"];
 
+function metadataMatchesFilter(song, filter) {
+  return filter === "all" ||
+    (filter === "unreadable" ? !!song.unreadable : !song.unreadable && song.missing.includes(filter));
+}
+
 function initTagEditor() {
   if (_teDone) return;
   _teDone = true;
@@ -1349,6 +1944,81 @@ function initTagEditor() {
   const hint = document.getElementById("te-hint");
   const form = document.getElementById("te-form");
   if (!input || !results || !form) return;
+
+  const missingList = document.getElementById("te-missing");
+  const missingFilter = document.getElementById("te-missing-filter");
+  const missingFilterBox = document.getElementById("te-missing-filter-box");
+  let missingOpened = false;
+  let missingData = null;
+  function renderMissingMetadata() {
+    if (!missingData) return;
+    const data = missingData;
+    const date = new Date(data.generated_at).toLocaleString();
+    const counts = {year: 0, album: 0, track: 0, unreadable: 0};
+    for (const song of data.songs) {
+      if (song.unreadable) {
+        counts.unreadable++;
+        continue;
+      }
+      for (const field of song.missing || []) {
+        if (field in counts) counts[field]++;
+      }
+    }
+    const heading = document.createElement("p");
+    heading.className = "te-metadata-text";
+    heading.textContent = t("tageditor.metadata.summary", {
+      ...counts, checked: data.checked, date
+    });
+    missingList.replaceChildren(heading);
+    const filter = missingFilter.value;
+    const songs = data.songs.filter(song => metadataMatchesFilter(song, filter));
+    if (!songs.length) {
+      const empty = document.createElement("p");
+      empty.className = "te-metadata-text";
+      empty.textContent = t("tageditor.metadata.filter_empty");
+      missingList.appendChild(empty);
+    }
+    for (const song of songs) {
+      const row = document.createElement("div");
+      row.className = "te-row";
+      if (song.unreadable) {
+        row.textContent = t("tageditor.metadata.unreadable") + ": " + song.path;
+      } else {
+        const label = document.createElement("span");
+        label.className = "te-metadata-text";
+        const missing = song.missing.map(field => t("tageditor.label." + field));
+        label.textContent = (song.artist || "?") + " — " + (song.title || "?") +
+          " · " + missing.join(", ");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn-sm";
+        button.textContent = t("tageditor.nonmp3.open");
+        button.addEventListener("click", () => loadSong(song.path));
+        row.append(label, button);
+      }
+      missingList.appendChild(row);
+    }
+  }
+  async function loadMissingMetadata() {
+    missingOpened = true;
+    missingData = null;
+    missingList.textContent = t("tageditor.searching");
+    try {
+      const r = await fetch("/api/tageditor/missing-metadata", {cache: "no-store"});
+      const data = await r.json();
+      if (!r.ok || !data.ok) {
+        missingList.textContent = data.error || t("tageditor.metadata.unavailable");
+        return;
+      }
+      missingData = data;
+      missingFilterBox.hidden = false;
+      renderMissingMetadata();
+    } catch (e) {
+      missingList.textContent = t("tageditor.metadata.unavailable");
+    }
+  }
+  document.getElementById("te-missing-refresh").addEventListener("click", loadMissingMetadata);
+  missingFilter.addEventListener("change", renderMissingMetadata);
 
   let debounce = null;
   let ctrl = null;          // AbortController for the in-flight search
@@ -2176,6 +2846,7 @@ function initTagEditor() {
         // and re-reads every field, so the editor is selected on the moved
         // file; a subsequent save/search targets the new path.
         prefill(d.song);
+        if (missingOpened) loadMissingMetadata();
         // Rules 4/5: the tags are saved in place but the move needs a user
         // choice -> open the decision dialog (no terminal message yet).
         if (d.song.decision) {
@@ -2296,6 +2967,7 @@ function setPaneHead(tab) {
   const titleEl = document.getElementById("pane-title");
   const descEl = document.getElementById("pane-desc");
   if (titleEl) titleEl.textContent = t(h.title);   // all titles are plain text
+  document.getElementById("pane-summary").textContent = t(`tab_summary.${tab}`);
   if (descEl) {
     if (h.html) descEl.innerHTML = t(h.desc);       // finder/energy carry <b>/<code>
     else descEl.textContent = t(h.desc);            // plain-text descriptions

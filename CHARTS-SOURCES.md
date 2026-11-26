@@ -137,7 +137,14 @@ Energy wird weiterhin zuletzt gemergt. Apple-Beiträge stehen als `apple`
 im Quellen-Log und als `Apple Music` in der Benachrichtigung.
 
 Der Quellen-Finder in [`charts-config`](charts-config/README.md) prüft
-CH-/DE-/GB-/US-Feeds auf Anfrage und liefert Vorschau und kopierbares Snippet.
+CH-/DE-/FR-/GB-/US-Feeds auf Anfrage und liefert Vorschau und kopierbares Snippet.
+
+Für eine eigene Sprach- oder Regionalszene wähle passende Quellen und setze
+`CHARTS_ARTIST_PLAYLIST` auf das exakte `name`-Feld der Playlist. Beispiele:
+`deutsch.m3u` mit einer kuratierten Deutschpop-Quelle und Zielszene `Deutschpop`,
+`chanson.m3u` mit einer Chanson-Quelle und `Chanson française` oder
+`uk-indie.m3u` mit einer britischen Indie-Quelle und `UK Indie`.
+Apple-Ländercharts können weitere Titel beisteuern, filtern aber nicht nach Sprache.
 Für die separate Dashboard-Kachel und Watchdog-Ausfall-/Entwarnungsmeldungen
 `APPLE_CHARTS_ENABLED=1` und `APPLE_CHARTS_COUNTRY=ch` in der bestehenden `.env`
 setzen (Land passend zum Feed wählen) und beide Dienste neu erstellen.

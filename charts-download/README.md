@@ -2,6 +2,25 @@
 
 # charts-download
 
+Fehlende Szenen-Tophits aus `.charts-scene-missing.txt` werden automatisch
+zusammen mit den normalen Missing-Listen gesucht und heruntergeladen.
+Kein zusätzlicher `MISSING_FILES`-Eintrag und keine Anbieterliste nötig.
+Die bisherigen Qualitätsfilter, Sperren, Limits und `DRY_RUN` gelten auch hier.
+`SCENE_DOWNLOAD_USERS` wird nicht mehr verwendet.
+Deezer-Genre-Playlists verwenden dieselbe automatisch geladene Warteschlange.
+Ihre fehlenden Chart-Titel tragen ebenfalls den gewählten Playlistnamen im
+`#SCENES:`-Kommentar. Kein neuer `MISSING_FILES`-Eintrag, keine zusätzliche
+Deezer-Audioanbindung und kein eigener Downloadmodus sind nötig.
+
+Der Sync schreibt vor jedem Szenen-Auftrag einen `#SCENES:`-Kommentar mit den
+zugehörigen Szenennamen. Pushover und Manifest zeigen damit z. B.
+**Playlist: Mundart-Pop** statt des technischen Dateinamens. Bei mehreren Szenen
+werden alle Namen genannt; ein Song wird trotzdem nur einmal geladen.
+Die gemeinsame Szenen-Fairnessgrenze bleibt unverändert.
+Ältere Warteschlangen ohne Zuordnung erscheinen als **Playlist: Szenen-Tophits**,
+bis der nächste Sync die Namen liefert. Bereits gestartete Transfers und alte
+Manifest-Einträge werden nicht nachträglich umgeschrieben.
+
 Lädt die fehlenden Chart-Songs automatisch über die **slskd-API** herunter.
 Liest die von [`charts-sync`](../charts-sync) geschriebene `missing.txt`, sucht
 jeden Song in slskd, wählt das beste **MP3 ≥ 256 kbps** und stößt den Download
@@ -179,6 +198,11 @@ Ein Lauf (`run_once`):
 2. **missing lesen** – eine oder mehrere `missing.txt` parsen (`MISSING_FILES`),
    nach Chart-Position sortieren, Duplikate (gleicher Song in mehreren Charts)
    zusammenfassen.
+   Innerhalb der gemeinsamen Energy-Library-Fehlliste kommen nie oder zuletzt
+   am längsten nicht gesuchte Titel zuerst. Die Suchreihenfolge steht im
+   bestehenden Download-State und überlebt Neustarts; Testläufe und slskd-
+   API-Fehler setzen sie nicht weiter. `ENERGY_LIBRARY_MISSING_FILE`
+   identifiziert die Liste. Andere Quellen behalten ihre bisherige Reihenfolge.
 3. **verbinden** – slskd-Client über API-Key aufbauen und Verbindung testen.
 4. **pro Song** (bis `MAX_PER_RUN` erreicht):
    - bereits angefragte Songs überspringen (State-Datei),
@@ -370,6 +394,17 @@ am Ende `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 ---
 
 ## Aufbau der Pushover-Meldung
+
+Quellenüberschriften erhalten ein passendes Symbol, z. B. ⚡ für die
+Energy-Bibliothek und 🎸 für Szenen-Playlists.
+
+Bei gleichzeitig übergebenen und erneut zur Suche freigegebenen Downloads
+trennt eine Leerzeile die beiden Statusangaben.
+
+„An slskd übergeben“ bedeutet in die Download-Warteschlange aufgenommen, nicht
+fertig heruntergeladen. Fehlgeschlagene Downloads werden als „für erneute Suche
+freigegeben“ gemeldet; das garantiert weder eine sofortige Suche noch einen
+neuen Download. Beide Ereignisse können im gleichen Lauf vorkommen.
 
 Die Aufschlüsselung ist die Übersicht und bleibt zuoberst. Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag.  Das 15-Song-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 

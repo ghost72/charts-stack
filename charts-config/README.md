@@ -3,7 +3,7 @@
 Passwortgeschützte Konfig-Weboberfläche für den charts-stack (Standard-Port
 `5058`). Quellen-Finder und Energy-Kanal-Browser erzeugen Snippets, ohne
 `.env` oder `charts.json` zu ändern. Das Künstler-Panel verwaltet separat die
-lokale Mundart-Auswahl; der Tag-Editor ändert ausgewählte Musikdateien.
+Künstler, Szenen und Genre-Playlists; der Tag-Editor ändert ausgewählte Musikdateien.
 
 Schwester-Dienst des [`charts-dashboard`](../charts-dashboard): charts-config
 wurde aus dem Dashboard herausgelöst. Der Quellen-Finder und der
@@ -13,6 +13,12 @@ Dashboard ist ein reiner Status-Monitor.
 ---
 
 ## Was es zeigt
+
+Unter dem Titel des aktiven Tabs steht eine kurze Beschreibung seines Zwecks.
+Die Bedienhinweise stehen direkt darunter.
+Normale Aktionsbuttons sind in allen Tabs einheitlich blau. Löschen bleibt rot,
+Wiederherstellen grün; Tab-Navigation und Audio-Steuerelemente behalten ihren
+eigenen Stil. Grössen und Bedienung ändern sich dadurch nicht.
 
 Quellen-Finder und Energy-Kanal-Browser sind **Lese-Werkzeuge**. Künstler- und
 Tag-Editor haben begrenzte, passwortgeschützte Schreibfunktionen.
@@ -36,7 +42,7 @@ nicht mehr von Hand aus Weblinks fummeln:
   `tag.getTopTracks`, ob er brauchbar ist, und zeigt das passende Snippet
   (`{"service":"lastfm","method":"tag.getTopTracks","tag":"<tag>",…}`). Dieser
   Teil ist **nur mit `LASTFM_API_KEY`** aktiv; ohne Key ist er ausgegraut.
-- **Apple-Music-Ländercharts:** CH, DE, GB oder US und ein Limit von 1–100
+- **Apple-Music-Ländercharts:** CH, DE, FR, GB oder US und ein Limit von 1–100
   wählen → den öffentlichen Most-played-Feed prüfen, bis zu zehn Titel
   ansehen und ein validiertes `service:"apple"`-Snippet kopieren. Kein Konto
   oder API-Key nötig. Die Prüfung erfolgt erst beim Absenden, verändert
@@ -73,23 +79,157 @@ Je Standard-Modus ist eine zusätzliche Verdrahtung nötig:
 
 Details zu den Modi: [`charts-energy/README.md`](../charts-energy/README.md).
 
-### Künstler & Szenen (Mundart)
+### Künstler & Szenen
+
+Für eine eigene Sprach- oder Regionalplaylist: Definiere sie mit passenden
+Quellen in `CHARTS` oder `CHARTS_FILE`, z. B. mit `name: chanson.m3u`.
+Setze dann im `.env`-Tab `CHARTS_ARTIST_PLAYLIST=chanson.m3u`, speichere und
+erstelle `charts-sync` und `charts-config` mit dem angezeigten Befehl neu.
+Unter **Künstler & Szenen** erscheint der gewählte Dateiname. Warte auf den
+nächsten Sync, ordne Künstler deinen Szenen zu und wähle die Zielszene.
+Ohne Änderung bleibt `mundart.m3u` der Standard. Ein Apple-Länderchart ist
+keine Sprach- oder Dialekterkennung.
 
 Das passwortgeschützte Künstler-Panel liest das von `charts-sync` laufend
-ergänzte Inventar aller Hauptinterpreten und Deezer-Feature-Gäste aus den
-aktiven `mundart.m3u`-Feeds. Pro Eintrag zeigt es Feed-Herkunft und Titelanzahl.
+ergänzte Inventar aller Hauptinterpreten und Gastkünstler aus allen aktiven
+charts-sync-Feeds. Pro Eintrag zeigt es Feed-Herkunft und Titelanzahl.
 Künstler, die Energy nur als Text liefert, bleiben zunächst ungeprüft; über die
-Deezer-Suche wird eine eindeutige Künstler-ID aufgelöst und verknüpft. Namen
-werden nicht unscharf zusammengeführt.
+Deezer-Suche oberhalb der Liste wird eine eindeutige Künstler-ID aufgelöst und
+verknüpft. Die Aktion in der Tabellenzeile führt zur Suche und füllt den Namen
+vor. Namen werden nicht unscharf zusammengeführt.
+**Hörprobe** lädt verfügbare Ausschnitte aus den ersten fünf Deezer-Top-Titeln
+zur Identitätsprüfung. Sind mehrere verfügbar, wechselt **↻** zum nächsten
+Titel desselben Künstlers. Die Vorschau spielt direkt von Deezer; falls sie
+fehlt, bleibt der Deezer-Link.
+Läuft beim Wechsel bereits eine Hörprobe, startet die nächste automatisch;
+eine pausierte Hörprobe bleibt beim Wechsel pausiert.
 
 Die Szene-Zuordnung und Aktivierung sind eine **menschliche Auswahl**, keine
 automatische Sprach- oder Mundart-Erkennung. Ein optionaler Beleg kann
-mitgespeichert werden. Manuell hinzugefügte Deezer-Künstler liefern bei
-eingeschaltetem Filter ihre Deezer-Top-50-Titel als zusätzlichen Feed. Der
+mitgespeichert werden. Manuell hinzugefügte Deezer-Künstler können ihre
+Deezer-Top-50-Titel zum Filter oder zu den Zusatz-Playlists beitragen. Der
 Filter ist anfangs ausgeschaltet und wirkt erst nach ausdrücklicher
 Aktivierung; dann bleiben in
 `mundart.m3u` nur aktivierte, verknüpfte Künstler der gewählten Zielszene.
-Andere Playlists bleiben unverändert.
+Unter **Szene für den Hauptfilter** denselben Szenennamen eintragen wie im
+Feld **Szene** der freigegebenen Künstler. Die konfigurierten Quellen und
+der Name der Hauptplaylist bleiben bestehen; gefiltert werden die Titel
+für ihre M3U und ihre Downloadliste. Andere Playlists bleiben unverändert.
+
+Ein Hinweis unter **Playlist-Einstellungen** erklärt den Unterschied direkt in der Oberfläche.
+Das Feld **Szene für den Hauptfilter** ist kein Playlist-Titel. Neuer
+Künstlerzustand verwendet den neutralen Startwert `My artists`; vorhandene
+gespeicherte Namen wie `Swiss German Mundart` bleiben unverändert. Wähle dort
+die Gruppe, deren Künstler der optionale Hauptfilter verwenden soll.
+Die Künstler-/Szenenverwaltung ist allgemein: Vorschläge und Szenentreffer
+stammen aus **allen konfigurierten charts-sync-Quellen**, nicht nur aus der
+Hauptplaylist. Frei gewählte Szenen können etwa `Mundart-Pop`, `French Rock`
+oder `Jazz` heissen. Der Playlist-Anzeigename entspricht dem Szenennamen,
+ohne erzwungenes `Mundart:`. Neue Dateien heissen z. B.
+`charts-french-rock.m3u`, ohne Hash. UI und Schreib-API lehnen
+Dateinamenskollisionen ab (etwa `Rock & Pop` und `Rock-Pop`).
+Auch bestehende verwaltete `mundart-szene-…m3u` werden beim nächsten Sync
+auf `charts-<szenenname>.m3u` umgestellt. Musikdateien bleiben unberührt.
+Navidrome kann die umbenannte M3U als neue Playlist importieren; die bisherige
+Playlistidentität ist nicht garantiert. Hauptplaylist und Filter bleiben unabhängig.
+Deezer-Genre-Playlists sind unabhängig davon verfügbar (siehe unten).
+Interne `/api/mundart/`-Pfade und der alte M3U-Verwaltungsmarker bleiben aus
+Kompatibilitätsgründen bestehen; sie legen weder Szenennamen noch Sprache fest.
+**Zusätzliche M3U pro Szene erstellen** ist vom Hauptfilter unabhängig und standardmässig
+aus. Aktiviere die Option und speichere: Der nächste `charts-sync` schreibt
+je Szene mit freigegebenen Künstlern eine eigene Playlist aus gefundenen
+Bibliothekstiteln. Die normale Zielszene von `mundart.m3u` bleibt bestehen.
+Unter **Fehlende Top-Hits automatisch laden** kannst du jede Szene einzeln
+einschalten und pro Künstler ein Deezer-Toplimit von 1–100 wählen (Vorgabe: 50).
+Das gilt für manuell hinzugefügte, aktive und verknüpfte Künstler. Nach dem
+Speichern laufen Suche, Import und Playlist-Aktualisierung im normalen
+Diensttakt. `charts-download` sucht über slskd wie bei normalen Charts; eine
+manuelle Anbieterliste ist nicht nötig. Die üblichen Qualitätsfilter, Sperren,
+Limits und `DRY_RUN` gelten weiterhin. Lade nur berechtigt verfügbare Musik;
+Deezer liefert keine Audiodateien.
+Im Feld **Szene** kann ein Künstler mehreren Szenen zugeordnet werden, eine
+pro Zeile. Szenen und **Aktiv** werden beim Bearbeiten in Zeilen mit derselben
+Deezer-ID übernommen. Bestehende Einzelzuordnungen bleiben erhalten.
+Ein Szenenname allein schaltet **Aktiv** für einen ungeprüften Eintrag nicht
+frei. Verknüpfe zuerst die passende Identität; ein gemeinsamer Credit ist
+nicht automatisch mit einem der beteiligten Künstler gleichzusetzen.
+Beim Verknüpfen, Hinzufügen oder Wechseln zwischen den Bereichen in
+charts-config bleiben ungespeicherte Eingaben im offenen Browser-Tab
+erhalten. Nach **Hinzufügen** springt die Tabelle zur passenden Künstlerzeile.
+**Änderungen speichern** steht bei den Playlist-Einstellungen und bei den
+Künstler-Zuordnungen; beide Schaltflächen speichern alle Änderungen in
+diesem Bereich. Beim Schliessen, Neuladen oder Verlassen der Seite warnt
+der Browser bei ungespeicherten Änderungen. Ein Wechsel zwischen den
+Config-Bereichen behält den Entwurf.
+Die Schreib-API für Künstler, Szenen und den `.env`-Editor erfordert eine
+angemeldete Sitzung und `Content-Type: application/json`.
+Die Tabelle scrollt separat. Die Spaltenüberschriften und die Schaltfläche
+**Änderungen speichern** bleiben beim Bearbeiten langer Listen erreichbar.
+Die Künstlerzahl und die Spaltenüberschriften stehen ausserhalb des
+vertikalen Scrollbereichs der Künstlerzeilen.
+Unter **Szenen-Playlists** entfernt **Endgültig löschen** die Szene aus den
+Künstler-Zuordnungen sowie ihre Download- oder Genre-Regel. Künstler und
+Deezer-IDs bleiben erhalten; Künstler ohne verbleibende Szene werden deaktiviert.
+Andere Szenen, Musikdateien und die Hauptplaylist bleiben unverändert.
+Die Szene des aktiven Hauptfilters ist vor dieser Löschung geschützt.
+Eine vorhandene verwaltete M3U wird beim nächsten Sync entfernt. Nur bis dahin
+bleibt ein Löschauftrag sichtbar; danach gibt es keine dauerhafte Sperre und
+der Name kann erneut verwendet werden. Alte Sperreinträge ohne M3U verschwinden
+sofort nach Bestätigung. Fremde Dateien und Symlinks werden nicht gelöscht.
+Speichere oder verwerfe vorher offene Eingaben. Der Löschdialog ist dunkel;
+**Abbrechen** oder Escape nimmt keine Änderung vor.
+
+### Deezer-Genre-Playlists
+
+Das Formular hat einheitlich mindestens 44px hohe Eingabefelder und deutliche
+Abstände zwischen Feldgruppen. Genre und Titellimit stehen am Desktop
+nebeneinander, auf schmalen Bildschirmen untereinander.
+
+Namen eingeben, ein offizielles Deezer-Genre auswählen und das Titellimit
+pro Playlist festlegen (1–100, Vorschlag **50**). Die Auswahl stammt aus
+Deezers `/genre`-API, nicht aus Genre-Tags der Musikdateien. Bei einem
+Katalogfehler wird keine statische oder lokale Ersatzliste angeboten.
+Bereits gespeicherte Genres bleiben sichtbar; ihr Limit kann auch ohne einen
+neuen Katalogabruf geändert werden. Ein neues Genre muss durch Deezer bestätigt sein.
+
+Beim nächsten Sync liefert `/chart/<genre-id>/tracks` die Titelliste bis zum
+gewählten Limit. Deezer kann weniger Titel liefern: Das Limit ist keine Garantie
+für die fertige Playlist-Grösse. Vorhandene Library-Titel werden zugeordnet,
+auch wenn deren lokale Genre-Tags anders lauten oder fehlen. Nur Titel aus
+dieser Deezer-Liste kommen in die Playlist, nicht sämtliche lokalen Songs des Genres.
+Dateipfade werden dedupliziert. Musik-Tags werden nicht verändert.
+
+Fehlende Titel werden automatisch in die vorhandene
+`.charts-scene-missing.txt`-Pipeline aufgenommen, mit dem gewählten Playlistnamen
+als Herkunft. `charts-download` sucht sie über slskd; Qualitätsfilter,
+globale Künstlerausschlüsse, Limits und `DRY_RUN` gelten weiterhin.
+Deezer liefert ausschliesslich Metadaten, keine Audiodateien.
+Nach einem berechtigten Download und Import ergänzt der nächste Sync die M3U.
+Ein leerer oder fehlerhafter Deezer-Abruf ersetzt keine vorhandene Genre-M3U
+und erzeugt keine neuen Downloadaufträge für diese Playlist; der Fehler wird gemeldet.
+
+Regeln werden separat von Künstleränderungen gespeichert und wirken beim
+nächsten Sync, ohne zusätzlichen automatischen Trigger. Bearbeiten ändert
+Genre und Limit; Umbenennen und endgültiges Löschen funktionieren in der
+Playlistübersicht, auch bevor die erste M3U erzeugt wurde.
+Dateien heissen `charts-<name>.m3u`, ohne Hash, und teilen den
+kollisionsgeschützten Namensraum der Szenen. Genre-Regeln sind unabhängig
+vom Hauptfilter und Zusatzszenen-Schalter.
+Alte Datei-Tag-Regeln werden nicht automatisch umgedeutet oder gelöscht:
+vorhandene Einträge bleiben umbenennbar/löschbar, aber die lokale Genre-Auswahl entfällt.
+
+### Szenen umbenennen
+
+**Szene umbenennen** übernimmt die Künstler-Zuordnungen, das Toplimit und
+gegebenenfalls die Szene für den Hauptfilter. Deezer-IDs bleiben gleich;
+Titel und M3U-Dateiname folgen beim nächsten Sync dem neuen Szenennamen. Speichere zuvor
+offene Änderungen. Eine Umbenennung führt bestehende Szenen nicht zusammen.
+Der Umbenennen-Dialog verwendet das dunkle UI-Design, auch auf Mobilgeräten.
+Enter bestätigt, Escape oder **Abbrechen** schliesst ihn ohne Änderung.
+Leere Namen werden abgelehnt. Auch verwaltete ältere Szenen-M3Us ohne
+verbleibende Künstlerzuordnung können umbenannt werden.
+**Übersicht aktualisieren** liest die vorhandenen Dateien neu ein und zeigt die
+Uhrzeit der Aktualisierung. Der Button startet keinen Sync und erzeugt keine M3U.
 
 Inventar und Auswahl liegen getrennt von `.env` und `charts.json` im gemeinsam
 gemounteten Charts-Ordner:
@@ -103,6 +243,19 @@ Eine leere/fehlende Auswahldatei lässt den bisherigen Mundart-Feed unverändert
 neue Künstler werden nicht automatisch freigegeben.
 
 ### Manueller Tag-Editor (Schreibzugriff)
+
+Über **Fehlende Metadaten anzeigen / aktualisieren** zeigt der Editor den
+letzten Prüfstand des Import-Nachlaufs für passende Manifest-MP3s. Wähle einen
+lesbaren Eintrag, ergänze Jahr, Album oder Tracknummer und speichere. Die
+angezeigten Dateien werden beim Aktualisieren erneut gelesen; neue
+Problemfälle erscheinen erst nach dem nächsten Import-Nachlauf. Nicht
+erreichbare Dateien bzw. unlesbare Tags sind separat gekennzeichnet. Die Liste
+bleibt auch bei vielen Einträgen in einem begrenzten Bereich scrollbar. Die
+Zusammenfassung zählt fehlende Jahre, Alben und Tracknummern getrennt. Ein
+vorhandener Albumwert gilt auch dann als befüllt, wenn er dem Songtitel
+entspricht; er wird weder als fehlend gemeldet noch automatisch ersetzt.
+Über **Filtern nach** lässt sich die Liste auf Jahr, Album, Tracknummer oder
+unlesbare Tags einschränken; die Zusammenfassung zeigt weiterhin alle Fälle.
 
 Der Tag-Editor ist ein weiteres **Schreib**-Werkzeug auf der Seite. Durchsuche
 die Musik-Library, wähle einen Song und bearbeite seine Tags (Künstler, Titel,
@@ -390,6 +543,13 @@ kann von außen erreichbar sein.
 
 ### Tab „.env“
 
+Mehrzeilige Werte wie `CHARTS` nutzen die volle Gruppenbreite und ein höheres,
+vertikal vergrösserbares Textfeld. Die Darstellung formatiert oder verändert
+gespeicherte JSON-Werte nicht automatisch. Ist `CHARTS_FILE` gesetzt und
+erfolgreich geladen, hat diese Datei Vorrang vor dem `CHARTS`-Wert.
+Für Verwaltung über das `CHARTS`-Feld stattdessen `CHARTS_FILE` leeren und
+speichern; die bisherige JSON-Datei muss nicht gelöscht werden.
+
 Der passwortgeschützte Tab steht am Ende der Navigation und zeigt die Einstellungen nach Gruppen aus
 `.env.example`, übernimmt deren Kommentare als Hilfe und verlinkt mit 📖 auf die
 jeweilige Service-Dokumentation. Beim Speichern wird die zentrale `.env` aus
@@ -445,7 +605,7 @@ sondern über das gemeinsame Stack-Projekt (eine `compose.yml` + eine zentrale
 Installation. Nur diesen Dienst neu bauen/starten:
 `docker compose up -d --build charts-config` aus dem `charts-stack`-Ordner.
 
-### Mundart-Künstler-Panel – Deployment
+### Künstler-/Szenen-Panel – Deployment
 
 Das Inventar wird von `charts-sync` erzeugt, charts-config zeigt und speichert
 die Auswahl. Nach dem Einspielen dieser Funktion beide Dienste neu bauen und

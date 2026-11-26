@@ -18,6 +18,8 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
@@ -908,21 +910,38 @@ def _inflight(services: dict) -> dict:
         }
 
 
-def collect() -> dict:
-    """Assemble the complete dashboard state."""
+def collect_events() -> Iterator[dict]:
+    """Report actual check completion before returning the complete snapshot."""
     # Capture the status dict once and reuse it for both the "services" key and
     # the in-progress panels (panels 3+4 read charts-import/charts-upgrade from
     # it - no extra file read).
     services = _read_status_files()
-    return {
+    checks = {
+        "containers": _container_states,
+        "slskd": _slskd_status,
+        "lidarr": _lidarr_status,
+        "external": _external_status,
+        "storage": _dir_stats,
+        "inflight": lambda: _inflight(services),
+    }
+    with ThreadPoolExecutor(max_workers=len(checks)) as executor:
+        futures = {executor.submit(check): key for key, check in checks.items()}
+        yield {"type": "progress", "checks": list(checks)}
+        results = {}
+        for future in as_completed(futures):
+            key = futures[future]
+            results[key] = future.result()
+            yield {"type": "checked", "check": key}
+    yield {"type": "result", "data": {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "services": services,
-        "containers": _container_states(),
-        "slskd": _slskd_status(),
-        "lidarr": _lidarr_status(),
-        # Pushover now comes from the live check (external.pushover: real
-        # validate call) instead of a pure config flag.
-        "external": _external_status(),
-        "storage": _dir_stats(),
-        "inflight": _inflight(services),
-    }
+        **results,
+    }}
+
+
+def collect() -> dict:
+    """Assemble the complete dashboard state for JSON API callers."""
+    for event in collect_events():
+        if event["type"] == "result":
+            return event["data"]
+    raise RuntimeError("Dashboard collection ended without a snapshot")

@@ -114,6 +114,15 @@ def _manifest(charts_dir):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_search_engines_are_asked_not_to_index_responses(monkeypatch, tmp_path):
+    client, _main, _cd, _sd = _build(monkeypatch, tmp_path)
+    client.cookies.clear()
+    for path, status_code in (("/", 303), ("/login", 200), ("/static/icon.svg", 200), ("/not-found", 404)):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == status_code
+        assert response.headers["x-robots-tag"] == "noindex, nofollow"
+
+
 def test_upload_requires_login(monkeypatch, tmp_path):
     client, main_mod, _cd, _sd = _build(monkeypatch, tmp_path)
     client.cookies.clear()

@@ -102,6 +102,16 @@ bestimmt (über `USER_PUSHOVER_DEVICES`) das Zielgerät der Verfügbarkeits-Meld
 Login per Cookie-Session;
 `SESSION_SECRET` setzen, damit Sessions Neustarts überleben.
 
+Die lokal vorbereitete Anwendung setzt auf normalen Antworten einschliesslich
+Login, Weiterleitungen, statischen Dateien und 404 `X-Robots-Tag: noindex,
+nofollow`. Das ist kein Zugriffsschutz und wird erst nach dem Neuaufbau aktiv.
+Fuer ein bestehendes NAS-Projekt nur `charts-songrequest/app/main.py` aus dem
+Checkout an dieselbe Stelle im Stack-Verzeichnis kopieren und dort
+`docker compose up -d --no-deps --build
+charts-songrequest` ausfuehren. Die bestehende `.env` und Daten nicht ersetzen.
+Anschliessend den Header der Loginseite pruefen. Proxy-eigene Fehlerantworten
+und Suchmaschinen, die die Anweisung ignorieren, sind nicht abgedeckt.
+
 ---
 
 ## Installation auf dem Synology NAS

@@ -380,8 +380,8 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    werden komplett übersprungen (kein Jahr, kein Album, kein Track). Er ist strikt **konservativ: er überschreibt nie
    einen vorhandenen Wert** (ein kuratiertes/Lidarr-Album, ein vom Resolver
    gesetztes Jahr, eine positive Tracknummer bleiben unangetastet). Ein `album`
-   gilt als *fehlend*, wenn es leer ist, dem Titel entspricht (der
-   Single-als-Album-Platzhalter) oder `Unknown Album` ist; ein aufgelöster
+   gilt als *fehlend*, wenn es leer oder `Unknown Album` ist; ein vorhandenes
+   Album gilt auch dann als befüllt, wenn es dem Songtitel entspricht. Ein aufgelöster
    Kompilations-/Sampler-Titel wird nie geschrieben. Die **eine bewusste
    Ausnahme** ist ein Jahr, das aus einem **YouTube**-Import stammt (das
    yt-dlp-Upload-/Veröffentlichungsjahr, nicht vertrauenswürdig): so eine Datei
@@ -404,6 +404,21 @@ Ermittelt Künstler/Album/Titel in dieser Reihenfolge:
    `scripts/fix_youtube_years.py` korrigiert das Jahr **historischer**
    YouTube-Songs (importiert bevor es den Marker gab), ausgewählt über das
    dauerhafte Manifest-Feld `source="youtube"` — nur das Jahr, nichts anderes.
+
+   **Fehlende Jahre und Übersicht:** Bei weiterhin fehlendem Jahr bleibt die
+   Datei auch nach einem Teilergebnis ohne Jahr für weitere Versuche vorgemerkt.
+   Bei Nicht-YouTube-Dateien folgt nach dem Versuchslimit frühestens nach
+   30 Tagen ein neuer Versuch mit frischen Abfragen aktivierter Deezer-/
+   MusicBrainz-Quellen innerhalb der bestehenden Budgets;
+   alte Cache-Ergebnisse werden hierfür nicht verändert. Für alte, bereits
+   erledigte Einträge ohne Zeitstempel beginnt diese Frist bei der ersten
+   Erkennung nach dem Update. Ein Ergebnis ist nicht garantiert; bereits
+   vorhandene Jahre werden nicht ersetzt (YouTube-Ausnahme siehe oben).
+   Nach dem Nachlauf veröffentlicht Import einen datierten Prüfstand der
+   passenden Manifest-MP3s in `STATUS_DIR/missing-metadata.json`. Gemeldet
+   werden fehlendes Jahr, Album, Tracknummer sowie nicht lesbare Tags. Auch ein
+   Album, das dem Titel entspricht, gilt als Platzhalter. Nicht passende
+   Manifest-Einträge und andere Dateien sind nicht abgedeckt.
 
    **Album-Neukorrektur (Opt-in, `scripts/backfill_metadata.py
    --recorrect-albums`):** Standardmäßig *füllt* der Nachlauf nur ein fehlendes
@@ -597,6 +612,21 @@ gefolgt von einer Zusammenfassung wie
 ---
 
 ## Aufbau der Pushover-Meldung
+
+Szenen-Downloads tragen ihre echten Szenennamen aus dem Manifest, etwa
+**Playlist: Mundart-Pop**. Mehrere Zuordnungen bleiben als gemeinsame Gruppe
+erhalten, ohne denselben Import mehrfach zu zählen. Szenennamen werden für die
+HTML-Meldung maskiert; Sonderzeichen verändern nicht die Formatierung.
+
+Die Import-Sammelmeldung zeigt ♪ Künstler und Titel statt langer Dateipfade;
+die Quellenüberschrift bleibt erhalten. Fehlen Künstler oder Titel, steht
+stattdessen der Dateiname. Bei unklarer GROSS-Schreibweise kennzeichnet ♪
+jeden betroffenen Song zur manuellen Prüfung.
+
+Die Ablehnungsmeldung zeigt pro Datei eine Zeile mit ♪ und darunter den
+unveränderten Ablehnungsgrund mit ↳; Leerzeilen trennen die Einträge. Datei und
+Grund werden beim Kürzen gemeinsam behandelt. Das ändert keine Qualitätsprüfung
+oder Quarantäne-Regel.
 
 Die Aufschlüsselung (`N aus <Playlist>`) ist die Übersicht und bleibt immer vollständig. Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag.  Das 10-Einträge-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 

@@ -9,16 +9,19 @@ Shows at a glance:
   - storage/inventory numbers (charts share, quarantine).
 
 Password-protected (multi-user, identical mechanism to charts-songrequest).
-Auto-refresh via a small JSON API (/api/status).
+Auto-refresh with live progress (/api/status/stream); JSON /api/status remains.
 """
 
 import json
 import logging
 import os
 import secrets
+from collections.abc import Iterator
 
 from fastapi import FastAPI, Form, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from . import collector, config, i18n
@@ -152,7 +155,7 @@ async def index(request: Request):
 
 
 @app.get("/api/status")
-async def api_status(request: Request):
+def api_status(request: Request):
     if not _current_user(request):
         return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
     return JSONResponse(collector.collect())
@@ -161,6 +164,26 @@ async def api_status(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+def _status_events() -> Iterator[str]:
+    try:
+        for event in collector.collect_events():
+            yield json.dumps(event, ensure_ascii=True) + "\n"
+    except Exception as error:
+        logger.exception(i18n.t("dashboard.log.status_failed",
+                                error=error.__class__.__name__))
+        yield json.dumps({"type": "error"}) + "\n"
+
+
+@app.get("/api/status/stream")
+def api_status_stream(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("dashboard.api.not_authed")})
+    return StreamingResponse(
+        _status_events(), media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

@@ -264,4 +264,6 @@ sudo docker compose down                       # stoppen
 
 ## Aufbau der Pushover-Meldung
 
+Die Quellenliste ist durch eine Leerzeile von der Zusammenfassung getrennt.
+
 Die Quellenliste pro Nutzer (`Quellen:`) folgt derselben Layout-Regel: ein Nutzer steht in einer kurzen Zeile, zwei Nutzer in einer Zeile mit ` · `, ab drei eine Zeile pro Nutzer. Das 15-Song-Limit und das Zeichenbudget teilen sich die eine Zeile „… und N weitere“. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.

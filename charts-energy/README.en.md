@@ -42,6 +42,11 @@ clone never polls Icecast unexpectedly.
   right decade via the **Navidrome Smart Playlists (NSP)**. The **decade** is
   reliable (from the slug `energy80s` → 1980s + clamp); the exact year is best
   effort via MusicBrainz.
+  Missing songs are deduplicated across channels and interleaved by channel
+  before writing the shared file, rather than putting an entire channel ahead
+  of the next. With observations from every active library channel, a match
+  with no missing tracks clears the old missing list; unobserved channels are
+  not treated as proof that the backlog is clear.
   - **Library match tolerates a trailing `(subtitle)`** (match-key only): the
     on-disk title may carry a descriptive parenthetical the radio stream drops,
     so a short stream title still matches an owned file whose canonical title
@@ -89,7 +94,22 @@ incoming data chunks.
 
 ## Pushover message layout
 
-Below the header an **overview** lists every own channel, feed and the library part with its counts (`Channel ✅matched ⬇missing`, `theme ➡n`, `📚 Library ✅n ⬇n`). Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line. With very many entries it switches to a compact one-line form (`✅n ⬇n`); beyond roughly 35 entries the line ends with " …" (theoretical bound). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
+The overview separates the **library**, **own Energy playlists**, and
+**Energy feeds for charts-sync**. Each count appears there only once, followed
+by the song lists. Feed names are handoff themes, not proof of playlist names.
+For many or long own playlists or feeds, the overview switches to compact
+counts and may end with "…". The message stays within Pushover's
+1024-character limit (HTML-escaped). Song lists are cut only between whole
+entries; omitted missing tracks are reported in an "… and N more" line.
+
+The feed count is the number of unique tracks in its handoff, not accumulated
+spins. "Available to charts-sync" confirms the handoff file was written, not
+that it was consumed or added to a playlist. Themes such as `mundart` and
+`charts` are Energy handoffs; Apple and Deezer appear in the source overview
+of the respective charts-sync message. Feed-only runs do not claim a
+library match. The library missing count is a current library-match snapshot,
+not the number of active transfers. It may rise as channels observe new tracks and
+fall only after a later match sees the imported files.
 
 In **library mode**, repeated spins of the same normalized artist/title across
 channels are counted and written to the shared missing file only once. The

@@ -50,6 +50,20 @@ pytest
 
 Run the suite for every service you touched.
 
+For UI changes, passing pytest is not a visual or browser acceptance check:
+
+- Exercise the actual controls in a running browser; do not replace prompts
+  or dialogs with test stubs when checking their appearance or interaction.
+- Check the dark theme, focus visibility and layout at desktop and 360 px
+  widths, including the newly opened dialogs and their text inputs.
+- Check keyboard Enter, Escape and Tab, cancellation without writes,
+  validation errors, API errors and persistence after reload.
+- For artist settings, verify both save buttons, drafts across internal tabs
+  and the browser's unsaved-change warning.
+- Record the browser, flows and any unverified boundaries. Tests with local
+  data do not prove NAS downloads, Navidrome scans or notifications work.
+- Bump the stylesheet cache version in the HTML when changing its CSS.
+
 ## How to contribute
 
 1. Fork the repo (or create a branch) and base your work on `main`.

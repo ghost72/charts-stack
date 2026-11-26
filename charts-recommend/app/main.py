@@ -246,7 +246,7 @@ def _notify(source_results: list[dict], counters: dict,
                  candidates=cand)
     else:
         head = t("recommend.notify.all_present", candidates=cand, users=n_users)
-    body = head + (t("recommend.notify.sources", sources=quellen) if quellen else "")
+    body = head + ("\n" + t("recommend.notify.sources", sources=quellen) if quellen else "")
     # List the songs that will actually be downloaded (the `missing` set), one
     # artist/title line per song (no chart #pos), mirroring charts-flashback.
     # The all_present path (no missing songs) deliberately renders no song list.

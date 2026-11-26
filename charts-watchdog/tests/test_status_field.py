@@ -8,6 +8,7 @@ extracted string. cwd is the charts-watchdog dir so `./watch.sh` resolves.
 
 import os
 import subprocess
+import json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WATCHDOG_DIR = os.path.dirname(HERE)
@@ -99,3 +100,12 @@ def test_half_written_file(tmp_path):
         '{\n  "service": "charts-flashback",\n  "last_run_start": "2026-',
     )
     assert _status_field("status", f) == ""
+
+
+def test_message_keeps_quoted_path_and_literal_backslashes(tmp_path):
+    message = 'Permission denied: "/music/Artist/Album"\nLiteral \\n and \\c, 100% complete'
+    f = _write(tmp_path, "charts-sync.json", json.dumps(
+        {"status": "error", "message": message}, ensure_ascii=False, indent=2))
+    assert _status_field("message", f) == message.replace("\n", " ")
+    f = _write(tmp_path, "partial.json", '{\n  "message": "Permission denied: /music/Album')
+    assert _status_field("message", f) == ""

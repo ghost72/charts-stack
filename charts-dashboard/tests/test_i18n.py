@@ -28,6 +28,8 @@ import re
 import shutil
 import string
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -272,6 +274,191 @@ def test_index_render_handoff(monkeypatch, lang):
         "fr": "connect\u00e9 et authentifi\u00e9",
     }[lang]
     assert i18n_obj["tile.slskd.connected"] == expected
+    assert 'id="loading-status"' in html
+    assert "loading.detail" in i18n_obj
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_slow_status_collection_keeps_health_endpoint_responsive(monkeypatch, stream):
+    client, main_mod = _client(monkeypatch, "de")
+    started = threading.Event()
+    release = threading.Event()
+    def slow_collect():
+        started.set()
+        if not release.wait(3):
+            raise RuntimeError("test collection was not released")
+        return {"services": {}}
+    monkeypatch.setattr(main_mod.collector, "collect", slow_collect)
+    def slow_events():
+        yield {"type": "progress", "checks": ["external"]}
+        yield {"type": "result", "data": slow_collect()}
+    monkeypatch.setattr(main_mod.collector, "collect_events", slow_events)
+    with client, ThreadPoolExecutor(max_workers=2) as executor:
+        status = executor.submit(client.get, "/api/status/stream" if stream else "/api/status")
+        try:
+            assert started.wait(1)
+            health = executor.submit(client.get, "/health")
+            assert health.result(timeout=1).json() == {"status": "ok"}
+        finally:
+            release.set()
+        response = status.result(timeout=1)
+        if stream:
+            assert json.loads(response.text.splitlines()[-1]) == {
+                "type": "result", "data": {"services": {}}}
+        else:
+            assert response.json() == {"services": {}}
+
+
+def test_status_stream_auth_snapshot_and_explicit_failure(monkeypatch, caplog):
+    client, main_mod = _client(monkeypatch, "de")
+    events = [{"type": "progress", "checks": ["external"]},
+              {"type": "checked", "check": "external"},
+              {"type": "result", "data": {"external": {"ok": False}}}]
+    monkeypatch.setattr(main_mod.collector, "collect_events", lambda: iter(events))
+    response = client.get("/api/status/stream")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.headers["x-accel-buffering"] == "no"
+    assert [json.loads(line) for line in response.text.splitlines()] == events
+    client.cookies.clear()
+    assert client.get("/api/status/stream").status_code == 401
+    client.cookies.set("session", "test-token")
+    def failing_events():
+        yield events[0]
+        raise RuntimeError("test collection failure")
+    monkeypatch.setattr(main_mod.collector, "collect_events", failing_events)
+    response = client.get("/api/status/stream")
+    assert [json.loads(line) for line in response.text.splitlines()] == [
+        events[0], {"type": "error"}]
+    assert "test collection failure" in caplog.text
+
+
+@pytest.mark.parametrize("lang", _SHIPPED)
+def test_status_polling_loading_timeout_and_retry(lang):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required to exercise dashboard polling")
+    html = (pathlib.Path(i18n.__file__).parent / "static" / "index.html").read_text()
+    polling = re.search(r"let statusPending = false;[\s\S]*?(?=\napplyStaticI18n\(\))", html)
+    translator = re.search(r"function t\(key, params\) \{[\s\S]*?\n\}", html)
+    assert polling and translator
+    messages = {key[len(_UI_PREFIX):]: value for key, value in _load_shipped(lang).items()
+                if key.startswith(_UI_PREFIX)}
+    code = "const source = " + json.dumps(translator.group() + "\n" + polling.group()) + ";\n"
+    code += "const messages = " + json.dumps(messages) + ";\n"
+    code += r"""
+const vm = require("node:vm"), assert = require("node:assert/strict");
+function state() {
+  const nodes = Object.fromEntries(["loading-status", "loading-spinner",
+    "loading-title", "loading-detail", "updated", "loading-checks", "loading-progress",
+    ...["containers", "slskd", "lidarr", "external", "storage", "inflight"].map(k => "loading-" + k)
+    ].map(id => [id, {hidden: false, textContent: "", className: "",
+      state: {textContent: ""}, querySelector() {return this.state;}}]));
+  const classes = new Set(), timers = new Map(), errors = [], snapshots = [];
+  let id = 0, rendered = 0;
+  const context = {
+    I18N: messages, REFRESH: 15, Date, AbortController, TextDecoder, location: {},
+    console: {error: (...args) => errors.push(args)},
+    document: {getElementById: name => nodes[name],
+      querySelector: () => ({classList: {
+        add: name => classes.add(name), remove: name => classes.delete(name)}})},
+    render: data => {rendered++; snapshots.push(data);},
+    setTimeout: (fn, delay) => {timers.set(++id, {fn, delay}); return id;},
+    clearTimeout: key => timers.delete(key),
+    setInterval: fn => {timers.set(++id, {fn, interval: true}); return id;},
+    clearInterval: key => timers.delete(key),
+  };
+  vm.createContext(context);
+  vm.runInContext(source + "\nglobalThis.poll = tick;", context);
+  return {context, nodes, classes, timers, errors, snapshots, rendered: () => rendered};
+}
+function response(events = [{type: "result", data: {}}], chunkSize = 7) {
+  const bytes = Buffer.from(events.map(event => JSON.stringify(event)).join("\n") + "\n");
+  let offset = 0;
+  return {status: 200, ok: true, body: {getReader: () => ({
+    async read() {
+      if (offset >= bytes.length) return {done: true};
+      const value = bytes.subarray(offset, offset += chunkSize);
+      return {value, done: false};
+    },
+    releaseLock() {},
+  })}};
+}
+(async () => {
+  const s = state();
+  let resolve, calls = 0, signal;
+  s.context.fetch = (_url, options) => {
+    calls++; signal = options.signal; return new Promise(done => resolve = done);
+  };
+  const pending = s.context.poll();
+  await s.context.poll();
+  assert.equal(calls, 1, "overlapping request");
+  assert.equal(s.nodes["loading-status"].hidden, false);
+  assert(s.classes.has("loading"));
+  resolve(response([
+    {type: "progress", checks: ["containers", "slskd", "lidarr", "external", "storage", "inflight"]},
+    {type: "checked", check: "external"},
+    {type: "result", data: {detail: "é"}},
+  ], 1));
+  await pending;
+  assert.equal(s.rendered(), 1);
+  assert.equal(signal.aborted, false, "completed streams must not be cancelled");
+  assert.equal(s.snapshots[0].detail, "é", "UTF-8 characters must survive split chunks");
+  assert.equal(s.nodes["loading-status"].hidden, true);
+  assert.equal(s.classes.has("loading"), false);
+  assert.equal(s.nodes["loading-external"].className, "checked");
+  assert.equal(s.nodes["loading-slskd"].className, "running");
+  assert.equal(s.nodes["loading-external"].state.textContent, messages["loading.checked"]);
+  assert.equal(s.nodes["loading-progress"].textContent,
+    messages["loading.completed"].replace("{done}", "1").replace("{total}", "6"));
+  assert.equal(s.timers.size, 1, "only the next poll should remain scheduled");
+  const [nextId, next] = [...s.timers.entries()][0];
+  s.timers.delete(nextId);
+  s.context.fetch = async () => ({status: 503, ok: false});
+  await next.fn();
+  assert.equal(s.rendered(), 1, "failed refresh must not replace existing data");
+  assert.equal(s.nodes["loading-status"].hidden, true);
+  assert(s.classes.has("error"));
+  assert.equal(s.errors.length, 1);
+
+  const failed = state();
+  failed.context.fetch = async () => ({status: 503, ok: false});
+  await failed.context.poll();
+  assert.equal(failed.nodes["loading-title"].textContent, messages["updated.error"]);
+  assert.equal(failed.nodes["loading-spinner"].hidden, true);
+  assert.equal(failed.nodes["loading-status"].hidden, false);
+  failed.timers.clear();
+  failed.context.fetch = async () => response();
+  await failed.context.poll();
+  assert.equal(failed.nodes["loading-status"].hidden, true);
+  assert.equal(failed.classes.has("error"), false);
+
+  for (const events of [[{type: "error"}], [{type: "checked", check: "unknown"}], []]) {
+    const broken = state();
+    broken.context.fetch = async () => response(events);
+    await broken.context.poll();
+    assert.equal(broken.rendered(), 0, "invalid or incomplete stream must not render success");
+    assert(broken.classes.has("error"));
+    assert.equal(broken.nodes["loading-checks"].hidden, true);
+  }
+
+  const timeout = state();
+  timeout.context.fetch = (_url, options) => new Promise((_done, reject) => {
+    options.signal.addEventListener("abort", () => reject(new Error("request aborted")));
+  });
+  const waiting = timeout.context.poll();
+  const deadline = [...timeout.timers.values()].find(timer => timer.delay === 120000);
+  assert(deadline, "status request must have a two-minute deadline");
+  deadline.fn();
+  await waiting;
+  assert.equal(timeout.nodes["loading-title"].textContent, messages["updated.error"]);
+  assert(timeout.nodes["loading-detail"].textContent.includes("15"));
+  assert.equal(timeout.nodes["loading-spinner"].hidden, true);
+  assert.equal(timeout.timers.size, 1, "retry should remain scheduled");
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+    result = subprocess.run([node], input=code, text=True, capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 def test_index_de_byte_identical_sample(monkeypatch):

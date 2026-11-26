@@ -42,6 +42,11 @@ Kanalliste), damit ein frischer Clone nicht ungefragt Icecast anzapft.
   **Navidrome Smart Playlists (NSP)** in der richtigen Dekade. Die **Dekade**
   ist zuverlässig (über den Slug `energy80s` → 1980er + Clamp), das exakte Jahr
   ist best effort über MusicBrainz.
+  Fehlende Songs werden kanalübergreifend entdoppelt und in der gemeinsamen
+  Fehlliste abwechselnd je Kanal einsortiert, statt einen Kanal komplett vor den
+  nächsten zu stellen. Hat der Abgleich keine fehlenden Titel mehr und liegen
+  Beobachtungen aller aktiven Library-Kanäle vor, wird die alte Fehlliste geleert.
+  Unbeobachtete Kanäle gelten nicht als Nachweis für einen leeren Rückstand.
   - **Library-Match toleriert einen abschließenden `(Untertitel)`** (nur im
     Match-Key): der Titel auf der Platte darf einen beschreibenden Klammer-Zusatz
     tragen, den der Radio-Stream weglässt, sodass ein kurzer Stream-Titel
@@ -89,7 +94,24 @@ blockieren; ein Lese-Timeout begrenzt nur Pausen zwischen Datenpaketen.
 
 ## Aufbau der Pushover-Meldung
 
-Unter der Kopfzeile listet eine **Übersicht** jeden eigenen Kanal, jeden Feed und den Library-Teil mit seinen Zahlen (`Kanal ✅vorhanden ⬇fehlend`, `Thema ➡n`, `📚 Library ✅n ⬇n`). Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag. Bei sehr vielen Einträgen wechselt sie in eine einzeilige Kompaktform (`✅n ⬇n`); ab etwa 35 Einträgen endet die Zeile mit „ …“ (theoretische Grenze). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
+Die Übersicht trennt **Library**, **eigene Energy-Playlists** und **Energy-Feeds
+für charts-sync**. Jede Zahl erscheint dort nur einmal; darunter folgen die
+Songlisten. Die Feednamen sind Themen der Übergabe, keine Bestätigung eines
+Playlistnamens. Bei sehr vielen oder langen eigenen Playlists bzw. Feeds
+wechselt deren Übersicht auf kompakte Zahlen und kann mit „…“ enden. Der Text
+bleibt innerhalb von Pushovers 1024-Zeichen-Limit (HTML-escaped). Songlisten
+werden nur zwischen ganzen Einträgen gekürzt; nicht angezeigte fehlende Titel
+stehen in einer „… und N weitere“-Zeile.
+
+Die Feed-Zahl zeigt eindeutige Titel in der Übergabedatei, nicht gesammelte
+Spins. „Für charts-sync bereitgestellt“ bestätigt nur die geschriebene
+Übergabedatei, nicht deren Verarbeitung oder einen Playlist-Eintrag. Themen wie
+`mundart` und `charts` sind Energy-Übergaben; Apple und Deezer stehen in der
+Quellenübersicht der jeweiligen charts-sync-Meldung. Reine
+Feed-Läufe zeigen keine erfundenen Library-Abgleichzahlen. Die Library-Fehlzahl
+ist eine aktuelle Abgleich-Momentaufnahme und keine Zahl aktiver Downloads. Sie
+kann durch neu beobachtete Titel steigen und
+sinkt erst, wenn ein späterer Abgleich importierte Dateien erkennt.
 
 Im **library-Modus** werden wiederholte Spins desselben normalisierten
 Künstlers/Titels über Kanäle hinweg nur einmal als vorhanden oder fehlend

@@ -9,10 +9,12 @@ Format (see charts-sync/app/playlist.py -> write_missing):
      12. Ariana Grande - twilight zone          <- "  <pos>. <artist> - <title>"
       1. Remi Wolf - Bottle
 
-From this we extract (position, artist, title). Comment and blank lines are
-ignored.
+From this we extract (position, artist, title). Scene queues additionally use
+#SCENES: JSON comments to attach per-song source labels. Other comments and
+blank lines are ignored.
 """
 
+import json
 import logging
 import os
 import re
@@ -22,7 +24,10 @@ from .i18n import t
 logger = logging.getLogger(__name__)
 
 # "  12. Artist - Title"  ->  pos=12, rest="Artist - Title"
-_LINE_RE = re.compile(r"^\s*(\d{1,3})\.\s+(.*\S)\s*$")
+_LINE_RE = re.compile(r"^\s*(\d+)\.\s+(.*\S)\s*$")
+SCENE_MISSING_PATH = "/charts/.charts-scene-missing.txt"
+SCENE_SOURCE = ".charts-scene-missing"
+SCENE_LABEL_PREFIX = "Playlist: "
 
 
 def source_label(path: str) -> str:
@@ -33,6 +38,9 @@ def source_label(path: str) -> str:
     /charts/missing.txt           -> "charts"
     /charts/missing-mundart.txt   -> "mundart"
     /charts/missing-80er-90er.txt -> "80er-90er"
+
+    The shared scene filename remains an internal identifier here.
+    Its per-song #SCENES comments provide the actual display sources.
     """
     base = os.path.basename(path)
     name = base[:-4] if base.lower().endswith(".txt") else base
@@ -48,28 +56,51 @@ def parse_missing_file(path: str) -> list[tuple[int, str, str]]:
     Reads a missing file and returns (position, artist, title).
     Lines without " - " (no separable artist/title) are skipped.
     """
+    return [(pos, artist, title) for pos, artist, title, _sources in _parse_missing_entries(path)]
+
+
+def _parse_missing_entries(path: str) -> list[tuple[int, str, str, list[str]]]:
     if not os.path.isfile(path):
         logger.warning(t("download.missing.file_not_found", path=path))
         return []
 
-    entries: list[tuple[int, str, str]] = []
+    scene_queue = source_label(path) == SCENE_SOURCE
+    default_sources = [SCENE_LABEL_PREFIX + t("download.source.scene_tracks")
+                       if scene_queue else source_label(path)]
+    sources = default_sources
+    entries: list[tuple[int, str, str, list[str]]] = []
     with open(path, "r", encoding="utf-8") as fh:
-        for line in fh:
+        for line_number, line in enumerate(fh, 1):
+            if scene_queue and line.startswith("#SCENES:"):
+                try:
+                    scenes = json.loads(line.removeprefix("#SCENES:").strip())
+                    if (not isinstance(scenes, list) or not scenes
+                            or any(not isinstance(scene, str) or not 1 <= len(scene.strip()) <= 80
+                                   or any(ord(char) < 32 for char in scene) for scene in scenes)):
+                        raise ValueError("Invalid scene names")
+                    sources = list(dict.fromkeys(SCENE_LABEL_PREFIX + scene.strip() for scene in scenes))
+                except ValueError:
+                    logger.error(t("download.missing.invalid_scenes", path=path, line=line_number))
+                    sources = []
+                continue
             if line.lstrip().startswith("#") or not line.strip():
                 continue
             m = _LINE_RE.match(line)
             if not m:
+                sources = default_sources
                 continue
             pos = int(m.group(1))
             rest = m.group(2)
             if " - " not in rest:
                 logger.debug(t("download.missing.no_separator", line=repr(line.strip())))
+                sources = default_sources
                 continue
             artist, _, title = rest.partition(" - ")
             artist = artist.strip()
             title = title.strip()
-            if artist and title:
-                entries.append((pos, artist, title))
+            if artist and title and sources:
+                entries.append((pos, artist, title, sources))
+            sources = default_sources
     return entries
 
 
@@ -96,8 +127,7 @@ def load_all(paths: list[str]) -> list[tuple[int, str, str, list[str]]]:
     result: list[tuple[int, str, str, list[str]]] = []
     excluded_count = 0
     for path in paths:
-        label = source_label(path)
-        for pos, artist, title in parse_missing_file(path):
+        for pos, artist, title, labels in _parse_missing_entries(path):
             # NEVER load globally excluded artists (see config.EXCLUDE_ARTISTS).
             # The song is not even added to the download pipeline.
             if is_excluded_artist(artist, config.EXCLUDE_ARTISTS):
@@ -109,11 +139,10 @@ def load_all(paths: list[str]) -> list[tuple[int, str, str, list[str]]]:
                 # Song already seen in an earlier file: add this file's label
                 # (if new) to its source list, keeping first-seen order.
                 sources = result[seen[key]][3]
-                if label not in sources:
-                    sources.append(label)
+                sources.extend(label for label in labels if label not in sources)
                 continue
             seen[key] = len(result)
-            result.append((pos, artist, title, [label]))
+            result.append((pos, artist, title, list(labels)))
 
     result.sort(key=lambda e: e[0])
     if excluded_count:

@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from app import config, feed
+from app import config, feed, main, state
 
 
 @pytest.fixture(autouse=True)
@@ -61,3 +61,23 @@ def test_two_channels_same_theme_merge_dedupe_order(tmp_charts):
     assert titles.count("Same Song") == 1
     # Ordered first_seen descending.
     assert titles == ["Bed Of Roses", "Rain", "Same Song"]
+
+
+def test_notification_reports_unique_handoff_count(tmp_charts, monkeypatch):
+    channels = [config.Channel(slug="energyhits", mode="feed", theme="charts")]
+    monkeypatch.setattr(config, "active_channels", lambda: channels)
+    monkeypatch.setattr(state, "load", lambda: {})
+    monkeypatch.setattr(state, "tracks_for", lambda *_: [
+        _t("Artist", "Song", "2026-07-01T10:00:00+00:00"),
+        _t("ARTIST", "SONG", "2026-07-01T11:00:00+00:00"),
+    ])
+    monkeypatch.setattr(main.library, "build_index", lambda *_: object())
+    notifications = []
+    monkeypatch.setattr(main, "_notify",
+                        lambda own, feeds, library: notifications.extend(feeds))
+
+    main.run_match()
+
+    payload = json.loads((tmp_charts / ".charts-energy-feed-charts.json").read_text())
+    assert len(payload["tracks"]) == 1
+    assert notifications == [{"theme": "charts", "count": 1}]

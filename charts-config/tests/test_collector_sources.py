@@ -76,20 +76,21 @@ def test_deezer_playlists_success(monkeypatch):
                     "source": "123", "limit": "all", "enabled": True}
 
 
-def test_apple_chart_returns_country_snippet_and_preview(monkeypatch):
+@pytest.mark.parametrize("country", ["ch", "fr"])
+def test_apple_chart_returns_country_snippet_and_preview(monkeypatch, country):
     calls = []
     _patch_get(monkeypatch, capture=calls, resp=_FakeResp(200, {"feed": {"results": [
         {"artistName": "Artist A", "name": "Song A"},
         {"artistName": "Artist B", "name": "Song B"},
     ]}}))
-    out = collector.apple_chart_check(" CH ", 1)
+    out = collector.apple_chart_check(f" {country.upper()} ", 1)
     assert out["ok"] is True
     assert out["sample"] == ["Artist A - Song A"]
     assert out["count"] == 1
     assert json.loads(out["snippet"]) == {
-        "service": "apple", "country": "ch", "limit": 1, "enabled": True}
+        "service": "apple", "country": country, "limit": 1, "enabled": True}
     assert calls[0][0] == (
-        "https://rss.marketingtools.apple.com/api/v2/ch/music/most-played/100/songs.json")
+        f"https://rss.marketingtools.apple.com/api/v2/{country}/music/most-played/100/songs.json")
 
 
 @pytest.mark.parametrize("country,limit", [("../ch", 100), ("", 100), ("ch", 0), ("ch", 101)])

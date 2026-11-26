@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from app import backfill, config, resolve
+from app import backfill, config, metadata_report, resolve
 from app.resolve import ResolvedMeta
 
 
@@ -180,3 +180,120 @@ def test_non_manifest_file_skipped(tmp_path, monkeypatch):
     assert seen["artists"] == ["Chart Artist"]
     assert _read(mani, "date") == "1991"       # manifest song filled
     assert _read(curated, "date") == ""        # curated file untouched
+
+
+def test_missing_year_retries_after_cooldown_even_with_partial_metadata(library, monkeypatch):
+    music, path = library
+    clock = [1_000_000.0]
+    monkeypatch.setattr(backfill.time, "time", lambda: clock[0])
+    monkeypatch.setattr(config, "METADATA_BACKFILL_MAX_TRIES", 2)
+    calls = []
+
+    def lookup(artist, title, *, refresh=False):
+        calls.append(refresh)
+        if refresh:
+            return ResolvedMeta(year="1991")
+        return ResolvedMeta(album="Real Album")
+
+    monkeypatch.setattr(resolve, "resolve_metadata", lookup)
+    backfill._metadata_pass(music)
+    backfill._metadata_pass(music)
+    assert _read(path, "date") == ""
+    assert calls == [False, False]
+
+    backfill._metadata_pass(music)
+    clock[0] += 30 * 86400 - 1
+    backfill._metadata_pass(music)
+    assert calls == [False, False]
+
+    clock[0] += 1
+    backfill._metadata_pass(music)
+    assert calls == [False, False, True]
+    assert _read(path, "date") == "1991"
+
+
+def test_legacy_settled_missing_year_gets_cooldown(library, monkeypatch):
+    music, path = library
+    clock = [1_000_000.0]
+    monkeypatch.setattr(backfill.time, "time", lambda: clock[0])
+    rel = os.path.relpath(path, music)
+    backfill._save_meta_state(music, {
+        rel: {"done": True, "mtime": backfill._file_mtime(path), "tries": 6}
+    })
+    calls = []
+
+    def lookup(artist, title, *, refresh=False):
+        calls.append(refresh)
+        return ResolvedMeta(year="1987")
+
+    monkeypatch.setattr(resolve, "resolve_metadata", lookup)
+    backfill._metadata_pass(music)
+    assert calls == []
+    clock[0] += 30 * 86400
+    backfill._metadata_pass(music)
+    assert calls == [True]
+    assert _read(path, "date") == "1987"
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_due_retry_waits_when_resolver_cannot_run(library, monkeypatch, disabled):
+    music, path = library
+    clock = [1_000_000.0]
+    monkeypatch.setattr(backfill.time, "time", lambda: clock[0])
+    rel = os.path.relpath(path, music)
+    record = {"done": True, "mtime": backfill._file_mtime(path), "tries": 6,
+              "year_retry_after": clock[0]}
+    backfill._save_meta_state(music, {rel: record})
+    monkeypatch.setattr(resolve, "deezer_budget_available", lambda: False)
+    monkeypatch.setattr(resolve, "mb_budget_available", lambda: False)
+    if disabled:
+        monkeypatch.setattr(config, "IMPORT_RESOLVE_ENABLED", False)
+        monkeypatch.setattr(resolve, "deezer_budget_available", lambda: True)
+    monkeypatch.setattr(resolve, "resolve_metadata",
+                        lambda *a, **kw: pytest.fail("No source budget"))
+    backfill._metadata_pass(music)
+    assert backfill._load_meta_state(music)[rel] == record
+
+
+def test_manual_year_is_not_overwritten_at_retry(library, monkeypatch):
+    music, path = library
+    clock = [1_000_000.0]
+    monkeypatch.setattr(backfill.time, "time", lambda: clock[0])
+    _tag(path, date="1985", album="Original", tracknumber="1")
+    rel = os.path.relpath(path, music)
+    backfill._save_meta_state(music, {rel: {
+        "done": True, "mtime": backfill._file_mtime(path), "tries": 6,
+        "year_retry_after": clock[0],
+    }})
+    monkeypatch.setattr(resolve, "resolve_metadata",
+                        lambda *a, **kw: pytest.fail("Complete file needs no lookup"))
+    backfill._metadata_pass(music)
+    assert _read(path, "date") == "1985"
+
+
+def test_report_lists_missing_fields_and_unreadable_files(library, monkeypatch, tmp_path):
+    music, path = library
+    broken = os.path.join(music, "broken.mp3")
+    monkeypatch.setattr(metadata_report, "build_manifest_index",
+                        lambda root, strict: {"a": [path, broken]})
+    report = metadata_report.build(music)
+    assert report["checked"] == 2
+    assert report["songs"] == [
+        {"path": "A/T.mp3", "artist": "A", "title": "T",
+         "missing": ["year", "track"]},
+        {"path": "broken.mp3", "unreadable": True},
+    ]
+    metadata_report.publish(music, str(tmp_path))
+    with open(tmp_path / metadata_report.REPORT_NAME, encoding="utf-8") as fh:
+        assert json.load(fh)["songs"] == report["songs"]
+
+
+def test_report_does_not_replace_previous_snapshot_on_invalid_manifest(library, tmp_path):
+    music, _ = library
+    report_path = tmp_path / metadata_report.REPORT_NAME
+    report_path.write_text("previous", encoding="utf-8")
+    with open(config.MANIFEST_FILE, "w", encoding="utf-8") as fh:
+        json.dump({"entries": []}, fh)
+    with pytest.raises(ValueError):
+        metadata_report.publish(music, str(tmp_path))
+    assert report_path.read_text(encoding="utf-8") == "previous"

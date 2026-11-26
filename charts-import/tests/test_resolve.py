@@ -387,6 +387,32 @@ def _hit(track_id, album_id, album_title, artist="A", title="Song"):
             "album": {"id": album_id, "title": album_title}}
 
 
+def test_deezer_refresh_bypasses_cached_miss_without_rewriting_cache(monkeypatch):
+    search = {"data": [_hit(1, 10, "Album")]}
+    albums = {10: {"id": 10, "title": "Album", "record_type": "album",
+                   "release_date": "1996-01-01", "artist": {"name": "A"}}}
+    tracks = {1: {"id": 1, "release_date": "1996-03-01", "track_position": 2}}
+    _meta_client(monkeypatch, search, albums, tracks)
+    key = deezer._meta_key("A", "Song")
+    deezer._cache[key] = []
+    assert deezer.resolve_release_meta("A", "Song").year == ""
+    assert deezer.resolve_release_meta("A", "Song", refresh=True).year == "1996"
+    assert deezer._cache[key] == []
+
+
+def test_musicbrainz_refresh_bypasses_cached_miss_without_rewriting_cache(monkeypatch):
+    monkeypatch.setattr(config, "MB_ENABLED", True)
+    key = "meta|" + mbyear._key("A", "Song")
+    monkeypatch.setattr(mbyear, "_cache", {key: []})
+    monkeypatch.setattr(mbyear, "_mb_fetch", lambda a, t: ({"recordings": []}, True))
+    monkeypatch.setattr(mbyear, "_reduce_year", lambda data: "1996")
+    monkeypatch.setattr(mbyear, "_reduce_album", lambda data: ("", ""))
+    resolve.reset_run_budget()
+    assert mbyear.resolve_mb_meta("A", "Song").year == ""
+    assert mbyear.resolve_mb_meta("A", "Song", refresh=True).year == "1996"
+    assert mbyear._cache[key] == []
+
+
 # BAD cases -> album left empty.
 
 def test_meta_rejects_va_album_by_id(monkeypatch):

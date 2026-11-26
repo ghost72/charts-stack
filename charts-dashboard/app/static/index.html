@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-dashboard</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=flow22">
+<link rel="stylesheet" href="/static/style.css?v=flow24">
 </head>
 <body>
 <header>
@@ -17,12 +17,28 @@
     </span>
   </div>
   <div class="meta">
-    <span class="live"><span class="live-dot"></span><span id="updated" data-i18n="updated.loading">loading…</span></span>
+    <span class="live loading"><span class="live-dot"></span><span id="updated" data-i18n="updated.loading">loading…</span></span>
     <a class="logout" href="/logout" data-i18n="logout">⎋ Log out</a>
   </div>
 </header>
 
 <main>
+  <div id="loading-status" class="loading-status" role="status" aria-live="polite">
+    <span id="loading-spinner" class="loading-spinner" aria-hidden="true"></span>
+    <div class="loading-content">
+      <strong id="loading-title" data-i18n="loading.title">Loading dashboard status</strong>
+      <p id="loading-detail" data-i18n="loading.detail">Checking containers, connections and storage. The first check may take longer.</p>
+      <ul id="loading-checks" class="loading-checks" hidden>
+        <li id="loading-containers"><span data-i18n="loading.check.containers">Containers</span><span class="check-state"></span></li>
+        <li id="loading-slskd"><span data-i18n="loading.check.slskd">slskd connection</span><span class="check-state"></span></li>
+        <li id="loading-lidarr"><span data-i18n="loading.check.lidarr">Lidarr connection</span><span class="check-state"></span></li>
+        <li id="loading-external"><span data-i18n="loading.check.external">External services</span><span class="check-state"></span></li>
+        <li id="loading-storage"><span data-i18n="loading.check.storage">Storage &amp; inventory</span><span class="check-state"></span></li>
+        <li id="loading-inflight"><span data-i18n="loading.check.inflight">In-progress data</span><span class="check-state"></span></li>
+      </ul>
+      <p id="loading-progress" class="loading-progress" hidden></p>
+    </div>
+  </div>
   <section>
     <h2 data-i18n="section.services">⚙️ Services</h2>
     <div id="services"></div>
@@ -1078,13 +1094,108 @@ function nextRunLabel(iso) {
   return `${wd}, ${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-async function tick() {
-  const live = document.querySelector(".live");
+let statusPending = false;
+let hasStatus = false;
+const STATUS_CHECKS = ["containers", "slskd", "lidarr", "external", "storage", "inflight"];
+
+async function readStatusStream(response, progress) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "", snapshot;
   try {
-    const r = await fetch("/api/status", {cache: "no-store"});
+    while (true) {
+      const {value, done} = await reader.read();
+      buffer += decoder.decode(value, {stream: !done});
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      if (done && buffer.trim()) { lines.push(buffer); buffer = ""; }
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === "error") throw new Error("Status collection failed");
+        if (event.type === "result") {
+          if (!event.data || typeof event.data !== "object" || Array.isArray(event.data) ||
+              snapshot !== undefined) throw new Error("Invalid status snapshot");
+          snapshot = event.data;
+        } else if (event.type === "progress" || event.type === "checked") {
+          progress(event);
+        } else throw new Error("Invalid status event");
+      }
+      if (done) break;
+    }
+    if (snapshot === undefined) throw new Error("Status stream ended without a snapshot");
+    return snapshot;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function tick() {
+  if (statusPending) return;
+  statusPending = true;
+  const live = document.querySelector(".live");
+  const loading = document.getElementById("loading-status");
+  const spinner = document.getElementById("loading-spinner");
+  const checks = document.getElementById("loading-checks");
+  const progress = document.getElementById("loading-progress");
+  const checked = new Set();
+  const showProgress = event => {
+    if (event.type === "progress") {
+      if (!Array.isArray(event.checks) || event.checks.length !== STATUS_CHECKS.length ||
+          new Set(event.checks).size !== STATUS_CHECKS.length ||
+          event.checks.some(key => !STATUS_CHECKS.includes(key))) {
+        throw new Error("Invalid status check list");
+      }
+      for (const key of event.checks) {
+        const row = document.getElementById("loading-" + key);
+        row.className = "running";
+        row.querySelector(".check-state").textContent = t("loading.running");
+      }
+    } else {
+      if (!STATUS_CHECKS.includes(event.check)) throw new Error("Invalid status check");
+      checked.add(event.check);
+      const row = document.getElementById("loading-" + event.check);
+      row.className = "checked";
+      row.querySelector(".check-state").textContent = t("loading.checked");
+    }
+    progress.textContent = t("loading.completed", {done: checked.size, total: STATUS_CHECKS.length});
+  };
+  const started = Date.now();
+  const controller = new AbortController();
+  let streamFinished = false;
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  if (live) {
+    live.classList.remove("error");
+    live.classList.add("loading");
+  }
+  if (!hasStatus) {
+    loading.hidden = false;
+    spinner.hidden = false;
+    checks.hidden = false;
+    progress.hidden = false;
+    for (const key of STATUS_CHECKS) {
+      const row = document.getElementById("loading-" + key);
+      row.className = "";
+      row.querySelector(".check-state").textContent = t("loading.waiting");
+    }
+    progress.textContent = t("loading.completed", {done: 0, total: STATUS_CHECKS.length});
+    document.getElementById("loading-title").textContent = t("loading.title");
+    document.getElementById("loading-detail").textContent = t("loading.detail");
+    document.getElementById("updated").textContent = t("updated.loading");
+  }
+  const elapsed = setInterval(() => {
+    if (!hasStatus) document.getElementById("updated").textContent =
+      t("loading.elapsed", {seconds: Math.floor((Date.now() - started) / 1000)});
+  }, 5000);
+  try {
+    const r = await fetch("/api/status/stream", {cache: "no-store", signal: controller.signal});
     if (r.status === 401) { location.href = "/login"; return; }
     if (!r.ok) throw new Error("HTTP " + r.status);
-    render(await r.json());
+    const snapshot = await readStatusStream(r, showProgress);
+    streamFinished = true;
+    render(snapshot);
+    hasStatus = true;
+    loading.hidden = true;
     // Success -> live dot green (pulsing). render() sets the timestamp.
     if (live) live.classList.remove("error");
   } catch (e) {
@@ -1092,12 +1203,27 @@ async function tick() {
     // Error -> live dot red (no longer pulsing). Signals that the data is NOT
     // fresh.
     if (live) live.classList.add("error");
+    if (!hasStatus) {
+      spinner.hidden = true;
+      checks.hidden = true;
+      progress.hidden = true;
+      document.getElementById("loading-title").textContent = t("updated.error");
+      document.getElementById("loading-detail").textContent =
+        t("loading.retry", {seconds: REFRESH});
+    }
+    console.error("Dashboard status request failed", e);
+  } finally {
+    if (!streamFinished) controller.abort();
+    clearTimeout(timeout);
+    clearInterval(elapsed);
+    if (live) live.classList.remove("loading");
+    statusPending = false;
+    setTimeout(tick, REFRESH * 1000);
   }
 }
 
 applyStaticI18n();   // populate the static head/body markup once on load
 tick();
-setInterval(tick, REFRESH * 1000);
 </script>
 </body>
 </html>

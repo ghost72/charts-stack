@@ -20,7 +20,9 @@ Position in the chain:
 """
 
 import logging
+import os
 import time
+from html import escape
 
 from . import (config, manifest, missing, notify, notify_budget, slsk, state,
                status)
@@ -57,7 +59,7 @@ def _interleave_by_source(entries: list[tuple[int, str, str, list[str]]]
     buckets: dict[str, list[tuple[int, str, str, list[str]]]] = {}
     order: list[str] = []
     for e in entries:
-        src = e[3][0]
+        src = _fairness_source(e[3][0])
         if src not in buckets:
             buckets[src] = []
             order.append(src)
@@ -73,21 +75,29 @@ def _interleave_by_source(entries: list[tuple[int, str, str, list[str]]]
     return interleaved
 
 
+def _fairness_source(source: str) -> str:
+    # Named scenes retain the existing shared queue's scheduling and quota.
+    return missing.SCENE_SOURCE if source.startswith(missing.SCENE_LABEL_PREFIX) else source
+
+
+def _load_entries() -> list[tuple[int, str, str, list[str]]]:
+    scene_paths = [path for path in config.MISSING_FILES
+                   if missing.source_label(path) == missing.SCENE_SOURCE]
+    paths = [path for path in config.MISSING_FILES
+             if missing.source_label(path) != missing.SCENE_SOURCE]
+    paths.extend(path for path in dict.fromkeys([missing.SCENE_MISSING_PATH, *scene_paths])
+                 if os.path.isfile(path))
+    return missing.load_all(paths)
+
+
 def run_once() -> dict:
-    """
-    Runs a single search/download pass.
-    Returns: counter dict for the status/dashboard module.
-    """
+    """Run one search/download pass and return status counters."""
     logger.info(t("download.run.start", dry_run="1" if config.DRY_RUN else "0"))
 
-    entries = missing.load_all(config.MISSING_FILES)
+    entries = _load_entries()
     if not entries:
         logger.info(t("download.run.no_missing"))
         return {"enqueued": 0, "retried": 0, "missing": 0}
-
-    # Fairness: interleave the sources so a long/hard source (Mundart) cannot
-    # monopolize the MAX_PER_RUN slots and starve the findable chart songs.
-    entries = _interleave_by_source(entries)
 
     try:
         client = slsk.connect()
@@ -96,6 +106,20 @@ def run_once() -> dict:
         raise
 
     st = state.load()
+    energy_source = missing.source_label(config.ENERGY_LIBRARY_MISSING_FILE)
+    energy_entries = [entry for entry in entries if entry[3][0] == energy_source]
+    if any(missing.source_label(path) == energy_source and os.path.isfile(path)
+           for path in config.MISSING_FILES):
+        state.prune_energy_search_order(st, energy_entries)
+    # Keep chart positions unchanged; only the shared Energy library queue
+    # rotates by the last actual search, including across container restarts.
+    energy_entries.sort(key=lambda entry: state.energy_search_order(
+        st, entry[1], entry[2]))
+    energy_iter = iter(energy_entries)
+    entries = [next(energy_iter) if entry[3][0] == energy_source else entry
+               for entry in entries]
+    # Fairness between sources still applies after ordering the Energy queue.
+    entries = _interleave_by_source(entries)
 
     # First: release failed downloads from the state so they are searched/loaded
     # again in this run. Failed transfers in slskd are cleaned up in the process.
@@ -129,6 +153,7 @@ def run_once() -> dict:
         # Primary source drives fairness/logging; the full list is used only for
         # the manifest + message label (so every contributing playlist shows up).
         source = sources[0]
+        budget_source = _fairness_source(source)
         # Combined label for the Pushover messages, e.g. "charts+hitparade".
         label = "+".join(sources)
         if processed >= config.MAX_PER_RUN:
@@ -143,7 +168,7 @@ def run_once() -> dict:
         # for this run, skip the rest of that source (they are retried next
         # run) so other sources are not starved. Does not consume a global slot.
         if config.MAX_PER_SOURCE > 0 \
-                and per_source_done.get(source, 0) >= config.MAX_PER_SOURCE:
+                and per_source_done.get(budget_source, 0) >= config.MAX_PER_SOURCE:
             continue
 
         # Recently searched without success? Then skip WITHOUT consuming one of
@@ -155,7 +180,7 @@ def run_once() -> dict:
             continue
 
         processed += 1
-        per_source_done[source] = per_source_done.get(source, 0) + 1
+        per_source_done[budget_source] = per_source_done.get(budget_source, 0) + 1
         logger.info(t("download.song.searching", pos=pos, source=source,
                       artist=artist, title=title))
 
@@ -180,6 +205,8 @@ def run_once() -> dict:
             break
         # A real search (slskd responded) has run.
         searched += 1
+        if not config.DRY_RUN and source == energy_source:
+            state.mark_energy_search(st, artist, title)
         if not candidates:
             empty_results += 1
             logger.info(t("download.song.no_match", min=config.MIN_BITRATE,
@@ -274,8 +301,7 @@ def _requeue_failed(client, st: dict) -> tuple[int, list[tuple[str, str]]]:
         logger.info(t("download.requeue.dry_run", count=len(failed_keys)))
         return 0, []
 
-    # Collect the clean artist/title BEFORE popping the entries, so the message
-    # can list exactly which songs were re-downloaded.
+    # Collect artist/title before releasing the entries for another search.
     retried_songs: list[tuple[str, str]] = []
     for key in failed_keys:
         entry = requested.get(key)
@@ -311,7 +337,7 @@ def _breakdown(items: list[tuple[str, str]]) -> str:
     counts: dict[str, int] = {}
     for label, _ in items:
         counts[label] = counts.get(label, 0) + 1
-    parts = [t("download.breakdown.item", count=n, label=label)
+    parts = [t("download.breakdown.item", count=n, label=escape(label))
              for label, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
     # "" for a single playlist (the group block below carries label + count).
     return notify_budget.overview_line(parts)
@@ -320,6 +346,26 @@ def _breakdown(items: list[tuple[str, str]]) -> str:
 def _breakdown_lines(items: list[tuple[str, str]]) -> list[str]:
     """Italic breakdown lines (each line on its own, tags never span lines)."""
     return [f"<i>{line}</i>" for line in _breakdown(items).split("\n") if line]
+
+
+def _group_emoji(label: str) -> str:
+    """Choose a recognizable icon for the source heading in download pushes."""
+    if label.casefold().startswith(missing.SCENE_LABEL_PREFIX.casefold()):
+        return "🎸"
+    return {
+        "charts": "🔥",
+        "energy-library": "⚡",
+        "flashback": "📻",
+        "hitparade": "🏆",
+        "manuell": "🙋",
+        "mundart": "🇨🇭",
+        "recommend": "🎧",
+        "upgrade": "⬆️",
+        "upload": "📤",
+        "youtube": "📺",
+    }.get(label.casefold(), "🎵")
+
+
 def _summary_and_notify(planned: list[tuple[str, str]],
                         enqueued: list[tuple[str, str]],
                         retried: int,
@@ -345,8 +391,10 @@ def _summary_and_notify(planned: list[tuple[str, str]],
                 header.append(t("download.notify.enqueued_header", count=len(enqueued)))
                 header.extend(_breakdown_lines(enqueued))
             if retried:
+                if header:
+                    header.append("")
                 header.append(t("download.notify.retried_header", count=retried))
-            # List the re-downloaded songs as a second group, mirroring the
+            # List the released songs as a second group, mirroring the
             # enqueued block but with artist/title-only lines (no #pos, no source
             # label - a retried song carries no meaningful chart position). The
             # group header's {count} is the full retried total even if the list
@@ -385,7 +433,7 @@ def _notify(title: str, header: list[str], items: list[tuple[str, str]]) -> None
         # Blank line before each group (also after the header).
         blocks.append(notify_budget.Block(
             entries=[notify_budget.Entry([text]) for text in take],
-            header=["", f"<b>{label}</b>"]))
+            header=["", f"{_group_emoji(label)} <b>{escape(label)}</b>"]))
     if blocks:
         # Songs beyond the cap are reported through the one global line.
         blocks[-1].hidden = len(items) - taken

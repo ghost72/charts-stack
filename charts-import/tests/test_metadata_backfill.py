@@ -7,7 +7,7 @@ test_mtime_preserve.py) + a monkeypatched resolve.resolve_metadata. They pin:
     MB-style fallback (track empty),
   * the never-overwrite rule (existing curated album / present year / positive
     track left untouched),
-  * album == title treated as a fillable placeholder,
+  * album == title is a present, trusted value,
   * a compilation album never written,
   * the YouTube-marker year-replacement exception + marker clear,
   * the TXXX:CHARTS_SOURCE marker surviving strip_provenance_tags,
@@ -92,9 +92,8 @@ def test_missing_year_filled_from_deezer(mp3):
 # --- 2. missing-fields fill via MB fallback (no track) ----------------------
 
 def test_missing_fields_filled_mb_no_track(mp3):
-    # album == title placeholder + no year + no track; MB-style meta has year +
-    # album but NO track -> year + album written, track stays absent.
-    _tag(mp3, artist="A", title="T", album="T")
+    # Missing album/year/track; MB-style meta has year + album but NO track.
+    _tag(mp3, artist="A", title="T")
     res = _run(mp3, ResolvedMeta(year="1985", album="Studio Album", track=""))
     assert res.year_filled and res.album_filled
     assert res.track_filled is False
@@ -121,22 +120,23 @@ def test_present_real_album_never_overwritten(mp3):
     assert _read_easy(mp3, "album") == "Singles Collection"
 
 
-# --- 5. album == title is fillable ------------------------------------------
+# --- 5. album == title is already populated --------------------------------
 
-def test_album_equal_title_is_fillable(mp3):
+def test_album_equal_title_is_not_overwritten(mp3):
     _tag(mp3, artist="A", title="Be My Baby", album="Be My Baby", date="1963")
     res = _run(mp3, ResolvedMeta(year="1963", album="Variations", track=""))
-    assert res.album_filled is True
-    assert _read_easy(mp3, "album") == "Variations"
+    assert res.album_filled is False
+    assert res.changed is False
+    assert _read_easy(mp3, "album") == "Be My Baby"
 
 
 # --- 6. compilation album is never written ----------------------------------
 
 def test_compilation_album_not_written(mp3):
-    _tag(mp3, artist="A", title="T", album="T", date="2000")
+    _tag(mp3, artist="A", title="T", album="", date="2000")
     res = _run(mp3, ResolvedMeta(year="2000", album="Bravo Hits 42", track=""))
     assert res.album_filled is False
-    assert _read_easy(mp3, "album") == "T"  # left as the title placeholder
+    assert _read_easy(mp3, "album") == ""
 
 
 # --- 6b. junk album (stale cache) is never written (defence-in-depth) -------
@@ -146,10 +146,10 @@ def test_junk_album_not_written(mp3):
     # must be rejected by the last-gate junk guard even though it is not a
     # title-marked compilation.
     for junk in ("c", "Various Artists", "various"):
-        _tag(mp3, artist="A", title="T", album="T", date="2000")
+        _tag(mp3, artist="A", title="T", album="", date="2000")
         res = _run(mp3, ResolvedMeta(year="2000", album=junk, track=""))
         assert res.album_filled is False, junk
-        assert _read_easy(mp3, "album") == "T", junk  # placeholder kept
+        assert _read_easy(mp3, "album") == "", junk
 
 
 # --- 7. never-overwrite a present track; fill an absent one -----------------
@@ -231,12 +231,12 @@ def test_youtube_replacement_preserves_mtime(mp3):
 # --- dry-run writes nothing -------------------------------------------------
 
 def test_dry_run_writes_nothing(mp3):
-    _tag(mp3, artist="A", title="T", album="T")
+    _tag(mp3, artist="A", title="T")
     res = _run(mp3, ResolvedMeta(year="1991", album="Studio Album", track="3"),
                dry_run=True)
     assert res.changed is True            # it WOULD change
     assert _read_easy(mp3, "date") == ""  # but nothing was written
-    assert _read_easy(mp3, "album") == "T"
+    assert _read_easy(mp3, "album") == ""
 
 
 # --- 11. album provenance marker stamped on a fill --------------------------
@@ -251,7 +251,7 @@ def _run_rc(path, meta, dry_run=False):
 def test_album_fill_stamps_marker_and_survives_strip(mp3):
     # Filling a missing album stamps TXXX:CHARTS_ALBUM_SRC=resolver so the file
     # becomes eligible for future marker-gated re-correction.
-    _tag(mp3, artist="A", title="T", album="T", date="1990")
+    _tag(mp3, artist="A", title="T", date="1990")
     res = _run(mp3, ResolvedMeta(year="1990", album="Studio Album", track=""))
     assert res.album_filled is True
     assert tags.read_charts_album_src(mp3) == "resolver"

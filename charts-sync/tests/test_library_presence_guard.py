@@ -20,6 +20,64 @@ from app import config, deezer, library, main, playlist, presence
 from app.deezer import ChartTrack
 
 
+def test_invalid_genre_retains_matching_metadata_and_reports_error(monkeypatch, caplog):
+    tags = {"artist": ["Artist"], "title": ["Song"], "album": ["Album"],
+            "albumartist": ["Artist"], "genre": ["Bad\nGenre"]}
+    monkeypatch.setattr(library, "MutagenFile", lambda *_args, **_kwargs: tags)
+    assert library._read_tags("file.mp3") == ("Artist", "Song", "Album", "Artist", [], True)
+    assert "Could not read genre metadata" in caplog.text
+    tags["genre"] = ["R&B", "Pop/Rock;ROCK", "rock"]
+    assert library._read_tags("file.mp3")[4:] == (["R&B", "Pop/Rock", "ROCK"], False)
+    tags["genre"] = [None]
+    assert library._read_tags("file.mp3") == ("Artist", "Song", "Album", "Artist", [], True)
+
+
+def test_numeric_mp4_genres_use_the_real_easy_tag_wrapper(monkeypatch):
+    import io
+    import struct
+    from mutagen.easymp4 import EasyMP4Tags
+    from mutagen.mp4 import Atoms
+    def atom(name, data):
+        return struct.pack(">I4s", len(data) + 8, name) + data
+    genre_atom = atom(b"gnre", atom(b"data", b"\0" * 8 + struct.pack(">H", 18)))
+    metadata = atom(b"moov", atom(b"udta", atom(b"meta", b"\0" * 4 + atom(b"ilst", genre_atom))))
+    stream = io.BytesIO(metadata)
+    audio = EasyMP4Tags()
+    audio.load(Atoms(stream), stream)
+    assert audio["genre"] == ["Rock"]
+    monkeypatch.setattr(library, "MutagenFile", lambda *_args, **_kwargs: audio)
+    assert library._read_tags("file.m4a")[4:] == (["Rock"], False)
+
+def test_id3_genre_codes_are_decoded_but_plain_number_tags_are_not(tmp_path, monkeypatch):
+    import wave
+    from mutagen.wave import WAVE
+    from mutagen.id3 import TCON
+    path = tmp_path / "coded.wav"
+    with wave.open(str(path), "wb") as output:
+        output.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+        output.writeframes(b"\0" * 32)
+    tagged = WAVE(path)
+    tagged.add_tags()
+    tagged.tags.add(TCON(encoding=3, text=["(13)", "17"]))
+    tagged.save()
+    before = path.read_bytes()
+    assert library._read_tags(str(path))[4:] == (["Pop", "Rock"], False)
+    assert path.read_bytes() == before
+    monkeypatch.setattr(library, "MutagenFile", lambda *_args, **_kwargs: {"genre": ["13"]})
+    assert library._read_tags("plain-text-genre.flac")[4:] == (["13"], False)
+
+
+def test_unavailable_or_partial_library_scan_does_not_publish_an_empty_index(tmp_path, monkeypatch):
+    with pytest.raises(FileNotFoundError, match="unavailable"):
+        library.build_index(str(tmp_path / "missing"))
+    def denied_walk(_root, *, onerror):
+        onerror(PermissionError("unreadable album directory"))
+        return iter(())
+    monkeypatch.setattr(library.os, "walk", denied_walk)
+    with pytest.raises(PermissionError, match="unreadable"):
+        library.build_index(str(tmp_path))
+
+
 @pytest.fixture(autouse=True)
 def tmp_dirs(tmp_path, monkeypatch):
     music = tmp_path / "Music"
@@ -121,7 +179,7 @@ def test_playlist_links_artist_release_not_compilation(
         str(sampler): (compilation_artist, "Paparazzi", "Bravo Hits 67", "Various Artists"),
         str(single): ("Lady Gaga", "Paparazzi", "Paparazzi", "Lady Gaga"),
     }
-    monkeypatch.setattr(library, "_read_tags", tags.__getitem__)
+    monkeypatch.setattr(library, "_read_tags", lambda path: (*tags[path], [], False))
     monkeypatch.setattr(config, "IGNORE_COMPILATIONS", ignore_compilations)
 
     assert _run_one_source(monkeypatch, [ChartTrack(1, "Lady Gaga", "Paparazzi")]) == "ok"

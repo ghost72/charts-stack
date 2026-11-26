@@ -178,6 +178,15 @@ async def api_sources_deezer_artists(request: Request, q: str = ""):
     return JSONResponse(collector.search_deezer_artists(q))
 
 
+@app.get("/api/mundart/artist-preview")
+def api_mundart_artist_preview(request: Request, artist_id: str = ""):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    result = collector.deezer_artist_preview(artist_id)
+    return JSONResponse(result, status_code=200 if result["ok"] else 404,
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/sources/deezer/genres")
 async def api_sources_deezer_genres(request: Request):
     if not _current_user(request):
@@ -218,6 +227,10 @@ def _artist_scene_error(err: "artist_scenes.ArtistSceneError") -> JSONResponse:
 async def _json_payload(
         request: Request,
         error_key: str = "config.mundart.invalid_payload") -> dict | JSONResponse:
+    # Requiring JSON prevents browsers from submitting writes as simple form requests.
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type != "application/json":
+        return JSONResponse(status_code=415, content={"error": i18n.t(error_key)})
     try:
         payload = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -286,6 +299,68 @@ async def api_mundart_artists(request: Request):
         return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
     try:
         return JSONResponse(artist_scenes.get_catalog())
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.get("/api/mundart/scene-playlists")
+async def api_mundart_scene_playlists(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    try:
+        return JSONResponse({**artist_scenes.list_scene_playlists(),
+                             "catalog": artist_scenes.get_catalog()},
+                            headers={"Cache-Control": "no-store"})
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.post("/api/mundart/scene-playlists")
+async def api_mundart_scene_playlist_update(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    payload = await _json_payload(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    try:
+        if payload.get("delete") is True:
+            result = artist_scenes.delete_scene_playlist(payload.get("name"))
+        elif "new_scene" in payload:
+            result = artist_scenes.rename_scene_playlist(payload.get("name"), payload["new_scene"])
+        else:
+            result = artist_scenes.set_scene_playlist_disabled(payload.get("name"), payload.get("disabled"))
+        return JSONResponse(result,
+            headers={"Cache-Control": "no-store"})
+    except artist_scenes.ArtistSceneError as err:
+        return _artist_scene_error(err)
+
+
+@app.post("/api/genre-playlists")
+async def api_genre_playlist_save(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    payload = await _json_payload(request)
+    if isinstance(payload, JSONResponse):
+        return payload
+    try:
+        if isinstance(payload, dict) and "genre_id" in payload:
+            existing = (artist_scenes.get_catalog()["genre_playlists"].get(payload.get("name"))
+                        if payload.get("replace") is True and isinstance(payload.get("name"), str)
+                        else None)
+            if existing and existing.get("genre_id") == payload["genre_id"]:
+                genre = {"id": existing["genre_id"], "name": existing["genre_name"]}
+            else:
+                source = collector.deezer_genres()
+                if source.get("ok") is not True:
+                    raise artist_scenes.ArtistSceneError("genre_source_failed", 502)
+                genre = next((entry for entry in source["genres"]
+                              if entry["id"] == payload["genre_id"] and entry["id"] != "0"), None)
+                if genre is None:
+                    raise artist_scenes.ArtistSceneError("genre_unknown", 409)
+            return JSONResponse(artist_scenes.save_deezer_genre_playlist(payload, genre),
+                                headers={"Cache-Control": "no-store"})
+        return JSONResponse(artist_scenes.save_genre_playlist(payload),
+                            headers={"Cache-Control": "no-store"})
     except artist_scenes.ArtistSceneError as err:
         return _artist_scene_error(err)
 
@@ -363,6 +438,18 @@ async def api_tageditor_search(request: Request, q: str = "", limit: int = 20):
     if not _current_user(request):
         return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
     return JSONResponse({"ok": True, "results": editor.search(q, limit)})
+
+
+@app.get("/api/tageditor/missing-metadata")
+async def api_tageditor_missing_metadata(request: Request):
+    if not _current_user(request):
+        return JSONResponse(status_code=401, content={"error": i18n.t("config.api.not_authed")})
+    from . import metadata_report
+    try:
+        return JSONResponse({"ok": True, **metadata_report.load()})
+    except (OSError, ValueError) as err:
+        logger.warning(i18n.t("config.tageditor.metadata_log_unavailable", error=err))
+        return JSONResponse(status_code=503, content={"error": i18n.t("config.tageditor.metadata_unavailable")})
 
 
 @app.get("/api/tageditor/song")

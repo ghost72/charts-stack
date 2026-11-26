@@ -15,6 +15,58 @@ def _entries(prefix, n):
             for i in range(n)]
 
 
+def test_scene_sources_keep_names_and_escape_html():
+    _title, message, count = digest.build_message({
+        "Mundart: Rock & Roll+Mundart: <Pop>": _entries("Scene", 1),
+    }, 1)
+    assert count == 1
+    assert "Rock &amp; Roll+&lt;Pop&gt;" in message
+    assert "🎸" in message
+    assert "<Pop>" not in message
+    assert message.count("Scene Artist 0") == 1
+
+
+def test_old_technical_scene_source_has_readable_label():
+    i18n.setup(lang="de", lang_dir=_LANG_DIR)
+    _title, message, count = digest.build_message({
+        ".charts-scene-missing": _entries("Legacy", 1),
+        "Playlist: French Rock": _entries("French", 1),
+    }, 2)
+    assert count == 2
+    assert ".charts-scene-missing" not in message
+    assert "🎸 Szenen-Tophits" in message
+    assert "🎸 French Rock" in message
+
+
+def test_legacy_and_current_scene_sources_share_one_digest_group(monkeypatch):
+    i18n.setup(lang="de", lang_dir=_LANG_DIR)
+    records = [
+        {"ts": "2026-11-23T09:00:00+0100", "source": source, **entry}
+        for source, entries in (
+            ("Mundart: Mundart-Rock", _entries("Old", 5)),
+            ("Playlist: Mundart-Rock", _entries("New", 2) + _entries("Old", 1)),
+            ("Playlist: Mundart-Pop", _entries("Pop", 1)),
+            ("Playlist: Mundart-Rock+Playlist: Mundart-Pop", _entries("Both", 1)),
+        )
+        for entry in entries
+    ]
+    monkeypatch.setattr(digest, "_read_log", lambda: records)
+    monkeypatch.setattr(digest, "_prune_log", lambda records: None)
+    monkeypatch.setattr(digest.time, "time", lambda: 1795420800)
+    monkeypatch.setattr(config, "DIGEST_WINDOW_HOURS", 48)
+
+    groups, total = digest.collect()
+    _, message, unique = digest.build_message(groups, total)
+
+    assert total == 10
+    assert unique == 9
+    assert len(groups) == 3
+    assert "🎸 Mundart-Rock · 7" in message
+    assert "🎸 Mundart-Pop · 1" in message
+    assert "🎸 Mundart-Rock+Mundart-Pop · 1" in message
+    assert "<b>3</b> Quelle(n)" in message
+
+
 def _screenshot_groups():
     # 59 + 25 + 12 + 8 + 5 + 3 = 112 songs from 6 sources.
     return {
@@ -41,10 +93,11 @@ def test_screenshot_regression_overview_survives_budget():
                  "📤 Manuell hochgeladen · 8", "🇨🇭 Schweizer Mundart · 5", "📺 YouTube · 3"):
         assert text in first, text
     lines = msg.split("\n")
-    # Overview: one item per line (lines 2..7), then a blank line, no separator.
-    assert lines[2] == "⚡ Energy · 59"
-    assert lines[7] == "📺 YouTube · 3"
-    assert lines[8] == ""
+    # Overview is separated from the heading and followed by a blank line.
+    assert lines[2] == ""
+    assert lines[3] == "⚡ Energy · 59"
+    assert lines[8] == "📺 YouTube · 3"
+    assert lines[9] == ""
     assert "➖" not in msg
     # Footer intact, last detail line is the global "more" line.
     assert lines[-1] == i18n.t("digest.notify.footer")
@@ -64,7 +117,7 @@ def test_overview_order_by_size_then_canonical_rank():
     groups = {"youtube": _entries("Y", 2), "charts": _entries("C", 2),
               "zzz-raw": _entries("Z", 2), "energy-library": _entries("E", 5)}
     _, msg, _ = digest.build_message(groups, 11)
-    overview = msg.split("\n")[2:6]
+    overview = msg.split("\n")[3:7]
     assert overview == ["⚡ Energy · 5", "🔥 Current charts · 2",
                         "📺 YouTube · 2", "🎵 zzz-raw · 2"]
 
@@ -85,7 +138,7 @@ def test_two_sources_overview_on_one_line():
     i18n.setup(lang="en", lang_dir=_LANG_DIR)
     _, msg, _ = digest.build_message({"charts": _entries("C", 3),
                                       "youtube": _entries("Y", 2)}, 5)
-    assert msg.split("\n")[2] == "🔥 Current charts · 3 · 📺 YouTube · 2"
+    assert msg.split("\n")[3] == "🔥 Current charts · 3 · 📺 YouTube · 2"
 
 
 def test_real_message_91_songs_six_sources_one_line_each():
@@ -98,7 +151,7 @@ def test_real_message_91_songs_six_sources_one_line_each():
     _, msg, unique = digest.build_message(groups, 91)
     assert unique == 91
     lines = msg.split("\n")
-    assert lines[2:8] == [
+    assert lines[3:9] == [
         "📺 YouTube · 44", "⚡ Energy · 39", "🇨🇭 Schweizer Mundart · 5",
         "🔥 Aktuelle Charts · 1", "📻 FLASHBACK FM · 1",
         "🙋 Manuell angefordert · 1"]

@@ -428,18 +428,24 @@ feste Titelliste nicht sauber abbilden. Deshalb schreibt `charts-sync` eine
 
 ## Aufbau der Pushover-Meldung
 
+Quellenübersicht, Erläuterung und die folgenden Statusangaben sind durch
+Leerzeilen getrennt.
+
 Unter der Kopfzeile zeigt eine **Übersicht** die Zahlen (`🆕 N neu · ⬇ N fehlen`), wenn beide Kategorien vorkommen (bei einer Kategorie entfällt sie, die Listen-Kopfzeile trägt die Zahl). So bleiben sie sichtbar, wenn die Songlisten gekürzt werden. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration
 
-Die **Chart-Quellen** (welche Playlists entstehen) werden in der
-`compose.yml` über die Variable `CHARTS` als JSON-Liste definiert. Alle
-übrigen Einstellungen kommen aus der `.env` bzw. den Compose-Defaults.
+Die **Chart-Quellen** (welche Hauptplaylists entstehen) werden durch `CHARTS`
+in der zentralen `.env` definiert, bearbeitbar in charts-config, oder durch
+die optionale `CHARTS_FILE`. Compose reicht diese Einstellungen an den Dienst
+weiter. Szenen-/Genre-Regeln werden separat unter Künstler & Szenen verwaltet.
+Siehe die [Playlist-/Library-Konfigurationsübersicht](../README.md#playlist-konfiguration-und-reine-library-quellen).
 
 ### Chart-Quellen (`CHARTS`)
 
 `CHARTS` ist eine JSON-Liste. Jeder Eintrag erzeugt genau **eine** Playlist und
-kann **mehrere** Deezer-Quellen (`sources`) bündeln, die zu einer
+kann **mehrere** Deezer-, optionale Last.fm-, Apple-Music- oder Energy-Quellen
+(`sources`) bündeln, die zu einer
 deduplizierten Liste zusammengeführt werden. Standard sind **zwei** Playlists:
 
 > 📖 **Vollständige Feld- und ID-Referenz + fertige Beispiele** (Country,
@@ -450,8 +456,14 @@ deduplizierten Liste zusammengeführt werden. Standard sind **zwei** Playlists:
 > **Config aus Datei statt Env (empfohlen bei vielen Playlists):** Statt der
 > einzeiligen `CHARTS`-Variable kann die Definition aus einer lesbaren,
 > mehrzeiligen Datei geladen werden – `CHARTS_FILE=/config/charts.json` setzen
-> und `charts.json` anlegen (Vorlage: [`charts.json.example`](charts.json.example)
-> mit Pop/Country/Schlager). Priorität: `CHARTS_FILE` > `CHARTS` > Defaults.
+> und vom Projektroot aus `charts-sync/charts.json` anlegen (Vorlage:
+> [`charts.json.example`](charts.json.example)). Nur gewünschte Playlist-Einträge
+> behalten; die Vorlage enthält weitere Beispiele.
+> Priorität: `CHARTS_FILE` > `CHARTS` > Defaults. Für den CHARTS-Wert aus dem UI
+> `CHARTS_FILE` leeren und charts-sync recreaten. Das UI ändert die JSON-Datei nicht.
+> Eine fehlende konfigurierte Datei wird gemeldet und erlaubt den Env-Fallback.
+> Eine unlesbare oder ungültige Datei wird gemeldet; dann greifen die eingebauten
+> Defaults, nicht `CHARTS`. Deshalb die Startlogs prüfen statt den Env-Wert anzunehmen.
 >
 > **Startup-Validierung:** charts-sync prüft die `CHARTS`-Liste beim Start.
 > Kaputtes JSON oder unbrauchbare Quellen (z. B. unbekannte Last.fm-Methode)
@@ -693,9 +705,19 @@ Playlist geschrieben wird. Bereits vorhandene Einträge verschwinden beim
 nächsten Sync automatisch, weil die `.m3u` bei jedem Lauf neu geschrieben wird
 (die Musikdateien in der Library bleiben unberührt).
 
-### Mundart-Künstler-Inventar und Szenenfilter
+### Künstler-Inventar und allgemeine Szenen-Playlists
 
-Für `mundart.m3u` protokolliert charts-sync bei jedem erfolgreichen Feed-Abruf
+Neuer Künstlerzustand verwendet `My artists` als neutralen Hauptfilter-Szenenwert.
+Vorhandene gespeicherte Szenennamen und Filterziele werden nicht geändert.
+
+`CHARTS_ARTIST_PLAYLIST` wählt genau eine konfigurierte Playlist anhand ihres
+`name`-Felds aus `CHARTS` oder `CHARTS_FILE` (Standard: `mundart.m3u`).
+Nur der optionale Hauptfilter gilt für diese Hauptplaylist. Inventar und
+zusätzliche Szenen-Playlists verwenden alle konfigurierten Quellen. Beim Wechsel bleiben das
+bisherige Inventar und die Zuordnungen erhalten; prüfe sie und die Zielszene,
+bevor du den Filter für eine andere Playlist nutzt.
+
+Für alle konfigurierten Playlists protokolliert charts-sync bei jedem erfolgreichen Feed-Abruf
 alle Hauptinterpreten und Deezer-Feature-Gäste in
 `CHARTS_DIR/.charts-artist-inventory.json`. Feed-Herkunft, Titelanzahl und
 Zeitstempel bleiben erhalten; ein temporärer Feed-Ausfall löscht keine
@@ -713,11 +735,79 @@ beweisen weder die Sprache eines Songs noch die Zugehörigkeit eines Künstlers
 zur Szene. Ein optionaler Beleg kann in charts-config notiert werden.
 
 Manuell hinzugefügte Deezer-Künstler laden zusätzlich bis zu 50 Top-Tracks pro
-Künstler; maximal 50 manuelle Künstler sind zugelassen. Diese Zusatz-Feeds
-werden erst bei eingeschaltetem Szenenfilter abgefragt. Ihre Titel werden wie
-andere Feed-Titel gegen die Library abgeglichen. Der Filter betrifft
-ausschließlich `mundart.m3u`, lädt keine Audiodateien und ändert weder
-`charts.json` noch `.env`.
+Künstler; maximal 50 manuelle Künstler sind zugelassen. Der normale
+Szenenfilter verwendet nur die Zusatz-Feeds der Zielszene für `mundart.m3u`.
+Mit der separaten Option **Zusätzliche M3U pro Szene erstellen** kann
+charts-sync auch die übrigen freigegebenen Szenen als `charts-<szenenname>.m3u`
+ausgeben. Ihre Feeds verändern weder `mundart.m3u` noch deren Missing-Liste.
+Mehrfach zugeordnete Künstler können in mehreren Szenen-Playlists vorkommen;
+der Hauptfilter berücksichtigt weiterhin nur seine Zielszene.
+Szenen-Playlists enthalten nur Bibliothekstreffer. Optional erzeugt der Sync
+eine getrennte Warteschlange `.charts-scene-missing.txt` für fehlende
+Deezer-Top-Titel aktiver, manuell hinzugefügter Künstler in freigegebenen
+Szenen. Das Toplimit pro Szene (1–100 je Künstler, Vorgabe 50) betrifft nur
+diesen Zusatzabruf; andere Feeds können weiterhin Titel beisteuern.
+Nach dem Import erscheinen die Treffer beim nächsten Sync.
+Beim Ausschalten bleiben zuvor erzeugte
+Dateien bestehen. Die Übersicht in charts-config kann einzelne Dateien zum
+endgültig löschen: Die zugehörigen Künstler-Zuordnungen und Download-/Genre-Regeln
+werden entfernt; eine noch vorhandene M3U wird beim nächsten Sync gelöscht.
+Danach verschwindet der temporäre Löschauftrag, ohne dauerhafte Sperre.
+Andere Szenen, Künstleridentitäten und Musikdateien bleiben erhalten.
+Die aktive Hauptfilterszene ist geschützt; alte API-Sperren bleiben kompatibel.
+Bei **Szene umbenennen** aktualisiert der Sync Titel und M3U-Dateiname auf
+den neuen Szenennamen.
+Neue Szenen haben keinen Hash im Dateinamen; Dateinamenskollisionen und
+reservierte Chart-Dateinamen werden abgelehnt. Bestehende `mundart-szene-*.m3u`
+werden vor den Feed-Abrufen auf hashlose `charts-<szenenname>.m3u` umgestellt.
+Die Migration erhält alle Einträge und ersetzt keine vorhandene Zieldatei;
+bei einer Kollision stoppt der Lauf mit einem protokollierten Fehler.
+Navidrome kann eine umbenannte M3U als neue Playlist importieren.
+Anzeigenamen entsprechen dem gewählten Szenennamen
+ohne festen Prefix. Alle Quellen werden vor der gemeinsamen Szenenausgabe
+gesammelt; fällt ein Feed aus, bleiben die Inhalte der ggf. bereits umbenannten Szenen-M3Us erhalten und die
+Szenen-Downloadliste leer.
+
+**Deezer-Genre-Playlists:** charts-config speichert offizielle `genre_id`,
+`genre_name` und `limit` (1–100, Vorschlag 50) je Playlist in
+`.charts-artist-selection.json`. `/chart/<genre-id>/tracks` liefert die
+Titelmetadaten; nur diese Titel werden gegen die Library abgeglichen, ohne
+lokale Genre-Tags oder Last.fm-Genre-Schätzungen als Auswahlquelle.
+Deezer kann weniger Titel liefern als das Limit. Vorhandene Kopien werden
+über die bisherigen Matching-/Presence-Helfer erkannt, Dateipfade dedupliziert
+und in Chartreihenfolge als `charts-<name>.m3u` mit
+`#CHARTS-STACK:GENRE-PLAYLIST` geschrieben.
+Fehlende Titel kommen automatisch in die gemeinsame `.charts-scene-missing.txt`,
+einschliesslich Playlistnamen für Download/Manifest/Pushover. Die vorhandene
+Download-/Importpipeline und ihre Filter, Quoten und `DRY_RUN` bleiben erhalten.
+Genre-Charts sind unabhängig vom Hauptfilter und Zusatzszenen-Schalter.
+Sie funktionieren auch ohne weitere `CHARTS`-Quellen und bei deren Ausfall.
+Ein leerer, ungültiger oder fehlgeschlagener Genre-Abruf lässt die vorhandene
+M3U bestehen und liefert keine neuen Aufträge für diese Regel. Fehler werden
+protokolliert und im Sync-Status gemeldet; andere erfolgreiche Regeln laufen weiter.
+Änderungen wirken beim nächsten Sync. Alte Datei-Tag-Regeln bleiben zur
+Kompatibilität erhalten, werden aber nicht mehr in der Config angeboten.
+Ohne solche Altregeln wird kein lokaler Genre-Katalog mehr geschrieben.
+Unverfügbare oder unvollständig lesbare Library-Verzeichnisse brechen die
+Erfassung ab statt unvollständige M3Us zu schreiben.
+Künstler- und Genre-Schreibvorgänge teilen einen Dateilock; Löschaufträge werden
+vor dem Scan abgearbeitet und nach erfolgreicher Entfernung aus dem Zustand gelöscht.
+Fremde, reservierte und Symlink-Ziele werden nicht gelöscht oder überschrieben.
+Ein neues Genre-Ziel wird atomar ohne Ersetzen einer inzwischen entstandenen
+Datei installiert. Ohne Quellen
+und ohne Genre-Regeln bleibt der bisherige leere-CHARTS-Leerlauf erhalten.
+In `.charts-scene-missing.txt` steht vor jedem fehlenden Titel ein
+`#SCENES:`-Kommentar mit einer JSON-Liste seiner aktiven Download-Szenen.
+So bleibt die Herkunft auch bei Titeln für mehrere Szenen erhalten. Nur
+Szenen, deren eingestelltes Toplimit den Titel einschliesst, werden genannt;
+normale Missing-Listen bleiben unverändert.
+Das gilt auch für ältere verwaltete M3Us ohne verbleibende Künstlerzuordnung:
+Titel und Dateiname ändern sich, bestehende Einträge bleiben erhalten. Gesperrte,
+unmarkierte und verlinkte Dateien werden nicht umbenannt.
+Bei aktivem Pushover erhält jede Szenen-Playlist mit neuen Bibliothekstiteln
+eine eigene Meldung mit Playlistname, Künstlern und Titeln. Bei der ersten
+Erstellung zählen alle Einträge als neu; danach zählt der Vergleich mit der
+bisherigen M3U. Unveränderte Listen und reine Entfernungen melden nichts.
 
 ### Weitere Einstellungen (`.env`)
 
@@ -990,6 +1080,16 @@ wenn sich deine Trefferliste gar nicht geändert hat. Die Meldung nennt die neu
 hinzugekommenen Songs und listet die fehlenden Songs auf. Mit
 `NOTIFY_ONLY_ON_CHANGE=0` kommt nach jedem Lauf eine Meldung, unabhängig von
 Änderungen.
+
+Die Quellenübersicht nennt jeden aktiven Anbieter, auch bei null zusätzlichen
+Titeln: **empfangen** zählt die gelieferten Titel über dessen Feeds, inklusive
+möglicher Duplikate; **zusätzlich** zählt Kandidaten nach vorherigen Quellen
+und Künstlerausschlüssen, vor Genre- und Library-Abgleich. Das sind weder
+Downloads noch garantierte Playlist-Einträge. Erkannt fehlgeschlagene Abrufe
+stehen separat dabei, auch wenn andere Feeds desselben Anbieters Daten lieferten.
+Deaktivierte Feeds fehlen in dieser Übersicht. Ein leerer Energy-Feed kann
+auch auf eine fehlende, ungültige oder veraltete Übergabedatei hinweisen;
+Einzelheiten stehen im Log. Die bestehende Benachrichtigungsregel bleibt gültig.
 
 **Wie bekomme ich die Liste der fehlenden Songs aufs Handy?**
 Die Pushover-Meldung führt die fehlenden Chart-Songs direkt auf (nummeriert,

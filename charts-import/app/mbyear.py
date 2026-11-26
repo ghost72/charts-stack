@@ -231,7 +231,7 @@ def _reduce_album(data: dict) -> "tuple[str, str]":
     return album_title, album_year
 
 
-def resolve_mb_meta(artist: str, title: str) -> "resolve.ResolvedMeta":
+def resolve_mb_meta(artist: str, title: str, *, refresh: bool = False) -> "resolve.ResolvedMeta":
     """
     Resolve (year + album + album_year) from MusicBrainz, fail-open to an
     all-empty ResolvedMeta. MB never supplies a track number (track always "").
@@ -245,7 +245,7 @@ def resolve_mb_meta(artist: str, title: str) -> "resolve.ResolvedMeta":
         return resolve.ResolvedMeta()
     cache = _load_cache()
     ckey = "meta|" + _key(artist, title)
-    if ckey in cache:
+    if not refresh and ckey in cache:
         cached = cache[ckey]
         if isinstance(cached, list) and len(cached) == 3:
             return resolve.ResolvedMeta(year=cached[0], album=cached[1],
@@ -261,8 +261,9 @@ def resolve_mb_meta(artist: str, title: str) -> "resolve.ResolvedMeta":
     year = _reduce_year(data)
     album, album_year = _reduce_album(data)
     # Cache the reliable three-field tuple (a real miss "" too).
-    cache[ckey] = [year, album, album_year]
-    _save_cache()
+    if not refresh:
+        cache[ckey] = [year, album, album_year]
+        _save_cache()
     return resolve.ResolvedMeta(year=year, album=album, album_year=album_year,
                                 track="")
 

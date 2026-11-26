@@ -1,11 +1,81 @@
 """Offline regression tests for the Hitparade connection check."""
 
 import importlib
+import threading
 
 import httpx
 import pytest
 
 from app import collector, config
+
+
+def test_collect_runs_independent_checks_in_parallel(monkeypatch):
+    barrier = threading.Barrier(6)
+    services = {"charts-sync": {"status": "running"}}
+    reads = []
+    def read_status():
+        reads.append(True)
+        return services
+    monkeypatch.setattr(collector, "_read_status_files", read_status)
+    def check(value):
+        barrier.wait(timeout=2)
+        return value
+    for name in ("_container_states", "_slskd_status", "_lidarr_status",
+                 "_external_status", "_dir_stats"):
+        monkeypatch.setattr(collector, name, lambda name=name: check({"source": name}))
+    def inflight(value):
+        assert value is services
+        return check({"active": {"ok": True}})
+    monkeypatch.setattr(collector, "_inflight", inflight)
+    result = collector.collect()
+    assert reads == [True]
+    assert result["services"] is services
+    assert result["containers"] == {"source": "_container_states"}
+    assert result["external"] == {"source": "_external_status"}
+    assert result["storage"] == {"source": "_dir_stats"}
+    assert result["inflight"] == {"active": {"ok": True}}
+    assert set(result) == {"generated", "services", "containers", "slskd",
+                           "lidarr", "external", "storage", "inflight"}
+
+
+def test_collect_does_not_hide_unexpected_check_failures(monkeypatch):
+    monkeypatch.setattr(collector, "_read_status_files", lambda: {})
+    for name in ("_container_states", "_slskd_status", "_lidarr_status",
+                 "_external_status", "_dir_stats", "_inflight"):
+        monkeypatch.setattr(collector, name, lambda *args: {})
+    def failure():
+        raise RuntimeError("status check failed")
+    monkeypatch.setattr(collector, "_container_states", failure)
+    with pytest.raises(RuntimeError, match="status check failed"):
+        collector.collect()
+
+
+def test_progress_reports_completed_checks_while_another_is_running(monkeypatch):
+    release = threading.Event()
+    monkeypatch.setattr(collector, "_read_status_files", lambda: {})
+    for name in ("_container_states", "_slskd_status", "_lidarr_status",
+                 "_dir_stats", "_inflight"):
+        monkeypatch.setattr(collector, name, lambda *args: {})
+    def slow_external():
+        if not release.wait(3):
+            raise RuntimeError("test check was not released")
+        return {"ok": False}
+    monkeypatch.setattr(collector, "_external_status", slow_external)
+    events = collector.collect_events()
+    try:
+        first = next(events)
+        assert first["type"] == "progress"
+        assert len(first["checks"]) == 6
+        finished = [next(events) for _ in range(5)]
+        assert {event["check"] for event in finished} == set(first["checks"]) - {"external"}
+        assert all(event["type"] == "checked" for event in finished)
+    finally:
+        release.set()
+    assert next(events) == {"type": "checked", "check": "external"}
+    snapshot = next(events)
+    assert snapshot["type"] == "result"
+    assert snapshot["data"]["external"] == {"ok": False}
+    assert list(events) == []
 
 
 @pytest.mark.parametrize("host,key", [

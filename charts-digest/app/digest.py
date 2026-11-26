@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+from html import escape
 
 from . import config, notify_budget
 from .i18n import t
@@ -40,6 +41,7 @@ _SOURCE_LABELS = {
     # (see charts-download/app/missing.py source_label). Label it as Energy here
     # so the daily digest shows a clean "⚡ Energy" group instead of the raw slug.
     "energy-library": ("⚡", "digest.source.energy"),
+    ".charts-scene-missing": ("🎸", "digest.source.scene_tracks"),
     "": ("🎵", "digest.source.unknown"),
 }
 
@@ -117,6 +119,8 @@ def collect() -> "tuple[dict[str, list[dict]], int]":
         if ts is None or ts < cutoff:
             continue
         src = (r.get("source") or "").strip()
+        if src.startswith("Mundart: ") and "+" not in src:
+            src = "Playlist: " + src.removeprefix("Mundart: ")
         groups.setdefault(src, []).append(r)
         total += 1
     # Clean up (after reading, so the window was complete).
@@ -192,8 +196,10 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
         label_entry = _SOURCE_LABELS.get(src)
         if label_entry is not None:
             return label_entry[0], t(label_entry[1])
+        if src.startswith(("Playlist: ", "Mundart: ")):
+            return "🎸", escape(src.replace("Playlist: ", "").replace("Mundart: ", ""))
         # Unknown source: raw value as label, otherwise translated fallback.
-        return "🎵", src or t("digest.source.unknown")
+        return "🎵", escape(src) if src else t("digest.source.unknown")
 
     # Title with song count; subtle variation in the emoji depending on yield.
     if unique_total >= 20:
@@ -219,7 +225,7 @@ def build_message(groups: dict, total: int) -> "tuple[str, str, int]":
               sources=len(per_source))]
     overview = notify_budget.overview_line(parts, compact)
     if overview:
-        head.append(overview)
+        head.extend(["", overview])
     footer = ["", t("digest.notify.footer")]
 
     # One block per source. The budget cuts only between whole songs; the

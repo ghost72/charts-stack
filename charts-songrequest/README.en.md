@@ -104,6 +104,14 @@ container does not start. The logged-in user appears in the log and determines
 Login via cookie session; set
 `SESSION_SECRET` so sessions survive restarts.
 
+The application sends `X-Robots-Tag: noindex, nofollow` on normal responses,
+including the login, redirects, static files and 404s. This is not access
+control and does not cover proxy-generated errors or noncompliant crawlers.
+To update an existing installation, copy `charts-songrequest/app/main.py`
+into the stack and run `docker compose up -d --no-deps --build
+charts-songrequest` from the stack directory. Preserve the existing `.env` and
+data, then check the login response header.
+
 ---
 
 ## Installation on the Synology NAS

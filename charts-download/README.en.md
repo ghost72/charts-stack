@@ -2,6 +2,25 @@
 
 # charts-download
 
+Deezer genre playlists reuse the automatically loaded
+`.charts-scene-missing.txt` queue. Missing chart titles carry their configured
+playlist names in `#SCENES:` comments. Existing quality/exclusion filters,
+quotas and `DRY_RUN` remain in effect; no new `MISSING_FILES` entry or Deezer
+audio-download integration is required.
+
+Missing scene top tracks from `.charts-scene-missing.txt` are automatically
+searched and downloaded alongside regular missing lists. No additional
+`MISSING_FILES` entry or provider list is needed. Existing quality filters,
+blocks, limits and `DRY_RUN` apply. `SCENE_DOWNLOAD_USERS` is no longer used.
+
+Sync writes a `#SCENES:` comment before each scene request with its scene names.
+Pushover and the manifest show, for example, **Playlist: Mundart-Pop** rather
+than the technical filename. All contributing scenes are named, but each song
+is downloaded only once. The shared scene fairness quota is unchanged.
+Legacy queues without assignments show **Playlist: Scene top tracks** until the
+next sync supplies the names. Existing transfers and old manifest entries are
+not rewritten retroactively.
+
 Automatically downloads the missing chart songs via the **slskd API**. Reads
 the `missing.txt` written by [`charts-sync`](../charts-sync), searches for each
 song in slskd, picks the best **MP3 ≥ 256 kbps** and starts the download, so you
@@ -178,6 +197,11 @@ A run (`run_once`):
    `Queued`) are left alone.
 2. **read missing** – parse one or more `missing.txt` (`MISSING_FILES`), sort
    by chart position, consolidate duplicates (the same song in several charts).
+   Within the shared Energy library list, songs never searched or least
+   recently searched are considered first. Search order is stored in the
+   existing download state and survives restarts; dry runs and slskd API
+   errors do not advance it. The configured `ENERGY_LIBRARY_MISSING_FILE`
+   identifies this list. Other sources retain their normal ordering.
 3. **connect** – build the slskd client via the API key and test the connection.
 4. **per song** (until `MAX_PER_RUN` is reached):
    - skip already requested songs (state file),
@@ -367,6 +391,17 @@ per song and at the end `Lauf fertig (DRY_RUN): X Songs wuerden geladen.`
 ---
 
 ## Pushover message layout
+
+Source headings include a matching icon, e.g. ⚡ for the Energy library and 🎸
+for scene playlists.
+
+A blank line separates queued downloads from items released for another search
+when both statuses are reported.
+
+"Queued in slskd" means accepted into its download queue, not downloaded
+successfully. Failed downloads are reported as "released for another search";
+this does not guarantee an immediate search or another download. Both events
+may happen in the same run.
 
 The breakdown is the overview and stays at the top. Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line.  The 15-song cap and the character budget share the single "… and N more" line. The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 

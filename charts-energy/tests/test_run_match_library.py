@@ -100,6 +100,64 @@ def test_two_library_channels_share_missing_file(monkeypatch, tmp_charts):
     assert year_map == {"madonna|vogue": "1980", "nirvana|lithium": "1990"}
 
 
+def test_library_queue_interleaves_channels_and_preserves_deduplication(monkeypatch, tmp_charts):
+    channels = [config.Channel(slug="energy80s", mode="library"),
+                config.Channel(slug="energy00s", mode="library")]
+    _wire(monkeypatch, channels,
+          {"energy80s": [_track("First", "One"), _track("First", "Two"),
+                         _track("First", "Three")],
+           "energy00s": [_track("Second", "One"), _track("FIRST", "TWO"),
+                         _track("Second", "Two")]},
+          present=[])
+    monkeypatch.setattr(main.presence, "find_existing", lambda *args: None)
+
+    result = main.run_match()
+
+    body = [line.strip() for line in
+            (tmp_charts / "missing-energy-library.txt").read_text().splitlines()
+            if line and not line.startswith("#")]
+    assert body == ["1. First - One", "2. Second - One", "3. First - Two",
+                    "4. Second - Two", "5. First - Three"]
+    assert result["library_missing"] == 5
+
+
+def test_resolved_library_queue_is_cleared(monkeypatch, tmp_charts):
+    queue = tmp_charts / "missing-energy-library.txt"
+    queue.write_text("1. Artist - Song\n")
+    channel = config.Channel(slug="energy00s", mode="library")
+    _wire(monkeypatch, [channel], {"energy00s": [_track("Artist", "Song")]},
+          present=[("Artist", "Song")])
+
+    assert main.run_match()["library_missing"] == 0
+    assert not [line for line in queue.read_text().splitlines()
+                if line.strip() and not line.startswith("#")]
+
+
+def test_unobserved_library_does_not_clear_existing_queue(monkeypatch, tmp_charts):
+    queue = tmp_charts / "missing-energy-library.txt"
+    queue.write_text("1. Artist - Song\n")
+    channel = config.Channel(slug="energy00s", mode="library")
+    _wire(monkeypatch, [channel], {"energy00s": []}, present=[])
+
+    main.run_match()
+
+    assert queue.read_text() == "1. Artist - Song\n"
+
+
+def test_partially_observed_library_does_not_clear_existing_queue(monkeypatch, tmp_charts):
+    queue = tmp_charts / "missing-energy-library.txt"
+    queue.write_text("1. Artist - Song\n")
+    channels = [config.Channel(slug="energy80s", mode="library"),
+                config.Channel(slug="energy00s", mode="library")]
+    _wire(monkeypatch, channels,
+          {"energy80s": [_track("Present", "Song")], "energy00s": []},
+          present=[("Present", "Song")])
+
+    main.run_match()
+
+    assert queue.read_text() == "1. Artist - Song\n"
+
+
 def test_library_counter_is_wired_into_dashboard_labels():
     assert "library_missing" in main._COUNTER_LABEL_KEYS
 

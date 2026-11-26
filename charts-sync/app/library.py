@@ -26,7 +26,6 @@ from .i18n import t
 
 logger = logging.getLogger(__name__)
 
-
 # Additions removed from titles before the comparison.
 _NOISE_PATTERNS = [
     r"\(feat\.?.*?\)", r"\[feat\.?.*?\]",
@@ -115,11 +114,14 @@ class LibraryTrack:
     """A track found in the library."""
 
     def __init__(self, path: str, artist: str, title: str,
-                 is_compilation: bool = False):
+                 is_compilation: bool = False, genres: list[str] | None = None,
+                 genre_read_error: bool = False):
         self.path = path
         self.artist = artist
         self.title = title
         self.is_compilation = is_compilation
+        self.genres = genres or []
+        self.genre_read_error = genre_read_error
         self.norm_artist = normalize(artist)
         self.norm_title = normalize(title)
         # Combined search string for the fallback comparison.
@@ -128,7 +130,7 @@ class LibraryTrack:
         self.in_year_album = _in_year_album(path)
 
 
-def _read_tags(path: str) -> tuple[str, str, str, str]:
+def _read_tags(path: str) -> tuple[str, str, str, str, list[str], bool]:
     """
     Read artist/title/album/AlbumArtist from the file tags.
     Empty strings when not readable.
@@ -136,14 +138,46 @@ def _read_tags(path: str) -> tuple[str, str, str, str]:
     try:
         audio = MutagenFile(path, easy=True)
         if audio is None:
-            return "", "", "", ""
+            logger.warning("Could not read audio metadata: %s", path)
+            return "", "", "", "", [], True
         artist = (audio.get("artist") or [""])[0]
         title = (audio.get("title") or [""])[0]
         album = (audio.get("album") or [""])[0]
         albumartist = (audio.get("albumartist") or [""])[0]
-        return artist.strip(), title.strip(), album.strip(), albumartist.strip()
-    except Exception:
-        return "", "", "", ""
+        metadata = (artist.strip(), title.strip(), album.strip(), albumartist.strip())
+    except Exception as error:
+        logger.warning("Could not read audio metadata %s: %s", path, error.__class__.__name__)
+        return "", "", "", "", [], True
+    try:
+        values = (audio.get("genre") or audio.get("TCON") or audio.get("WM/Genre")
+                  or audio.get("\xa9gen") or [])
+        values = getattr(values, "genres", getattr(values, "text", values))
+        if not isinstance(values, (list, tuple)):
+            values = [values]
+        if not values and audio.get("gnre"):
+            from mutagen.id3 import GENRES
+            numeric = audio.get("gnre")
+            if any(not isinstance(value, int) or not 1 <= value <= len(GENRES)
+                   for value in numeric):
+                raise ValueError("Invalid numeric genre tag")
+            values = [GENRES[value - 1] for value in numeric]
+        genres = {}
+        for value in values:
+            value = getattr(value, "value", value)
+            if not isinstance(value, str):
+                raise TypeError("Invalid genre tag value")
+            for genre in value.split(";"):
+                genre = unicodedata.normalize("NFC", genre).strip()
+                if not genre:
+                    continue
+                if len(genre) > 160 or any(ord(char) < 32 for char in genre):
+                    raise ValueError("Invalid genre tag")
+                key = " ".join(unicodedata.normalize("NFKC", genre).casefold().split())
+                genres.setdefault(key, genre)
+        return *metadata, list(genres.values()), False
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, UnicodeError) as error:
+        logger.warning("Could not read genre metadata %s: %s", path, error.__class__.__name__)
+        return *metadata, [], True
 
 
 def _guess_from_path(path: str) -> tuple[str, str]:
@@ -229,13 +263,18 @@ class Library:
 def build_index(music_dir: str) -> Library:
     """Scan music_dir recursively and build the library index."""
     logger.info(t("library.scan", dir=music_dir))
+    if not os.path.isdir(music_dir):
+        raise FileNotFoundError(f"Music library directory unavailable: {music_dir}")
     tracks: list[LibraryTrack] = []
     scanned = 0
     comp_count = 0
 
     charts_dir_abs = os.path.abspath(config.CHARTS_DIR)
 
-    for root, _dirs, files in os.walk(music_dir):
+    def scan_error(error):
+        raise error
+
+    for root, _dirs, files in os.walk(music_dir, onerror=scan_error):
         # Do not index the Charts folder itself as a source.
         if os.path.abspath(root).startswith(charts_dir_abs):
             continue
@@ -244,13 +283,13 @@ def build_index(music_dir: str) -> Library:
             if ext not in config.AUDIO_EXTENSIONS:
                 continue
             path = os.path.join(root, name)
-            artist, title, album, albumartist = _read_tags(path)
+            artist, title, album, albumartist, genres, read_error = _read_tags(path)
             if not artist or not title:
                 g_artist, g_title = _guess_from_path(path)
                 artist = artist or g_artist
                 title = title or g_title
             is_comp = _looks_like_compilation(path, album, albumartist)
-            tracks.append(LibraryTrack(path, artist, title, is_comp))
+            tracks.append(LibraryTrack(path, artist, title, is_comp, genres, read_error))
             scanned += 1
             if is_comp:
                 comp_count += 1

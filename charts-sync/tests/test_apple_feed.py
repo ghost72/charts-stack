@@ -151,4 +151,28 @@ def test_apple_merges_after_deezer_before_energy_and_counts_contribution(monkeyp
     assert source.last_stats["deezer_new"] == 1
     assert source.last_stats["energy_new"] == 1
     assert source.last_stats["genre_filtered"] == 0
+    assert source.last_stats["apple_raw"] == 3
+    assert source.last_stats["energy_raw"] == 2
     assert any("apple:" in record.message for record in caplog.records)
+
+
+def test_source_statistics_include_failed_and_zero_contribution_feeds(monkeypatch):
+    def fetch(feed, client):
+        if feed.kind == "apple":
+            raise RuntimeError("unavailable")
+        return [deezer.ChartTrack(1, "Artist", "Shared")]
+
+    monkeypatch.setattr(deezer, "_fetch_one_feed", fetch)
+    source = config.ChartSource([
+        config.Feed("deezer", 100), config.Feed("apple", 100, country="ch"),
+        config.Feed("energy", 100, theme="charts"),
+        config.Feed("lastfm", 100, enabled=False),
+    ], "charts.m3u", "Test", "missing.txt", 100, genre_filter=False)
+
+    tracks = deezer.fetch_chart(source)
+    assert len(tracks) == 1
+    assert source.last_stats["apple_raw"] == 0
+    assert source.last_stats["apple_failed"] == 1
+    assert source.last_stats["energy_raw"] == 1
+    assert source.last_stats["energy_new"] == 0
+    assert "lastfm_raw" not in source.last_stats

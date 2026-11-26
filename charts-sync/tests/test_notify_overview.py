@@ -3,7 +3,10 @@ charts-sync Pushover message: overview line first, budget cut between whole
 songs with one explicit "... and N more" line.
 """
 import pathlib
+import json
+from types import SimpleNamespace
 
+import pytest
 
 from app import i18n, main, notify_budget
 
@@ -16,13 +19,13 @@ class _Src:
     last_stats = {}
 
 
-def _send(monkeypatch, matched, missing, state=None, limit=500):
+def _send(monkeypatch, matched, missing, state=None, limit=500, language="en"):
     sent = {}
     monkeypatch.setattr(main.notify, "send",
                         lambda title, msg: sent.update(title=title, msg=msg))
     monkeypatch.setattr(main.config, "NOTIFY_ONLY_ON_CHANGE", False)
     monkeypatch.setattr(main.config, "NOTIFY_MISSING_LIMIT", limit)
-    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    i18n.setup(lang=language, lang_dir=_LANG_DIR)
     main._handle_notify(_Src(), matched, missing, state if state is not None else {})
     return sent["msg"]
 
@@ -95,6 +98,114 @@ def test_truncate_helper_removed():
 
 
 def test_apple_source_contribution_is_visible(monkeypatch):
-    monkeypatch.setattr(_Src, "last_stats", {"deezer_new": 5, "apple_new": 3})
+    monkeypatch.setattr(_Src, "last_stats", {
+        "deezer_raw": 8, "deezer_new": 5, "deezer_failed": 1,
+        "apple_raw": 5, "apple_new": 3, "apple_failed": 0,
+        "energy_raw": 5, "energy_new": 0, "energy_failed": 0,
+        "lastfm_raw": 0, "lastfm_new": 0, "lastfm_failed": 1,
+    })
     msg = _send(monkeypatch, _matched(2), [])
-    assert "Deezer 5, Apple Music 3" in msg
+    assert "Deezer: 8 received · 5 additional" in msg
+    assert "Apple Music: 5 received · 3 additional" in msg
+    assert "Energy: 5 received · 0 additional" in msg
+    assert "Last.fm: 0 received · 0 additional" in msg
+    assert msg.count("Failed feeds: 1") == 2
+    assert notify_budget.measure([msg]) <= 1024
+
+
+@pytest.mark.parametrize("language", ["de", "en", "fr"])
+def test_source_and_status_sections_have_spacing(monkeypatch, language):
+    monkeypatch.setattr(_Src, "last_stats", {
+        "deezer_raw": 148, "deezer_new": 132, "deezer_failed": 0,
+        "energy_raw": 278, "energy_new": 265, "energy_failed": 0,
+        "genre_filtered": 2,
+    })
+    msg = _send(monkeypatch, _matched(2), _missing(3), language=language)
+    lines = msg.splitlines()
+    header = lines.index(i18n.t("notify.source_header"))
+    explanation = lines.index(i18n.t("notify.source_explanation"))
+    filtered = lines.index(i18n.t("notify.genre_filtered", count=2))
+    assert lines[header - 1] == ""
+    assert lines[explanation - 1] == ""
+    assert lines[filtered - 1] == ""
+    assert notify_budget.measure([msg]) <= 1024
+
+
+@pytest.mark.parametrize(("language", "received", "additional", "failure"), [
+    ("de", "empfangen", "zusätzlich", "Fehlgeschlagene Abrufe: 1"),
+    ("en", "received", "additional", "Failed feeds: 1"),
+    ("fr", "reçus", "supplémentaires", "Flux en échec : 1"),
+])
+def test_source_overview_localized_and_within_budget(
+        monkeypatch, language, received, additional, failure):
+    monkeypatch.setattr(_Src, "last_stats", {
+        f"{kind}_{field}": value
+        for kind in ("deezer", "lastfm", "apple", "energy")
+        for field, value in (("raw", 100), ("new", 0), ("failed", 1))
+    })
+    msg = _send(monkeypatch, _matched(8), _missing(40, pad=30),
+                language=language)
+    assert msg.count(f"100 {received}") == 4
+    assert msg.count(f"0 {additional}") == 4
+    assert msg.count(failure) == 4
+    assert notify_budget.measure([msg]) <= 1024
+
+
+def _enable_scene_playlists(tmp_path, monkeypatch):
+    monkeypatch.setattr(main.config, "CHARTS_DIR", str(tmp_path))
+    (tmp_path / ".charts-artist-selection.json").write_text(json.dumps({
+        "version": 1, "filter_enabled": False, "target_scene": "My artists",
+        "scene_playlists": True, "artists": {
+            "deezer:123": {"deezer_id": "123", "enabled": True,
+                           "scene": "Pop", "scenes": ["Pop", "Rock"]}},
+    }))
+
+
+def test_scene_messages_report_only_new_tracks_per_written_playlist(tmp_path, monkeypatch):
+    _enable_scene_playlists(tmp_path, monkeypatch)
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    monkeypatch.setattr(main.config, "MUSIC_DIR", str(tmp_path))
+    monkeypatch.setattr(main.config, "PLAYLIST_DIR", str(tmp_path))
+    sent = []
+    monkeypatch.setattr(main.notify, "send", lambda title, msg: sent.append(msg))
+    first = SimpleNamespace(artist="First Artist", title="First Song")
+    second = SimpleNamespace(artist="Second Artist", title="Second Song")
+
+    def find_path(artist, title):
+        return str(tmp_path / f"{title}.mp3")
+
+    main._write_scene_playlists({"Pop": [first], "Rock": [first]}, find_path, {})
+    assert len(sent) == 2
+    assert "<b>Pop</b>" in sent[0] and "<b>Rock</b>" in sent[1]
+    assert all("First Artist – First Song" in msg for msg in sent)
+    sent.clear()
+    main._write_scene_playlists({"Pop": [first], "Rock": [first]}, find_path, {})
+    assert not sent
+    main._write_scene_playlists({"Pop": [second, first], "Rock": [first]}, find_path, {})
+    assert len(sent) == 1 and "<b>Pop</b>" in sent[0]
+    assert "Second Artist – Second Song" in sent[0] and "First Song" not in sent[0]
+
+    sent.clear()
+    name = main.artist_catalog.scene_filename("Pop")
+    (tmp_path / name).write_text("#EXTM3U\n#PLAYLIST:Unmanaged\n")
+    main._write_scene_playlists({"Pop": [first]}, find_path, {})
+    assert not sent
+    assert (tmp_path / name).read_text() == "#EXTM3U\n#PLAYLIST:Unmanaged\n"
+
+
+def test_scene_message_counts_titles_omitted_by_pushover_budget(tmp_path, monkeypatch):
+    _enable_scene_playlists(tmp_path, monkeypatch)
+    i18n.setup(lang="en", lang_dir=_LANG_DIR)
+    monkeypatch.setattr(main.config, "MUSIC_DIR", str(tmp_path))
+    monkeypatch.setattr(main.config, "PLAYLIST_DIR", str(tmp_path))
+    sent = []
+    monkeypatch.setattr(main.notify, "send", lambda title, msg: sent.append(msg))
+    tracks = [SimpleNamespace(artist="Artist & Band", title=f"Song {i} " + "X" * 70)
+              for i in range(1, 26)]
+    main._write_scene_playlists({"Pop": tracks}, lambda artist, title: str(tmp_path / title), {})
+    msg, = sent
+    shown = sum(line.startswith("♪ ") for line in msg.splitlines())
+    assert 0 < shown < 25
+    assert "25 new in the playlist" in msg
+    assert msg.splitlines()[-1] == i18n.t("notify.more", count=25 - shown)
+    assert notify_budget.measure([msg]) <= 1024

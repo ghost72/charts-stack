@@ -47,7 +47,7 @@ def _feed_path(theme: str) -> str:
     return os.path.join(config.CHARTS_DIR, f".charts-energy-feed-{theme}.json")
 
 
-def _merge_tracks(track_lists: list[list[dict]]) -> list[dict]:
+def merge_tracks(track_lists: list[list[dict]]) -> list[dict]:
     """
     Merge several channels' track lists for one theme: dedupe by normalized
     artist|title (first occurrence wins), ordered first_seen descending.
@@ -80,7 +80,7 @@ def write(theme: str, track_lists: list[list[dict]]) -> str:
     track_lists: one list of state-track dicts per FEED channel on this theme.
     Returns: the path of the written handoff file.
     """
-    tracks = _merge_tracks(track_lists)
+    tracks = merge_tracks(track_lists)
     path = _feed_path(theme)
     os.makedirs(config.CHARTS_DIR, exist_ok=True)
 

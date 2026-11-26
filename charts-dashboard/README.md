@@ -92,7 +92,25 @@ Touch-Gerät mit breitem Bildschirm (z. B. iPad) per Finger **frei verschieben**
   ein überfälliger Lauf wird ehrlich als „überfällig" angezeigt.
 - **Speicher & Bestand:** Dateizahl/Größe des Charts-Share und der Quarantäne.
 
-Die Seite aktualisiert sich automatisch (Standard alle 15 s).
+Die Seite aktualisiert sich automatisch (Standard: 15 s nach Abschluss der
+vorherigen Prüfung). Abfragen desselben Browser-Tabs überlappen nicht.
+Beim ersten Laden steht eine dunkle Lade-Karte mit Erklärung und Wartezeit
+statt einer leeren Ansicht; die Status-Ampel ist während der Prüfung gelb.
+Ein Live-Text pro Prüfgruppe zeigt **wartet → in Prüfung → geprüft**, ergänzt
+um die Zahl abgeschlossener Gruppen. Diese Meldungen kommen aus der laufenden
+Abfrage, nicht aus einem Animationstimer. **Geprüft** bedeutet abgeschlossen,
+nicht zwangsläufig erreichbar oder gesund; das Ergebnis erscheint danach in
+den Status-Kacheln.
+Container, slskd, Lidarr, externe Quellen, Speicher und laufende Vorgänge werden
+als unabhängige Gruppen parallel geprüft. Einzelne WAN-Prüfungen können
+weiterhin dauern. Die Status-Abfrage blockiert nicht den Webserver-Eventloop.
+Nach spätestens zwei Minuten bricht der Browser die Anfrage ab, zeigt einen
+Fehler und versucht es erneut. Bereits angezeigte Daten bleiben bei einem
+fehlgeschlagenen Refresh sichtbar, mit roter Aktualisierungsanzeige.
+Die Oberfläche nutzt den authentifizierten NDJSON-Stream
+`/api/status/stream`; `/api/status` bleibt als vollständige JSON-Antwort
+kompatibel. Ein vorgeschalteter Reverse Proxy darf Streaming-Antworten nicht
+puffern, sonst erscheinen Zwischenmeldungen erst verspätet.
 
 Das Dashboard ist ein **reiner Status-Monitor**: es zeigt Zustand, Verbindungen
 und Lauf-Statistik, mehr nicht. Der Quellen-Finder und der Energy-Kanal-Browser,

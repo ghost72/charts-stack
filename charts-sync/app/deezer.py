@@ -78,7 +78,7 @@ _PAGE_SIZE = 100
 _MAX_TRACKS = 100000
 
 
-def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
+def _fetch_deezer_feed(feed, client: httpx.Client, *, strict: bool = False) -> list[ChartTrack]:
     """
     Fetch ONE Deezer source (chart or playlist), with pagination.
     feed.limit is the desired total count (a very high value for "all"); it is
@@ -113,7 +113,16 @@ def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
             raise RuntimeError(t("sync.deezer.api_error", feed_type=feed_type,
                                  feed_id=feed_id, error=payload['error']))
 
+        if strict and (not isinstance(payload, dict) or not isinstance(payload.get("data"), list)):
+            raise ValueError(f"Invalid Deezer {feed_type} response for {feed_id}")
         items = payload.get("data", []) if isinstance(payload, dict) else []
+        if strict and any(
+            not isinstance(item, dict) or not isinstance(item.get("artist"), dict)
+            or not isinstance(item["artist"].get("name"), str)
+            or not isinstance(item.get("title_short") or item.get("title"), str)
+            for item in items
+        ):
+            raise ValueError(f"Invalid Deezer {feed_type} track for {feed_id}")
         if not items:
             break  # no further tracks (end of the list reached)
 
@@ -126,6 +135,25 @@ def _fetch_deezer_feed(feed, client: httpx.Client) -> list[ChartTrack]:
 
     logger.info(t("deezer.feed.result", type=feed_type, id=feed_id, count=len(tracks)))
     return tracks
+
+
+def fetch_genre_chart(genre_id: str, limit: int) -> list[ChartTrack]:
+    """Read one genre chart strictly, without local tags or artist-scene filters."""
+    feed = config.Feed("deezer", limit, deezer_type="chart", source=genre_id)
+    with httpx.Client(timeout=30.0, headers={"User-Agent": "charts-sync/1.0"},
+                      follow_redirects=True) as client:
+        tracks = _fetch_deezer_feed(feed, client, strict=True)
+    if not tracks:
+        raise ValueError(f"Deezer genre chart {genre_id} returned no usable tracks")
+    unique = {}
+    for track in tracks:
+        if any("\n" in value or "\r" in value for value in (track.artist, track.title)):
+            raise ValueError(f"Invalid multiline metadata in Deezer genre chart {genre_id}")
+        unique.setdefault(_merge_key(track), track)
+    result = list(unique.values())[:limit]
+    for position, track in enumerate(result, 1):
+        track.position = position
+    return result
 
 
 def _merge_key(track: ChartTrack) -> str:
@@ -267,18 +295,33 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     """
     from . import artist_catalog
 
-    is_mundart = getattr(chart_source, "name", "") == artist_catalog.MUNDART_PLAYLIST
-    selection = artist_catalog.load_selection() if is_mundart else None
+    manages_artists = getattr(chart_source, "name", "") == config.CHARTS_ARTIST_PLAYLIST
+    collects_scenes = manages_artists or getattr(chart_source, "_collect_artist_scenes", False)
+    selection = artist_catalog.load_selection() if collects_scenes else None
+    scenes = artist_catalog.configured_scenes(selection) if selection else {}
+    scene_tracks = {key: {} for key in scenes}
+    chart_source.scene_tracks = {}
+    chart_source.scene_filenames = {
+        scene: artist_catalog.scene_filename(scene, selection) for scene in scenes.values()
+    }
+    chart_source.scene_download_tracks = []
+    chart_source.scene_complete = True
+    downloads = artist_catalog.manual_scene_downloads(selection) if selection else {}
+    download_tracks = []
     configured_active = chart_source.active_feeds
     manual_feeds = (
         artist_catalog.manual_artist_feeds(selection)
-        if selection is not None else []
+        if manages_artists else []
     )
     active = (
         [feed for feed in configured_active if feed.kind != "energy"]
         + manual_feeds
         + [feed for feed in configured_active if feed.kind == "energy"]
     )
+    scene_only = artist_catalog.manual_scene_feeds(
+        selection, {feed.source for feed in active
+                    if feed.kind == "deezer" and feed.deezer_type == "artist"}, downloads
+    ) if selection and getattr(chart_source, "_scene_manual_feeds", manages_artists) else []
     # Per-playlist effective genre filter (explicit genre_filter > global).
     genre_active = chart_source.effective_genre_filter
     skipped = len(chart_source.feeds) - len(configured_active)
@@ -297,23 +340,41 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
     # Contribution stats per source: raw delivered and of those NEW (not yet
     # covered by an earlier feed).
     stats: dict[str, dict[str, int]] = {}
+    failed_feeds: dict[str, int] = {}
     # Remember which source a song originally came from (for the filter balance).
     origin: dict[str, str] = {}
 
     with httpx.Client(timeout=30.0, headers={"User-Agent": "charts-sync/1.0"},
                       follow_redirects=True) as client:
-        for feed in active:
+        for feed_index, feed in enumerate(active + scene_only):
+            extra = feed_index >= len(active)
             try:
                 tracks = _fetch_one_feed(feed, client)
             except Exception as e:
                 logger.error(t("deezer.feed.failed", feed=repr(feed), error=e))
+                if not extra:
+                    failed_feeds[feed.kind] = failed_feeds.get(feed.kind, 0) + 1
+                chart_source.scene_complete = False
                 continue
-            if is_mundart:
+            if collects_scenes:
                 discoveries.append((artist_catalog._feed_label(feed), tracks))
+            if selection and scenes:
+                for rank, track in enumerate(tracks, 1):
+                    memberships = artist_catalog.track_scenes(track, selection)
+                    if memberships and not _is_excluded_artist(
+                            track.artist, chart_source.exclude_artists, track.contributors):
+                        for key in memberships & scenes.keys():
+                            limit = downloads.get(feed.source, {}).get(key, 0) if extra else 0
+                            if extra and rank <= limit:
+                                download_tracks.append((rank, track, scenes[key]))
+                            if not extra or rank <= (limit or 50):
+                                scene_tracks[key].setdefault(_merge_key(track), track)
+            if extra:
+                continue
             s = stats.setdefault(feed.kind, {"raw": 0, "new": 0})
             s["raw"] += len(tracks)
             for track in tracks:
-                if (selection is not None
+                if (manages_artists
                         and selection["filter_enabled"]
                         and not artist_catalog.is_allowed(track, selection)):
                     artist_filtered += 1
@@ -339,7 +400,7 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
                 s["new"] += 1
                 merged.append(track)
 
-        if is_mundart:
+        if collects_scenes:
             artist_catalog.record_discoveries(discoveries)
 
         if excluded_artists:
@@ -350,8 +411,25 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
                           name=chart_source.title, count=artist_filtered))
 
         before_filter = len(merged)
+        main_candidates = {id(track) for track in merged} if scenes else set()
         # Apply the (optional) genre filter to the merged list.
         merged = _apply_genre_filter(merged, client, genre_active)
+        if scenes:
+            unique = {id(track): track for tracks in scene_tracks.values()
+                      for track in tracks.values()}
+            unique.update((id(track), track) for _rank, track, _scene in download_tracks)
+            additional = [track for key, track in unique.items() if key not in main_candidates]
+            accepted = {id(track) for track in merged}
+            if additional:
+                accepted.update(id(track) for track in
+                                _apply_genre_filter(additional, client, genre_active))
+            chart_source.scene_tracks = {
+                scenes[key]: [track for track in tracks.values() if id(track) in accepted]
+                for key, tracks in scene_tracks.items()
+            }
+            chart_source.scene_download_tracks = [
+                (rank, track, scene) for rank, track, scene in download_tracks if id(track) in accepted
+            ]
 
     # Reassign positions after the merge (1..N in merge order).
     for i, track in enumerate(merged, start=1):
@@ -384,6 +462,9 @@ def fetch_chart(chart_source) -> list[ChartTrack]:
         "genre_filtered": filtered if genre_active else 0,
         "artist_filtered": artist_filtered,
     }
+    for kind in {feed.kind for feed in active}:
+        chart_source.last_stats[f"{kind}_raw"] = stats.get(kind, {}).get("raw", 0)
+        chart_source.last_stats[f"{kind}_failed"] = failed_feeds.get(kind, 0)
 
     logger.info(t("deezer.merge.result", name=chart_source.title, count=len(merged)))
     return merged

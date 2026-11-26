@@ -54,7 +54,12 @@ def _run_loop(monkeypatch, tmp_path, scripted):
     monkeypatch.setattr(sys, "argv", ["charts-digest"])
     monkeypatch.setattr(config, "RUN_ON_START", False)
     monkeypatch.setattr(main, "_now", FakeClock(scripted).now)
-    monkeypatch.setattr(main, "run_once", lambda *a, **k: calls.append(True))
+
+    def successful_run(*args, **kwargs):
+        calls.append(True)
+        return True
+
+    monkeypatch.setattr(main, "run_once", successful_run)
     monkeypatch.setattr(main.time, "sleep", lambda *_: None)
     monkeypatch.setattr(status, "STATUS_DIR", str(tmp_path))
     status.init("charts-digest")
@@ -80,6 +85,7 @@ def test_autumn_fall_back_fires_once(monkeypatch, tmp_path):
         d(9, 0),           # gated
     ]
     assert _run_loop(monkeypatch, tmp_path, scripted) == [True]
+    assert _read_status(tmp_path)["last_fired_local_date"] == "2026-10-25"
 
 
 # --- FR-4.2 Spring: skipped hour still fires once via >= -------------------
@@ -97,6 +103,7 @@ def test_spring_forward_fires_once(monkeypatch, tmp_path):
         d(8, 0),           # same day -> gated
     ]
     assert _run_loop(monkeypatch, tmp_path, scripted) == [True]
+    assert _read_status(tmp_path)["last_fired_local_date"] == "2026-03-29"
 
 
 # --- FR-4.3 Restart inside the same day after a fire -----------------------

@@ -6,6 +6,10 @@ All values are read from environment variables (see .env.example).
 import json
 import logging
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .deezer import ChartTrack
 
 from .i18n import t
 
@@ -185,6 +189,7 @@ SYNC_HEALTH_FILE = os.environ.get("SYNC_HEALTH_FILE", ".charts-sync-health.json"
 # Priority: CHARTS_FILE (if set AND file exists AND valid JSON)
 # > CHARTS env > built-in default playlists. Empty = file path off.
 CHARTS_FILE = os.environ.get("CHARTS_FILE", "").strip()
+CHARTS_ARTIST_PLAYLIST = os.environ.get("CHARTS_ARTIST_PLAYLIST", "").strip() or "mundart.m3u"
 
 # --- Playlist order ---
 # In which order the tracks are written to the .m3u:
@@ -299,6 +304,8 @@ class ChartSource:
         # {"deezer_new": int, "lastfm_new": int, "apple_new": int, "energy_new": int,
         #  "genre_filtered": int, "artist_filtered": int}
         self.last_stats: dict[str, int] = {}
+        self.scene_tracks: dict[str, list["ChartTrack"]] = {}
+        self.scene_filenames: dict[str, str] = {}
 
     @property
     def active_feeds(self) -> list["Feed"]:
@@ -652,3 +659,6 @@ def _parse_charts() -> list[ChartSource]:
 
 
 CHARTS = _parse_charts()
+if CHARTS_ARTIST_PLAYLIST != "mundart.m3u" and not any(
+        source.name == CHARTS_ARTIST_PLAYLIST for source in CHARTS):
+    logger.warning(t("sync.config.artist_playlist_missing", name=CHARTS_ARTIST_PLAYLIST))

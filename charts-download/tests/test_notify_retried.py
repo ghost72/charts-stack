@@ -15,6 +15,8 @@ All tests run WITHOUT network/Docker.
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from app import config, i18n, main
@@ -102,6 +104,32 @@ def test_requeue_failed_returns_songs(monkeypatch):
     assert "abba|waterloo" not in st["requested"]
 
 
+@pytest.mark.parametrize(("language", "description", "queued"), [
+    ("de", "für erneute Suche freigegeben", "Downloads an slskd übergeben"),
+    ("en", "released for another search", "downloads queued in slskd"),
+    ("fr", "libérés pour une nouvelle recherche", "téléchargements ajoutés à la file slskd"),
+])
+def test_released_failure_is_not_reported_as_downloaded(monkeypatch, language, description, queued):
+    _setup(monkeypatch)
+    i18n.setup(lang=language, lang_dir=_LANG_DIR)
+    captured = _capture(monkeypatch)
+    st = {"requested": {"a|t": {"artist": "Artist", "title": "Title"}}}
+    monkeypatch.setattr(main.slsk, "check_download_states",
+                        lambda client, requested: (["a|t"], []))
+    monkeypatch.setattr(main.slsk, "cleanup_failed", lambda *args: None)
+    monkeypatch.setattr(main.state, "save", lambda *args: None)
+    count, songs = main._requeue_failed(None, st)
+    main._summary_and_notify([], [], count, songs)
+    assert description in captured["message"]
+    assert "Artist - Title" in captured["message"]
+    assert "a|t" not in st["requested"]
+    assert main.notify_budget.measure([captured["message"]]) <= 1024
+    main._summary_and_notify([], [("charts", "♪ Artist - Title")], count, songs)
+    assert queued in captured["message"]
+    assert description in captured["message"]
+    assert "\n\n" + i18n.t("download.notify.retried_header", count=1) in captured["message"]
+
+
 # --- Golden no-cut tests + budget (notify_budget) ------------------------------
 
 from app import notify_budget  # noqa: E402
@@ -121,7 +149,7 @@ def _old_message(header, items):
         if shown >= 15:
             break
         lines.append("")
-        lines.append(f"<b>{label}</b>")
+        lines.append(f"{main._group_emoji(label)} <b>{label}</b>")
         for text in texts:
             if shown >= 15:
                 break
@@ -151,6 +179,19 @@ def _check_equal(monkeypatch, spec):
 
 def test_golden_below_cap(monkeypatch):
     _check_equal(monkeypatch, [("charts", 3), ("mundart", 2)])
+
+
+def test_source_group_headings_have_matching_icons(monkeypatch):
+    _setup(monkeypatch)
+    captured = _capture(monkeypatch)
+    main._notify("title", [], [
+        ("energy-library", "♪ Artist - Energy track"),
+        ("Playlist: Mundart-Pop", "♪ Artist - Playlist track"),
+    ])
+    msg = captured["message"]
+    assert "⚡ <b>energy-library</b>" in msg
+    assert "🎸 <b>Playlist: Mundart-Pop</b>" in msg
+    assert notify_budget.measure([msg]) <= 1024
 
 
 def test_golden_above_cap_within_budget(monkeypatch):

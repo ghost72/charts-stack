@@ -105,7 +105,7 @@ def _body(n_missing, cand):
     t = i18n.t
     head = t("recommend.notify.new_to_load", missing=n_missing, users=1,
              candidates=cand)
-    return head + t("recommend.notify.sources", sources="u1 (stats 20)")
+    return head + "\n" + t("recommend.notify.sources", sources="u1 (stats 20)")
 
 
 def _run(monkeypatch, n_missing, pad=0):
@@ -160,6 +160,7 @@ def _sources_line(monkeypatch, users):
 def test_sources_one_user_stays_on_one_line(monkeypatch):
     lines = _sources_line(monkeypatch, ["u1"])
     assert "Sources: u1 (stats 3)" in lines
+    assert lines[lines.index("Sources: u1 (stats 3)") - 1] == ""
 
 
 def test_sources_two_users_one_line(monkeypatch):

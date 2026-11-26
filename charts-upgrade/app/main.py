@@ -26,6 +26,7 @@ Position in the chain:
   -> slskd -> /Charts -> charts-import (replaces on a real cutoff upgrade)
 """
 
+import json
 import logging
 import os
 import time
@@ -69,6 +70,8 @@ def run_once() -> dict:
 
     logger.info(t("upgrade.scan.summary", scanned=scanned, skipped=skipped_comp,
                   bad=len(bad_songs), scan_seen=scan_seen, scan_total=scan_total))
+
+    _notify_missing_metadata()
 
     if not bad_songs:
         logger.info(t("upgrade.run.no_bad_songs"))
@@ -159,6 +162,37 @@ def run_once() -> dict:
         "scan_seen": scan_seen,
         "scan_total": scan_total,
     }
+
+
+def _notify_missing_metadata() -> None:
+    path = os.path.join(status.STATUS_DIR, "missing-metadata.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+        if (not isinstance(report, dict) or report.get("version") != 1
+                or not isinstance(report.get("songs"), list)
+                or not isinstance(report.get("generated_at"), str)):
+            raise ValueError("Invalid metadata report")
+        counts = {"year": 0, "album": 0, "track": 0, "unreadable": 0}
+        for song in report["songs"]:
+            if not isinstance(song, dict):
+                raise ValueError("Invalid metadata report entry")
+            if song.get("unreadable") is True:
+                counts["unreadable"] += 1
+                continue
+            missing = song.get("missing")
+            if not isinstance(missing, list) or not all(field in counts and field != "unreadable"
+                                                        for field in missing):
+                raise ValueError("Invalid metadata fields")
+            for field in set(missing):
+                counts[field] += 1
+    except (OSError, ValueError, TypeError) as err:
+        logger.warning(t("upgrade.metadata.unavailable", error=err))
+        return
+    if not any(counts.values()):
+        return
+    notify.send(t("upgrade.metadata.title"),
+                t("upgrade.metadata.summary", **counts, date=report["generated_at"]))
 
 
 def _download_first_working(client, candidates):

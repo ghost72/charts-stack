@@ -209,4 +209,9 @@ sudo docker compose down
 
 ## Aufbau der Pushover-Meldung
 
+Zusätzlich meldet Upgrade bei offenen Metadaten die Anzahl je Feld und
+unlesbare Tags aus dem letzten datierten Import-Nachlauf. Die vollständige
+Liste und manuelle Korrektur stehen in charts-config im Tag-Editor. Die Zahlen
+betreffen passende Manifest-MP3s und können bis zum nächsten Nachlauf veralten.
+
 Jeder Song ist ein unteilbarer Dreizeilen-Eintrag (Song, Grund, Leerzeile) und wird nie zerschnitten; das 15-Einträge-Limit behält seinen eigenen Hinweis. Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.

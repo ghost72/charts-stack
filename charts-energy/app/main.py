@@ -30,6 +30,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from itertools import zip_longest
 
 from . import (config, discover, feed, health, icy, library, notify,
                notify_budget, playlist,
@@ -168,8 +169,10 @@ def run_match() -> dict:
     # is_fallback, decade) for the missing songs; 3-tuple (artist, title, year)
     # for the present ones.
     library_missing: list[tuple[int, str, str, str, bool, str]] = []
+    library_missing_by_channel: list[list[tuple[int, str, str, str, bool, str]]] = []
     library_present: list[tuple[str, str, str]] = []
     library_seen_tracks: set[str] = set()
+    library_channels_observed = True
     lib_pos = 0
 
     for channel in channels:
@@ -183,9 +186,12 @@ def run_match() -> dict:
             continue
 
         if channel.mode == "library":
+            library_channels_observed = library_channels_observed and bool(tracks)
+            first_missing = len(library_missing)
             lib_pos = _match_library_channel(
                 channel, tracks, lib, lib_pos, library_missing, library_present,
                 library_seen_tracks)
+            library_missing_by_channel.append(library_missing[first_missing:])
             continue
 
         # OWN mode: assign a synthetic chart position by recency (newest first).
@@ -233,13 +239,19 @@ def run_match() -> dict:
             logger.info(t("energy.feed.skipped", theme=theme))
             continue
         feed.write(theme, track_lists)
-        feed_results.append({"theme": theme, "count": total})
+        feed_results.append({"theme": theme, "count": len(feed.merge_tracks(track_lists))})
 
     # LIBRARY output: write the single shared missing file + the shared year map
     # ONCE across all library channels (year map for the MISSING list only).
+    library_missing = [
+        (pos, *song[1:])
+        for pos, song in enumerate(
+            (song for group in zip_longest(*library_missing_by_channel)
+             for song in group if song is not None), start=1)
+    ]
     library_results: dict | None = None
     if library_missing or library_present:
-        if library_missing:
+        if library_missing or library_channels_observed:
             playlist_library.write_missing(
                 library_missing, config.LIBRARY_MISSING_FILE)
         playlist_library.write_year_map(library_missing)
@@ -269,103 +281,85 @@ def _library_song_line(artist: str, title: str, yr: str) -> str:
              artist=artist, title=title)
 
 
+def _overview(parts: list[str], compact: list[str]) -> str:
+    if len(parts) == 1:
+        text = (parts[0] if notify_budget.measure(parts) <= notify_budget.OVERVIEW_MAX
+                else compact[0])
+    else:
+        text = notify_budget.overview_line(parts, compact, sep="\n")
+        if notify_budget.measure([text]) > notify_budget.OVERVIEW_MAX:
+            text = notify_budget.overview_line(compact, compact, sep="\n")
+    return notify_budget.hard_cut(text, notify_budget.OVERVIEW_MAX)
+
+
 def _notify(results: list[dict], feed_results: list[dict] | None = None,
             library_results: dict | None = None) -> None:
     """Pushover message with the OWN match results + FEED summary + LIBRARY."""
     feed_results = feed_results or []
     if not results and not feed_results and not library_results:
         return
-    # Header totals span BOTH the own-mode playlists and the library-mode
-    # channels (present + to-load), so the top line matches the per-section
-    # detail below instead of only counting own channels (which left the header
-    # at "0 / 0" whenever only feed/library channels were active). Feed channels
-    # are deliberately NOT folded in: their tracks are HANDED OVER to charts-sync
-    # (not downloaded or counted as present/missing here) and keep their own
-    # "X track(s) handed over" line.
     lib = library_results or {}
-    lib_present = len(lib.get("present") or [])
-    lib_to_load = len(lib.get("to_load") or [])
-    total_matched = sum(r["matched"] for r in results) + lib_present
-    total_missing = sum(r["missing"] for r in results) + lib_to_load
     push_title = t("energy.notify.title", service="charts-energy")
     to_load = lib.get("to_load") or []
     present = lib.get("present") or []
 
-    # Overview line (head, never cut): every channel / feed / library count in
-    # detail order. Zero counts stay (a channel with 0 missing is informative).
-    parts, compact = [], []
-    for r in results:
-        parts.append(t("notify.overview.channel", title=r["title"],
-                       matched=r["matched"], missing=r["missing"]))
-        compact.append(f"✅{r['matched']} ⬇{r['missing']}")
-    for fr in feed_results:
-        parts.append(t("energy.notify.overview_feed",
-                       theme=fr["theme"], count=fr["count"]))
-        compact.append(f"➡{fr['count']}")
+    head = []
     if library_results:
-        parts.append(t("energy.notify.overview_library",
-                       matched=len(present), missing=len(to_load)))
-        compact.append(f"📚 ✅{len(present)} ⬇{len(to_load)}")
-    overview = notify_budget.overview_line(parts, compact)
-    # The head line's trailing colon introduces the overview below it; without
-    # an overview (single item omitted) the plain variant avoids a dangling ":".
-    body_key = "energy.notify.body" if overview else "energy.notify.body_plain"
-    head = [t(body_key, matched=total_matched, missing=total_missing)]
-    if overview:
-        head.append(overview)
+        head.extend([t("energy.notify.library_overview_header"),
+                     t("energy.notify.library_done",
+                       matched=len(present), missing=len(to_load))])
+    if results:
+        if head:
+            head.append("")
+        head.extend([
+            t("energy.notify.own_overview_header"),
+            _overview(
+                [t("notify.overview.channel", title=r["title"],
+                   matched=r["matched"], missing=r["missing"]) for r in results],
+                [f"✅{r['matched']} ⬇{r['missing']}" for r in results]),
+        ])
+    if feed_results:
+        if head:
+            head.append("")
+        head.extend([
+            t("energy.notify.feed_overview_header"),
+            _overview(
+                [t("energy.notify.feed_overview_item",
+                   theme=fr["theme"], count=fr["count"]) for fr in feed_results],
+                [f"📻 {fr['count']}" for fr in feed_results]),
+        ])
 
     Block, Entry = notify_budget.Block, notify_budget.Entry
     blocks = []
     limit = config.NOTIFY_MISSING_LIMIT
     for r in results:
-        # The own_done line is a weight-0 info entry; the song lines follow as
-        # one entry each (the first carries the blank separator line).
-        entries = [Entry([t("energy.notify.own_done",
-                            matched=r["matched"], missing=r["missing"])],
-                         weight=0)]
         missing_songs = r.get("missing_songs") or []
         hidden, cap_note = 0, ""
         if missing_songs and limit > 0:
-            for i, (pos, artist, title) in enumerate(missing_songs[:limit]):
-                line = t("notify.song_entry", pos=pos, artist=artist, title=title)
-                entries.append(Entry(["", line] if i == 0 else [line]))
+            entries = [Entry([t("notify.song_entry", pos=pos, artist=artist,
+                                title=title)])
+                       for pos, artist, title in missing_songs[:limit]]
             if len(missing_songs) > limit:
                 hidden = len(missing_songs) - limit
                 cap_note = t("notify.missing.more", count=hidden)
-        blocks.append(Block(entries=entries, header=["", f"<b>{r['title']}</b>"],
-                            hidden=hidden, cap_note=cap_note))
-    for i, fr in enumerate(feed_results):
-        blocks.append(Block(
-            entries=[Entry([t("energy.notify.feed_done",
-                              theme=fr["theme"], count=fr["count"])], weight=0)],
-            header=[""] if i == 0 else []))
-    # LIBRARY section (download-only channels): a summary block, then the songs
-    # queued for download (capped) and the ones already present (uncapped, like
-    # charts-flashback; the 1024-char budget is the only backstop).
+            blocks.append(Block(entries=entries,
+                                header=["", f"<b>{r['title']}</b>"],
+                                hidden=hidden, cap_note=cap_note))
     if library_results:
-        # Clarifying header so the library-mode channels (e.g. 80s/90s) are
-        # visibly a separate block: unlike feed channels they are download-only
-        # and have no "Playlist einsortiert" line.
-        blocks.append(Block(entries=[Entry(
-            ["", t("energy.notify.library_section"),
-             t("energy.notify.library_done",
-               matched=len(present), missing=len(to_load))], weight=0)]))
         if to_load:
             shown = to_load[:limit] if limit > 0 else to_load
             hidden = len(to_load) - limit if limit > 0 and len(to_load) > limit else 0
             blocks.append(Block(
                 entries=[Entry([_library_song_line(artist, title, yr)])
                          for _pos, artist, title, yr, *_rest in shown],
-                header=["", t("energy.notify.library_to_load_header",
-                              count=len(to_load))],
+                header=["", t("energy.notify.library_missing_list")],
                 hidden=hidden,
                 cap_note=t("notify.missing.more", count=hidden) if hidden else ""))
         if present:
             blocks.append(Block(
                 entries=[Entry([_library_song_line(artist, title, yr)], weight=0)
                          for artist, title, yr in present],
-                header=["", t("energy.notify.library_present_header",
-                              count=len(present))]))
+                header=["", t("energy.notify.library_present_list")]))
 
     message = notify_budget.fit_message(
         head, blocks, [], more=lambda n: t("notify.more", count=n))

@@ -316,14 +316,15 @@ def test_handle_notify_shows_energy_bit(monkeypatch):
     class _Src:
         title = "Schweizer Mundart"
         name = "mundart.m3u"
-        last_stats = {"deezer_new": 2, "lastfm_new": 0, "energy_new": 3,
+        last_stats = {"deezer_raw": 4, "deezer_new": 2, "deezer_failed": 0,
+                      "energy_raw": 5, "energy_new": 3, "energy_failed": 0,
                       "genre_filtered": 0}
 
     state = {}
     main._handle_notify(_Src(), matched=[(1, "A", "B", "/music/a.mp3")],
                         missing=[], state=state)
-    assert "Energy 3" in sent["msg"]
-    assert "Deezer 2" in sent["msg"]
+    assert "Energy: 5 received · 3 additional" in sent["msg"]
+    assert "Deezer: 4 received · 2 additional" in sent["msg"]
 
 
 # --- (f) PLAYLIST_ORDER=newest-first ----------------------------------------

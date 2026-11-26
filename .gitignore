@@ -32,5 +32,27 @@ __pycache__/
 # Local git worktrees (e.g. .worktrees/github-ready); never committed.
 .worktrees/
 
-# Internal planning notes (not for public release)
-docs/
+# Runtime sessions stay local, including in the private NAS repository.
+.copilot/
+.claude/
+
+# Local workspace context excluded from application releases.
+.agents/
+.kiro/
+.copilot/
+.claude/
+.worktrees/
+**/.github/agents/
+**/.github/instructions/
+**/.github/prompts/
+**/.github/chatmodes/
+**/.github/skills/
+**/.github/modernize/
+AGENTS.md
+CLAUDE.md
+AI-HANDOVER.md
+copilot-instructions.md
+/docs/AI-HANDOVER.md
+/docs/I18N-TODO.md
+/docs/ROBUSTNESS-TODO.md
+/.github/copilot-instructions.md

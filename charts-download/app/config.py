@@ -36,6 +36,9 @@ MISSING_FILES = [
         "MISSING_FILES", "/charts/missing.txt"
     ).split(";") if p.strip()
 ]
+ENERGY_LIBRARY_MISSING_FILE = os.environ.get(
+    "ENERGY_LIBRARY_MISSING_FILE", "missing-energy-library.txt"
+) or "missing-energy-library.txt"
 
 # --- Selection criteria ---
 # Minimum MP3 bitrate in kbps. Results below are discarded.

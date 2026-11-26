@@ -90,7 +90,22 @@ default arrangement.
   as "in 1 h"; an overdue run is honestly labelled "overdue".
 - **Storage & inventory:** file count/size of the charts share and the quarantine.
 
-The page refreshes automatically (default every 15 s).
+The page refreshes automatically (default: 15 s after the previous check
+finishes). Requests from the same browser tab do not overlap.
+Initial loading shows a dark progress card with an explanation and elapsed
+time instead of a blank view; the status dot is amber while checking.
+Live text for each check group shows **waiting → checking → checked**, together
+with the completed-group count. Messages come from actual collection, not an
+animation timer. **Checked** means finished, not necessarily reachable or
+healthy; the subsequent status tiles show the outcome.
+Containers, slskd, Lidarr, external sources, storage and in-progress data are
+checked as independent groups in parallel. Individual WAN checks may still
+take time. Status collection does not block the web server's event loop.
+After two minutes the browser aborts the request, displays an error and retries.
+Existing data stays visible if a refresh fails, with a red refresh indicator.
+The UI uses the authenticated NDJSON stream `/api/status/stream`;
+`/api/status` remains compatible as a complete JSON response. Reverse proxies
+must not buffer streaming responses, or intermediate messages will arrive late.
 
 The dashboard is a **pure status monitor**: it shows state, connections and run
 stats, nothing more. The source finder and the Energy-channel browser that used

@@ -48,6 +48,21 @@ docker exec charts-digest python -m app.main --now
 
 ## Pushover message layout
 
+When present, the source overview is separated from the period and count by a
+blank line.
+
+Scene names from the import log are preserved, such as **🎸 Mundart-Pop**.
+A song shared by multiple scenes appears once under the combined source.
+Special characters in these names are escaped for HTML. Existing older logs
+are not rewritten.
+Earlier `Mundart:` sources also use a guitar and omit the fixed prefix.
+Single old `Mundart:` and new `Playlist:` sources with the same scene name
+are grouped in the report, with duplicate songs counted once in that group.
+Combined sources remain separate groups; the import log is not changed for this.
+The legacy technical source `.charts-scene-missing` displays as
+**🎸 Scene top tracks** without inventing a missing scene assignment.
+The main `mundart` source keeps its Swiss flag.
+
 The first lines of the message are an **overview** with every source and its song count, largest first, one source per line (e.g. `⚡ Energy · 59`, `🙋 Manually requested · 12`, `📤 Manual upload · 8`; no separator line, a blank line precedes the first source block). Overview layout (same rule in every service): with one item it is omitted (the block below carries the numbers), with two items it is one line joined with ` · `, with three or more it is one item per line. So no source is lost even when the detail list below is shortened. Groups that no longer fit are summarised in the final "… and N more" line instead of being dropped silently. `DIGEST_MAX_PER_SOURCE` keeps its meaning (per-source cap with its own note). The text always fits Pushover's 1024-character limit (measured the way Pushover receives it, HTML-escaped). If the list is too long, it is cut only between whole entries and closes with one explicit "… and N more" line; the header and the overview line are never cut.
 
 ## Configuration (central `.env`)

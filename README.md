@@ -50,7 +50,7 @@ any Subsonic client works, on any platform.
 | **charts-songrequest** | Web UI (FastAPI), multi-user login, three tabs: request a song (slskd search), upload an MP3, or import from a YouTube URL | on-demand |
 | **charts-watchdog** | Watches all containers and notifies via Pushover when one fails or recovers | 30 s |
 | **charts-dashboard** | Web UI (FastAPI) showing status of all services, connections, run stats, and an "in progress" overview (active downloads, queue, quarantine, upgrade) | service |
-| **charts-config** | Password-protected web UI (port 5058) with source finder, Energy browser, local Mundart artist/scene inventory and filter, and manual tag editor | service |
+| **charts-config** | Password-protected web UI (port 5058) with source finder, Energy browser, general artist/scene playlists and optional main playlist filter, and manual tag editor | service |
 | **slskd** | Soulseek client, the download engine (needs its own Soulseek login) | service |
 
 ### The glue: two shared folders + the manifest
@@ -112,6 +112,16 @@ test -e .env || (umask 077; cp .env.example .env)
 #      and the config login instead of DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
+# Create the two file bind-mount sources before Docker can create directories
+# at those paths. Existing files are never replaced. Leave CHARTS_FILE and
+# ENERGY_CHANNELS_FILE empty if you configure their JSON values in the UI.
+test -e charts-sync/charts.json || (umask 077; cp charts-sync/charts.json.example charts-sync/charts.json)
+test -e charts-energy/energy-channels.json || (umask 077; cp charts-energy/energy-channels.json.example charts-energy/energy-channels.json)
+test -f charts-sync/charts.json && test -f charts-energy/energy-channels.json || {
+  echo "Expected regular JSON files; inspect existing paths before continuing." >&2
+  exit 1
+}
+
 # 2. Create the data and backup directories BEFORE the first start with the right
 #    ownership (otherwise Docker creates them as root on bind-mount and the
 #    services, running as PUID:PGID, cannot write).
@@ -121,7 +131,7 @@ test -e .env || (umask 077; cp .env.example .env)
 export MUSIC_ROOT=/volume2/music   # use the SAME value as in your .env
 mkdir -p "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare" .env-backups
 # Use your own PUID:PGID and run with sufficient privileges:
-chown 1027:100 .env .env-backups "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
+chown 1027:100 .env .env-backups charts-sync/charts.json charts-energy/energy-channels.json "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
 chmod 600 .env
 chmod 700 .env-backups
 ```
@@ -208,8 +218,9 @@ and slskd settings before resuming automation.
 > **First run / what healthy looks like.** The three web UIs are always started,
 > so their passwords are part of the minimum config: songrequest on `:5056`,
 > dashboard on `:5057`, config on `:5058`. After the first start the services
-> sit **idle** until charts-sync (runs every 12 h) has written the first
-> `missing-*.txt` – that is normal, nothing is broken. Watch the dashboard at
+> may initially sit **idle** until an enabled source has written a
+> `missing-*.txt` – that is normal. Radio/recommendation sources can supply
+> requests independently of charts-sync (runs every 12 h). Watch the dashboard at
 > `http://<host>:5057`; slskd must show **logged in** to the Soulseek server.
 
 ### Connecting Navidrome
@@ -218,9 +229,9 @@ charts-stack only produces the `.m3u` playlists and sorts the music into
 `MUSIC_ROOT/Music` – playback happens through **Navidrome** (a separate service,
 not part of this stack). To make them work together:
 
-- Navidrome must mount the **same** two shared folders charts-stack uses:
-  `MUSIC_ROOT/Music` (the library charts-import fills) **and** `MUSIC_ROOT/Charts`
-  (where charts-sync writes the `.m3u` playlists).
+- Navidrome must mount `MUSIC_ROOT/Music`: both imported audio and generated
+  `.m3u` playlists live there. `MUSIC_ROOT/Charts` holds download staging,
+  missing lists and state; it is not required for playlist playback.
 - Enable **playlist scanning** in Navidrome (`ND_PLAYLISTPARSING_ENABLED=true`)
   so the playlists written by charts-sync (`charts.m3u`, `mundart.m3u`) show up
   in Navidrome.
@@ -252,9 +263,7 @@ services:
       - ND_PLAYLISTPARSING_ENABLED=true
     volumes:
       - ./navidrome-data:/data                 # Navidrome config + DB
-      # The SAME two shared folders charts-stack uses, read-only:
-      - ${MUSIC_ROOT}/Music:/Music:ro          # library charts-import fills
-      - ${MUSIC_ROOT}/Charts:/Charts:ro        # playlists charts-sync writes
+      - ${MUSIC_ROOT}/Music:/Music:ro          # audio + generated M3U playlists
     ports:
       - 4533:4533
     restart: unless-stopped
@@ -277,7 +286,63 @@ Docker access).
 **Controlling individual services:** from the charts-stack folder, e.g.
 `docker compose restart slskd` or `docker compose up -d charts-sync`.
 
+### Playlist configuration and library-only sources
+
+Configure the table's environment variables in **charts-config → .env**.
+Artist, scene and genre rules are managed in **Artists & scenes**.
+The file-based alternatives described below are configured manually in `.env`.
+
+| Output / purpose | Where to configure | Playlist writer |
+| --- | --- | --- |
+| Main playlists such as `charts.m3u` and `mundart.m3u` | `CHARTS`: one JSON entry per playlist, with `name`, `title`, `sources` and `missing`; [source reference](CHARTS-SOURCES.en.md) | `charts-sync` |
+| Additional artist-scene playlists, `charts-<scene>.m3u` | Artists & scenes: link/enable artists, assign scenes and enable additional scene playlists; [guide](charts-config/README.en.md) | `charts-sync` |
+| Official Deezer genre playlists, `charts-<name>.m3u` | Artists & scenes → Genre playlists: choose a genre and source limit; [guide](charts-config/README.en.md#deezer-genre-playlists) | `charts-sync` |
+| Swiss hit parade (`hitparade.m3u` for singles) | `HITPARADE_ENABLED`, `HITPARADE_CHARTS`, schedule; [guide](charts-hitparade/README.en.md) | `charts-hitparade` |
+| Energy channel with its own `energy-*.m3u` | `ENERGY_ENABLED` and `ENERGY_CHANNELS` entry with `mode:"own"`; [guide](charts-energy/README.en.md) | `charts-energy` |
+| Energy input to an existing main playlist | Channel `mode:"feed"` plus an Energy source with the matching `theme` in that playlist's `CHARTS` entry | `charts-sync`, no second Energy M3U |
+| Library-only radio collection | Energy channels with `mode:"library"` or `FLASHBACK_ENABLED`/`FLASHBACK_CHANNELS`; [Energy](charts-energy/README.en.md), [Flashback](charts-flashback/README.en.md) | No own M3U |
+| Library-only recommendations | `RECOMMEND_LISTENBRAINZ_USERS`, `RECOMMEND_SOURCES`; [guide](charts-recommend/README.en.md) | No own M3U |
+
+`CHARTS_ARTIST_PLAYLIST` selects the existing main playlist to which the
+optional artist filter applies; it does not create a playlist or define its
+sources. Scene/genre rules are stored separately in the Charts data directory,
+not in `CHARTS`. Preserve that selection during updates.
+
+**Choose one configuration source:** a successfully loaded `CHARTS_FILE`
+overrides `CHARTS`. For editing JSON in the UI, leave `CHARTS_FILE` empty.
+For file-based configuration, edit `charts-sync/charts.json` and set
+`CHARTS_FILE=/config/charts.json`. The UI does not edit that file.
+The template contains additional examples: remove unused entries/explanatory
+strings before activating it. Without a Last.fm key, disable its example
+sources. Energy has the same choice: `ENERGY_CHANNELS_FILE` takes precedence
+over `ENERGY_CHANNELS`; see its service guide.
+
+After environment or bind-mounted JSON changes, recreate the affected services
+from the project directory; no image build is needed. For a CHARTS change:
+
+```bash
+docker compose up -d --no-deps --force-recreate charts-sync
+```
+
+For Energy settings, use `charts-energy` instead. Artist/scene/genre saves
+instead apply on the next Sync without a rebuild. A source limit is not a
+guaranteed playlist size: M3Us contain matched library files, not pending
+downloads. An existing M3U can also be left over from an earlier configuration.
+
+Library-only means **no own M3U**, not exclusion from other playlists: imported
+songs may later match a chart, scene or genre rule. Download/slskd/import
+perform the actual transfer; [songrequest](charts-songrequest/README.en.md)
+adds manual requests, while [upgrade](charts-upgrade/README.en.md) improves
+existing files. Dashboard, watchdog and digest report state; they are not
+music sources.
+
 ### The MISSING_FILES wiring (recommend → download)
+
+For each additional ordinary playlist, add its configured `missing` file to
+`MISSING_FILES`, using the container path `/charts/<filename>`. Scene and
+Deezer-genre requests in `.charts-scene-missing.txt` are picked up automatically;
+they need no extra entry. Download and Import run before a subsequent Sync can
+include newly acquired files in a playlist.
 
 For **charts-download** to also fetch the download list from
 **charts-recommend**, its **one** combined `missing-recommend.txt` must be in the
@@ -337,13 +402,15 @@ Two services keep an eye on the stack:
 
 A third web UI sits alongside them:
 
-- **charts-config** – a read-only web UI (default port `5058`) hosting the
+- **charts-config** – an authenticated web UI (default port `5058`) hosting the
   **source finder** (Deezer playlist/artist search, Deezer genre table, Last.fm
   tag check, Apple Music country charts → ready `charts-sync` snippets) and the **Energy-channel browser**
-  (per-channel `ENERGY_CHANNELS` snippet + live status), plus the local Mundart
-  artist/scene inventory and optional playlist filter and manual tag editor.
-  It does not write `.env` or `charts.json`. Password-protected with its **own**
-  login (user `admin` + `CONFIG_PASSWORD`). See `charts-config/README.en.md`.
+  (per-channel `ENERGY_CHANNELS` snippet + live status), plus general artist/scene
+  management, official Deezer genre-chart playlists, optional main-playlist
+  filtering and the manual tag editor. Its **.env** tab manages the central
+  environment with private backups; the separate `charts.json` remains
+  untouched. Password-protected with its **own** login (user `admin` +
+  `CONFIG_PASSWORD`). See `charts-config/README.en.md`.
 
 Neither the dashboard nor the watchdog accesses the Docker socket directly; both
 go **read-only** through a
@@ -450,7 +517,7 @@ praktisch jeder Subsonic-Client auf jeder Plattform.
 | **charts-songrequest** | Web-UI (FastAPI) zum manuellen Anfordern einzelner Songs (Mehrbenutzer-Login) | on-demand |
 | **charts-watchdog** | Überwacht alle Container und meldet per Pushover, wenn einer ausfällt oder sich erholt | 30 s |
 | **charts-dashboard** | Web-UI (FastAPI) mit Status aller Dienste, Verbindungen und Lauf-Statistik | Dienst |
-| **charts-config** | Passwortgeschützte Web-UI (Port 5058) mit Quellen-Finder, Energy-Browser, lokalem Mundart-Künstler-/Szenen-Inventar und Filter sowie Tag-Editor | Dienst |
+| **charts-config** | Passwortgeschützte Web-UI (Port 5058) mit Quellen-Finder, Energy-Browser, allgemeinen Künstler-/Szenen-Playlists und optionalem Hauptplaylist-Filter sowie Tag-Editor | Dienst |
 | **slskd** | Soulseek-Client, die Download-Engine (eigenes Soulseek-Login) | Dienst |
 
 ### Das Bindeglied: zwei gemeinsame Ordner + das Manifest
@@ -513,6 +580,16 @@ test -e .env || (umask 077; cp .env.example .env)
 #      ab - Dashboard UND Config - statt DASHBOARD_PASSWORD + CONFIG_PASSWORD.
 #    Optional: RECOMMEND_LISTENBRAINZ_USERS (charts-recommend), LISTENBRAINZ_TOKEN.
 
+# Die beiden Datei-Bind-Mount-Quellen vor Docker anlegen, damit dort keine
+# Verzeichnisse entstehen. Vorhandene Dateien werden nicht ersetzt.
+# CHARTS_FILE und ENERGY_CHANNELS_FILE fuer JSON-Verwaltung im UI leer lassen.
+test -e charts-sync/charts.json || (umask 077; cp charts-sync/charts.json.example charts-sync/charts.json)
+test -e charts-energy/energy-channels.json || (umask 077; cp charts-energy/energy-channels.json.example charts-energy/energy-channels.json)
+test -f charts-sync/charts.json && test -f charts-energy/energy-channels.json || {
+  echo "Regulaere JSON-Dateien erwartet; vorhandene Pfade zuerst pruefen." >&2
+  exit 1
+}
+
 # 2. Daten- und Sicherungsordner VOR dem Start mit den richtigen Rechten anlegen
 #    (sonst legt Docker sie beim Bind-Mount als root an -> die Dienste laufen
 #    unter PUID:PGID und koennen nicht schreiben).
@@ -522,7 +599,7 @@ test -e .env || (umask 077; cp .env.example .env)
 export MUSIC_ROOT=/volume2/music   # DENSELBEN Wert wie in deiner .env verwenden
 mkdir -p "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare" .env-backups
 # Eigene PUID:PGID einsetzen und mit den nötigen Rechten ausführen:
-chown 1027:100 .env .env-backups "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
+chown 1027:100 .env .env-backups charts-sync/charts.json charts-energy/energy-channels.json "$MUSIC_ROOT/Music" "$MUSIC_ROOT/Charts" "$MUSIC_ROOT/SeedShare"
 chmod 600 .env
 chmod 700 .env-backups
 ```
@@ -617,8 +694,9 @@ prüfen.
 > **Erster Start / wie „gesund" aussieht.** Die drei Web-UIs werden immer
 > gestartet, daher gehören ihre Passwörter zur Minimal-Konfiguration:
 > Songrequest auf `:5056`, Dashboard auf `:5057`, Config auf `:5058`. Nach dem
-> ersten Start stehen die Dienste **im Leerlauf**, bis charts-sync (alle 12 h)
-> die erste `missing-*.txt` geschrieben hat – das ist normal, nichts ist kaputt.
+> ersten Start können Dienste **im Leerlauf** stehen, bis eine aktivierte Quelle
+> eine `missing-*.txt` geschrieben hat – das ist normal. Radio-/Empfehlungsquellen
+> können unabhängig von charts-sync (alle 12 h) Anfragen liefern.
 > Beobachte das Dashboard unter `http://<host>:5057`; slskd muss beim
 > Soulseek-Server als **eingeloggt** erscheinen.
 
@@ -633,9 +711,9 @@ charts-stack erzeugt nur die `.m3u`-Playlists und sortiert die Musik in
 `MUSIC_ROOT/Music` ein – abgespielt wird über **Navidrome** (separater Dienst,
 nicht Teil dieses Stacks). Damit es zusammenspielt:
 
-- Navidrome muss **dieselben** zwei gemeinsamen Ordner einbinden wie
-  charts-stack: `MUSIC_ROOT/Music` (die Library, die charts-import befüllt)
-  **und** `MUSIC_ROOT/Charts` (dorthin schreibt charts-sync die `.m3u`-Playlists).
+- Navidrome muss `MUSIC_ROOT/Music` einbinden: Dort liegen importierte Musik
+  und erzeugte `.m3u`-Playlists. `MUSIC_ROOT/Charts` enthält Download-Staging,
+  Fehllisten und Status; für Playlist-Wiedergabe wird es nicht benötigt.
 - In Navidrome den **Playlist-Scan** aktivieren (`ND_PLAYLISTPARSING_ENABLED=true`),
   damit die von charts-sync geschriebenen Playlists (`charts.m3u`, `mundart.m3u`)
   in Navidrome erscheinen.
@@ -669,9 +747,7 @@ services:
       - ND_PLAYLISTPARSING_ENABLED=true
     volumes:
       - ./navidrome-data:/data                 # Navidrome Config + DB
-      # Dieselben zwei gemeinsamen Ordner wie charts-stack, read-only:
-      - ${MUSIC_ROOT}/Music:/Music:ro          # Library, die charts-import befüllt
-      - ${MUSIC_ROOT}/Charts:/Charts:ro        # Playlists, die charts-sync schreibt
+      - ${MUSIC_ROOT}/Music:/Music:ro          # Musik + erzeugte M3U-Playlists
     ports:
       - 4533:4533
     restart: unless-stopped
@@ -689,7 +765,65 @@ nur lesenden Docker-Zugriff).
 **Einzelne Dienste steuern:** vom charts-stack-Ordner aus, z. B.
 `docker compose restart slskd` oder `docker compose up -d charts-sync`.
 
+### Playlist-Konfiguration und reine Library-Quellen
+
+Die Umgebungsvariablen der Tabelle stehen in **charts-config → .env**.
+Künstler-, Szenen- und Genre-Regeln werden unter **Künstler & Szenen** verwaltet.
+Die unten beschriebenen Datei-Alternativen werden manuell in `.env` gesetzt.
+
+| Ausgabe / Zweck | Wo konfigurieren? | Playlist-Schreiber |
+| --- | --- | --- |
+| Hauptplaylists wie `charts.m3u` und `mundart.m3u` | `CHARTS`: ein JSON-Eintrag je Playlist mit `name`, `title`, `sources` und `missing`; [Quellenreferenz](CHARTS-SOURCES.md) | `charts-sync` |
+| Zusätzliche Künstler-Szenen, `charts-<szene>.m3u` | Künstler & Szenen: Künstler verknüpfen/aktivieren, Szenen zuordnen und Zusatzplaylists einschalten; [Anleitung](charts-config/README.md) | `charts-sync` |
+| Offizielle Deezer-Genre-Playlists, `charts-<name>.m3u` | Künstler & Szenen → Genre-Playlists: Genre und Quell-Limit wählen; [Anleitung](charts-config/README.md#deezer-genre-playlists) | `charts-sync` |
+| Schweizer Hitparade (`hitparade.m3u` für Singles) | `HITPARADE_ENABLED`, `HITPARADE_CHARTS`, Zeitplan; [Anleitung](charts-hitparade/README.md) | `charts-hitparade` |
+| Energy-Kanal mit eigener `energy-*.m3u` | `ENERGY_ENABLED` und `ENERGY_CHANNELS`-Eintrag mit `mode:"own"`; [Anleitung](charts-energy/README.md) | `charts-energy` |
+| Energy-Quelle für eine vorhandene Hauptplaylist | Kanal mit `mode:"feed"` plus Energy-Quelle mit passendem `theme` im `CHARTS`-Eintrag dieser Playlist | `charts-sync`, keine zweite Energy-M3U |
+| Radio-Sammlung nur für die Library | Energy-Kanäle mit `mode:"library"` oder `FLASHBACK_ENABLED`/`FLASHBACK_CHANNELS`; [Energy](charts-energy/README.md), [Flashback](charts-flashback/README.md) | Keine eigene M3U |
+| Empfehlungen nur für die Library | `RECOMMEND_LISTENBRAINZ_USERS`, `RECOMMEND_SOURCES`; [Anleitung](charts-recommend/README.md) | Keine eigene M3U |
+
+`CHARTS_ARTIST_PLAYLIST` wählt die bestehende Hauptplaylist für den optionalen
+Künstlerfilter. Es erzeugt keine Playlist und definiert keine Musikquellen.
+Szenen-/Genre-Regeln liegen separat im Charts-Datenordner, nicht in `CHARTS`.
+Diese Auswahl beim Update erhalten.
+
+**Eine Konfigurationsquelle wählen:** Eine erfolgreich geladene `CHARTS_FILE`
+hat Vorrang vor `CHARTS`. Für JSON-Bearbeitung im UI `CHARTS_FILE` leer lassen.
+Für Datei-Verwaltung `charts-sync/charts.json` bearbeiten und
+`CHARTS_FILE=/config/charts.json` setzen; der UI-Editor ändert diese Datei nicht.
+Die Vorlage enthält weitere Beispiele: ungenutzte Einträge/Erklärungsstrings
+vor Aktivierung entfernen. Ohne Last.fm-Key dessen Beispielquellen deaktivieren.
+Bei Energy hat entsprechend `ENERGY_CHANNELS_FILE` Vorrang vor `ENERGY_CHANNELS`;
+Details in der Dienstanleitung.
+
+Nach Änderungen an Umgebung oder bind-gemounteten JSON-Dateien die betroffenen
+Dienste aus dem Projektordner recreaten; kein Image-Build nötig.
+Beispiel für eine CHARTS-Änderung:
+
+```bash
+docker compose up -d --no-deps --force-recreate charts-sync
+```
+
+Bei Energy-Einstellungen stattdessen `charts-energy` verwenden.
+Künstler-/Szenen-/Genre-Speichern wirkt dagegen beim nächsten Sync ohne Rebuild.
+Das Quell-Limit garantiert keine Playlist-Grösse: M3Us enthalten zugeordnete
+Library-Dateien, keine ausstehenden Downloads. Eine vorhandene M3U kann auch
+aus einer älteren Konfiguration übrig sein.
+
+Nur Library bedeutet **keine eigene M3U**, nicht Ausschluss aus anderen
+Playlists: importierte Songs können später zu Charts, Szenen oder Genres passen.
+Download/slskd/Import führen die Übertragung aus;
+[Songrequest](charts-songrequest/README.md) ergänzt manuelle Wünsche,
+[Upgrade](charts-upgrade/README.md) verbessert vorhandene Dateien.
+Dashboard, Watchdog und Digest melden Zustände, sind aber keine Musikquellen.
+
 ### Die MISSING_FILES-Kopplung (recommend → download)
+
+Für jede zusätzliche gewöhnliche Playlist deren konfigurierte `missing`-Datei
+in `MISSING_FILES` aufnehmen, mit Containerpfad `/charts/<dateiname>`.
+Szenen-/Deezer-Genre-Anfragen aus `.charts-scene-missing.txt` werden automatisch
+berücksichtigt und brauchen keinen weiteren Eintrag. Erst nach Download und
+Import kann ein folgender Sync neu beschaffte Dateien in die Playlist aufnehmen.
 
 Damit **charts-download** auch die Nachlade-Liste von **charts-recommend**
 nachlädt, muss deren **eine** kombinierte `missing-recommend.txt` in der
@@ -753,8 +887,10 @@ Daneben steht eine dritte Web-UI:
   **Quellen-Finder** (Deezer-Playlist-/Künstler-Suche, Deezer-Genre-Tabelle,
   Last.fm-Tag-Prüfung, Apple-Music-Ländercharts → fertige `charts-sync`-Snippets) und dem
   **Energy-Kanal-Browser** (fertiges `ENERGY_CHANNELS`-Snippet je Kanal +
-  Live-Status), plus lokalem Mundart-Künstler-/Szenen-Inventar und optionalem
-  Playlist-Filter. Sie ändert weder `.env` noch `charts.json`. Details in
+  Live-Status), plus allgemeiner Künstler-/Szenenverwaltung, offiziellen
+  Deezer-Genre-Chart-Playlists, optionalem Hauptplaylist-Filter und manuellem
+  Tag-Editor. Ihr **.env**-Tab verwaltet die zentrale Konfiguration mit privaten
+  Sicherungen; die separate `charts.json` bleibt unverändert. Details in
   `charts-config/README.md`.
 
 Dashboard und Watchdog greifen **nicht** direkt auf den Docker-Socket zu,

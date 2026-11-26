@@ -2,6 +2,21 @@
 
 # charts-watchdog
 
+**Raw keys such as `watchdog.notify.recovered_title` in a push?**
+The central DE/EN/FR files contain recovery messages. Check the actual mounted
+NAS files: an old script or language-file version is a possible cause, not a
+diagnosis proven by a screenshot. Copy the current `watch.sh` and `lang/`, then
+recreate the watchdog to reopen a file bind mount updated by file replacement:
+
+```sh
+cd /volume1/docker-ghost/charts-stack &&
+docker compose up -d --force-recreate --no-deps charts-watchdog
+```
+
+No rebuild is needed: the watchdog has no custom build image. Stop alerts during
+an intentional prolonged service stop are expected monitoring, not necessarily
+a new fault.
+
 Silent guard for the charts-stack: watches all containers and sends a Pushover
 message when one fails – and an all-clear when it recovers. No UI, no custom
 image (uses `docker:cli` + a small shell script).
@@ -90,11 +105,25 @@ The Pushover messages follow the same emoji-rich style as the other services
   with `🎉`.
 - **Container down:** `🚨 <service> down`.
 - **External dependency unreachable:** `📡 <service> not reachable`.
-- **Service reports `status=error`:** `⚠️ <service> source broken`. The body
-  shows the **readable** cause (e.g. "Verbindung zu slskd fehlgeschlagen") on its
+- **Service reports `status=error`:** for example,
+  `⚠️ charts-sync: Permission problem`. Explicit errors are classified as
+  permission problems, exhausted disk space, a read-only filesystem, or an
+  unavailable file/directory. Other errors remain **Service error**, rather
+  than treating every failure as a broken source. The body shows the
+  **readable service error message**, including the affected path, on its
   own line – the raw `HTTPConnectionPool(...) / Max retries exceeded …`
   urllib3/requests dump is trimmed so the push does not become a wall of text
-  (pathologically long messages are hard-capped).
+  (long messages are capped near 160 characters). Quotes and backslashes are
+  retained; line breaks become spaces. Missing error details produce an explicit
+  request to check the service log.
+
+Only the status file's `message` is read, not entire container logs or
+tracebacks. The watchdog does not change permissions. Categories describe the
+reported error, not a proven root cause; a permission error still requires
+checking the user, mounts and permissions.
+Deploy by copying `charts-watchdog/watch.sh` and central `lang/` files, then
+**recreate** the watchdog with the command above. No build or restart of other
+services is needed. Do not deliberately break a production service to test it.
 
 All visible texts live in `lang/{en,de,fr}.json` (see "Language") – the
 emojis/wording are kept there, the code contains no hardcoded messages.

@@ -40,6 +40,11 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent  # charts-stack/
 
 
+def test_playlist_rule_helpers_stay_identical():
+    assert (ROOT / "charts-config/app/playlist_rules.py").read_bytes() == (
+        ROOT / "charts-sync/app/playlist_rules.py").read_bytes()
+
+
 # --- dependency stubs (registered once, before any module load) -------------
 # Driven by the module-level third-party imports listed in the docstring above.
 if "mutagen" not in sys.modules:
@@ -267,10 +272,12 @@ def test_playlist_prefers_artist_release(
         str(sampler): ("Lady Gaga", "Paparazzi", "Bravo Hits 67", "Various Artists"),
         str(single): ("Lady Gaga", "Paparazzi", "Paparazzi", "Lady Gaga"),
     }
-    monkeypatch.setattr(mod, "_read_tags", tags.__getitem__)
+    monkeypatch.setattr(mod, "_read_tags", (
+        (lambda path: (*tags[path], [], False)) if service == "charts-sync"
+        else tags.__getitem__))
     monkeypatch.setattr(mod.config, "CHARTS_DIR", str(tmp_path / "Charts"))
     monkeypatch.setattr(mod.config, "IGNORE_COMPILATIONS", ignore_compilations)
-    monkeypatch.setattr(mod.os, "walk", lambda _: (
+    monkeypatch.setattr(mod.os, "walk", lambda _, **_kwargs: (
         (str(path.parent), [], [path.name]) for path in paths
     ))
     lib = mod.build_index(str(music))

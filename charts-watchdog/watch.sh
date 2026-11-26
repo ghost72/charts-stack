@@ -66,7 +66,7 @@ APPLE_CHARTS_COUNTRY="$(printf '%s' "${APPLE_CHARTS_COUNTRY:-ch}" | tr '[:upper:
 # --- i18n (translatable output texts, shared lang/ set) ---------------------
 # charts-watchdog is the only non-Python service; t() mirrors the semantics of
 # the Python loader (path search, chosen language -> en -> key name, never
-# crash) but stays BusyBox-capable (only grep/sed/printf). The watchdog.* keys
+# crash) but stays BusyBox-capable (grep/sed/printf; awk for status strings). The watchdog.* keys
 # use positional %s + printf (NOT named {name}).
 #
 # ONE-TIME normalization at script start (set -u-safe): CHARTS_LANG and LANGDIR
@@ -108,19 +108,43 @@ _lookup() {
 # _status_field KEY FILE -> top-level string value of KEY from a status JSON
 # (e.g. "status","message"), otherwise empty. Mirrors _lookup's two-step
 # grep->sed but for the service <service>.json status files (indent=2, so each
-# field is on its own line - the one-line grep contract holds). grep isolates
-# the one `"key":` line, sed cuts the first-quote-bounded value. Empty on an
+# field is on its own line - the one-line grep contract holds). Empty on an
 # absent/unreadable file or a missing field. set -eu-safe (every step
-# `|| true`), never crashes. A `message` with an embedded double-quote is cut
-# short at that quote (same bounded behaviour as _lookup); the authored status
-# messages avoid embedded quotes.
+# `|| true`), never crashes. Decode escaped quotes/backslashes without evaluating
+# the message as a printf format; flatten escaped whitespace for phone output.
 _status_field() {
   _sf_file="$2"
   [ -f "$_sf_file" ] || { echo ""; return 0; }
   _sf_line="$(grep -F "\"$1\":" "$_sf_file" 2>/dev/null | head -n1 || true)"
   [ -n "$_sf_line" ] || { echo ""; return 0; }
   printf '%s' "$_sf_line" | sed -n \
-    's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null || true
+    's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*"\(.*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
+    | awk '{
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (c == "\\" && i < length($0)) {
+          nextchar = substr($0, ++i, 1)
+          if (nextchar == "\"" || nextchar == "\\" || nextchar == "/") c = nextchar
+          else if (nextchar ~ /^[nrtbf]$/) c = " "
+          else c = "\\" nextchar
+        }
+        printf "%s", c
+      }
+    }' 2>/dev/null || true
+}
+
+_status_error_kind() {
+  case "$1" in
+    *"Permission denied"*|*"PermissionError"*|*"[Errno 13]"*|*"Operation not permitted"*|*"[Errno 1]"*)
+      t watchdog.error.permission ;;
+    *"No space left on device"*|*"[Errno 28]"*)
+      t watchdog.error.disk_full ;;
+    *"Read-only file system"*|*"[Errno 30]"*)
+      t watchdog.error.read_only ;;
+    *"No such file or directory"*|*"[Errno 2]"*|*"directory unavailable:"*)
+      t watchdog.error.path_missing ;;
+    *) t watchdog.error.general ;;
+  esac
 }
 
 # _clean_error MESSAGE -> a readable, phone-friendly one-liner of a raw status
@@ -153,6 +177,14 @@ _clean_error() {
     _ce="$(printf '%s' "$_ce" | cut -c1-160 2>/dev/null || printf '%s' "$_ce")…"
   fi
   printf '%s' "$_ce"
+}
+
+_notify_status_problem() {
+  _nsp_kind="$(_status_error_kind "$2")"
+  _nsp_message="$(_clean_error "$2")"
+  [ -n "$_nsp_message" ] || _nsp_message="$(t watchdog.error.no_detail)"
+  notify "$(t watchdog.notify.status_problem_title "$1" "$_nsp_kind")" \
+    "$(t watchdog.notify.status_problem_msg "$1" "$_nsp_message")"
 }
 
 # t KEY [arg ...] -> translated string filled with %s, on stdout.
@@ -684,10 +716,9 @@ main_loop() {
           # cooldown since the last message expired.
           if [ "$bad" -ge "$DEBOUNCE" ] && [ "$alarmed" != "1" ]; then
             last="$(read_num "/tmp/wd/st-$svc.last")"
-            _msg="$(_clean_error "$(_status_field message "$_stfile")")"
             if [ "$last" -eq 0 ] || [ "$((now - last))" -ge "$COOLDOWN" ]; then
               log "$(t watchdog.log.status_problem "$svc" "$bad")"
-              notify "$(t watchdog.notify.status_problem_title "$svc")" "$(t watchdog.notify.status_problem_msg "$svc" "$_msg")"
+              _notify_status_problem "$svc" "$(_status_field message "$_stfile")"
               echo 1 > "/tmp/wd/st-$svc.alarm"
               echo "$now" > "/tmp/wd/st-$svc.last"
             else

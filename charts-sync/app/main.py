@@ -19,11 +19,14 @@ with metadata and the already present library.
 
 import json
 import logging
+from html import escape
 import os
 import time
 from datetime import datetime
 
-from . import (config, deezer, health, library, notify, notify_budget, playlist,
+import httpx
+
+from . import (artist_catalog, config, deezer, health, library, notify, notify_budget, playlist, playlist_rules,
                presence, status)
 from .i18n import t
 
@@ -57,6 +60,150 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, _state_path())
 
 
+def _library_path(lib, artist: str, title: str) -> str | None:
+    track, _score = lib.find_match(artist, title, config.MATCH_THRESHOLD)
+    if track is not None:
+        return track.path
+    return presence.find_existing(config.MUSIC_DIR, artist, title)
+
+
+def _write_scene_playlists(scenes, find_path, filenames) -> None:
+    for scene, tracks in scenes.items():
+        name = filenames.get(scene) or artist_catalog.scene_filename(scene)
+        matches = []
+        seen = set()
+        for position, track in enumerate(tracks, 1):
+            path = find_path(track.artist, track.title)
+            if path and path not in seen:
+                matches.append((position, track.artist, track.title, path))
+                seen.add(path)
+        try:
+            with playlist_rules.selection_lock(config.CHARTS_DIR):
+                selection = artist_catalog.load_selection()
+                current = artist_catalog.configured_scenes(selection)
+                if artist_catalog.normalize_name(scene) not in current:
+                    continue
+                additions = playlist.write_scene_playlist(matches, name, scene)
+        except (OSError, UnicodeError):
+            logger.exception("Could not write Mundart scene playlist %s", name)
+            continue
+        if additions:
+            message = notify_budget.fit_message(
+                [f"<b>{escape(scene)}</b>", t("notify.new_in_playlist", count=len(additions))],
+                [notify_budget.Block(entries=[
+                    notify_budget.Entry([t("notify.scene_song_entry", artist=artist, title=title)])
+                    for _pos, artist, title, _path in additions
+                ])],
+                [], more=lambda n: t("notify.more", count=n),
+            )
+            notify.send(t("notify.title", service="charts-sync"), message)
+
+
+def _apply_scene_playlist_changes() -> None:
+    with playlist_rules.selection_lock(config.CHARTS_DIR):
+        _apply_locked_scene_playlist_changes()
+
+
+def _apply_locked_scene_playlist_changes() -> None:
+    selection = artist_catalog.load_selection()
+    pending = selection.get("pending_scene_deletions", {})
+    if pending and not os.path.isdir(config.PLAYLIST_DIR):
+        raise FileNotFoundError(f"Playlist directory unavailable: {config.PLAYLIST_DIR}")
+    for name in pending:
+        playlist.remove_scene_playlist(name, strict=True)
+    if pending:
+        selection.pop("pending_scene_deletions")
+        artist_catalog._atomic_write(artist_catalog._selection_path(), selection)
+    disabled = selection.get("disabled_scene_playlists", {})
+    blocked = set(disabled) | set(artist_catalog.blocked_scene_filenames(selection))
+    for name in blocked:
+        try:
+            playlist.remove_scene_playlist(name)
+        except OSError:
+            logger.exception("Could not remove Mundart scene playlist %s", name)
+    if os.path.isdir(config.PLAYLIST_DIR):
+        try:
+            playlist.migrate_scene_playlists(selection.get("scene_files", {}), blocked)
+        except (OSError, UnicodeError, ValueError):
+            logger.exception("Scene playlist migration failed; no scene regeneration will run.")
+            raise
+
+
+def _write_genre_playlists(lib) -> None:
+    with playlist_rules.selection_lock(config.CHARTS_DIR):
+        selection = artist_catalog.load_selection()
+        rules = selection.get("genre_playlists", {})
+        artist_names = {artist_catalog.normalize_name(scene)
+                        for item in selection["artists"].values()
+                        for scene in artist_catalog._scene_names(item)}
+        filenames = {artist_catalog.scene_filename(scene): artist_catalog.normalize_name(scene)
+                     for scene in artist_names}
+        for name, rule in rules.items():
+            key = artist_catalog.normalize_name(name)
+            filename = artist_catalog.scene_filename(name)
+            if (key in artist_names or filename in filenames
+                    or filename in artist_catalog.blocked_scene_filenames(selection)):
+                raise artist_catalog.ArtistCatalogError("Genre playlist conflicts with another playlist.")
+            filenames[filename] = key
+            if "genre_id" in rule:
+                continue
+            wanted = {artist_catalog.normalize_name(genre) for genre in rule["genres"]}
+            selected = sorted(
+                (track for track in lib.tracks
+                 if ".charts-trash" not in str(getattr(track, "path", "")).split(os.sep)
+                 and wanted.intersection(artist_catalog.normalize_name(genre)
+                                         for genre in getattr(track, "genres", []))),
+                key=lambda track: (track.artist.casefold(), track.title.casefold(), track.path),
+            )
+            matches = []
+            seen = set()
+            for track in selected:
+                if track.path not in seen:
+                    matches.append((len(matches) + 1, track.artist, track.title, track.path))
+                    seen.add(track.path)
+            playlist.write_genre_playlist(matches, filename, name)
+
+
+def _sync_deezer_genres(lib) -> tuple[list, dict, list[str]]:
+    selection = artist_catalog.load_selection()
+    rules = {name: rule for name, rule in selection.get("genre_playlists", {}).items()
+             if "genre_id" in rule}
+    downloads = []
+    errors = []
+    completed_rules = {}
+    for name, rule in rules.items():
+        try:
+            tracks = deezer.fetch_genre_chart(rule["genre_id"], rule["limit"])
+        except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+            logger.error("Deezer genre playlist %s failed: %s", name, exc)
+            errors.append(f"{name}: {exc}")
+            continue
+        matches = []
+        seen_paths = set()
+        for track in tracks:
+            path = _library_path(lib, track.artist, track.title)
+            if path and path not in seen_paths:
+                matches.append((track.position, track.artist, track.title, path))
+                seen_paths.add(path)
+        with playlist_rules.selection_lock(config.CHARTS_DIR):
+            current = artist_catalog.load_selection()
+            filename = artist_catalog.scene_filename(name)
+            if (current.get("genre_playlists", {}).get(name) != rule
+                    or filename in artist_catalog.blocked_scene_filenames(current)):
+                continue
+            playlist.write_genre_playlist(matches, filename, name)
+            downloads.extend((track.position, track, name) for track in tracks)
+            completed_rules[name] = rule
+        logger.info("Deezer genre playlist %s: %s library matches / %s chart tracks (limit %s)",
+                    name, len(matches), len(tracks), rule["limit"])
+    return downloads, completed_rules, errors
+
+
+def _clear_scene_downloads() -> None:
+    if os.path.isfile(os.path.join(config.CHARTS_DIR, artist_catalog.SCENE_MISSING_FILE)):
+        playlist.write_missing([], artist_catalog.SCENE_MISSING_FILE)
+
+
 def _sync_source(chart_source, lib, state: dict) -> str:
     """
     Process a single chart source.
@@ -73,11 +220,32 @@ def _sync_source(chart_source, lib, state: dict) -> str:
 
     # a. Fetch charts
     try:
+        if (not getattr(chart_source, "_collect_artist_scenes", False)
+                and getattr(chart_source, "name", "") == config.CHARTS_ARTIST_PLAYLIST):
+            _clear_scene_downloads()
+            _apply_scene_playlist_changes()
         chart_tracks = deezer.fetch_chart(chart_source)
     except Exception as e:
         logger.error(t("sync.source.fetch_failed", name=chart_source.title, error=e))
         return "error"
+    scenes = getattr(chart_source, "scene_tracks", {})
+    scene_filenames = getattr(chart_source, "scene_filenames", {})
+    paths: dict[tuple[str, str], str | None] = {}
+
+    def find_path(artist: str, title: str) -> str | None:
+        if not scenes:
+            return _library_path(lib, artist, title)
+        key = (artist, title)
+        if key not in paths:
+            paths[key] = _library_path(lib, artist, title)
+        return paths[key]
+
+    if not getattr(chart_source, "_collect_artist_scenes", False):
+        _write_scene_missing(getattr(chart_source, "scene_download_tracks", []), find_path)
+
     if not chart_tracks:
+        if any(scenes.values()) and not getattr(chart_source, "_collect_artist_scenes", False):
+            _write_scene_playlists(scenes, find_path, scene_filenames)
         logger.warning(t("sync.source.no_tracks", name=chart_source.title))
         return "empty"
 
@@ -85,19 +253,8 @@ def _sync_source(chart_source, lib, state: dict) -> str:
     matched: list[tuple[int, str, str, str]] = []
     missing: list[tuple[int, str, str]] = []
     for ct in chart_tracks:
-        track, score = lib.find_match(ct.artist, ct.title, config.MATCH_THRESHOLD)
-        if track is not None:
-            matched.append((ct.position, ct.artist, ct.title, track.path))
-            continue
-        # Presence guard (mirrors charts-songrequest's find_existing, no
-        # compilation filter): if a real library copy exists under <Artist>/ -
-        # even inside a compilation-named or Lidarr "(YYYY)" album folder that
-        # find_match skipped under IGNORE_COMPILATIONS - do NOT re-queue it.
-        # The existing file IS a valid playlist entry, so route it into
-        # `matched` (the subsequent path-keyed dedup handles duplicates). This
-        # only suppresses a missing write; find_match's return value is never
-        # altered, so the in_year_album tie-break is untouched.
-        existing = presence.find_existing(config.MUSIC_DIR, ct.artist, ct.title)
+        # Presence guard also accepts real library copies excluded by compilation matching.
+        existing = find_path(ct.artist, ct.title)
         if existing is not None:
             matched.append((ct.position, ct.artist, ct.title, existing))
             continue
@@ -106,8 +263,6 @@ def _sync_source(chart_source, lib, state: dict) -> str:
     matched.sort(key=lambda x: x[0])
     missing.sort(key=lambda x: x[0])
 
-    # Dedup: the same song can be hit by multiple chart positions. We keep the
-    # best (lowest) chart position each time.
     deduped: list[tuple[int, str, str, str]] = []
     seen_paths: set[str] = set()
     for entry in matched:
@@ -119,23 +274,54 @@ def _sync_source(chart_source, lib, state: dict) -> str:
     if removed:
         logger.info(t("sync.source.dedup_removed", name=chart_source.title, count=removed))
     matched = deduped
-
-    # Determine the order (chart position OR newest first).
     ordered = _order_matched(chart_source, matched, state)
-
-    # c. + d. Write
     playlist.write_playlist(ordered, chart_source.name, chart_source.title)
     playlist.write_missing(missing, chart_source.missing)
-
+    if not getattr(chart_source, "_collect_artist_scenes", False):
+        _write_scene_playlists(scenes, find_path, scene_filenames)
     logger.info(t(
         "sync.source.done",
         name=chart_source.title, matched=len(matched), total=len(chart_tracks),
     ))
-
-    # Notification (change detection via the matched paths)
     _handle_notify(chart_source, matched, missing, state)
-
     return "ok"
+
+
+def _write_scene_missing(download_tracks, find_path, *, genre_rules: dict | None = None) -> None:
+    pending = {}
+    pending_scenes: dict[tuple[str, str], set[str]] = {}
+    for rank, track, scene in download_tracks:
+        if (" - " in track.artist
+                or any(len(value.splitlines()) != 1 for value in (track.artist, track.title))):
+            continue
+        if find_path(track.artist, track.title) is None:
+            key = (artist_catalog.normalize_name(track.artist),
+                   artist_catalog.normalize_name(track.title))
+            pending_scenes.setdefault(key, set()).add(scene)
+            previous = pending.get(key)
+            if previous is None or rank < previous[0]:
+                pending[key] = (rank, track.artist, track.title)
+    if pending:
+        with playlist_rules.selection_lock(config.CHARTS_DIR):
+            selection = artist_catalog.load_selection()
+            active = set(artist_catalog.configured_scenes(selection)) & {
+                artist_catalog.normalize_name(scene) for scene in selection.get("scene_downloads", {})}
+            active.update(artist_catalog.normalize_name(name)
+                          for name, rule in (genre_rules or {}).items()
+                          if selection.get("genre_playlists", {}).get(name) == rule
+                          and "genre_id" in rule
+                          and artist_catalog.scene_filename(name)
+                          not in artist_catalog.blocked_scene_filenames(selection))
+            retained = {
+                key: {scene for scene in sources if artist_catalog.normalize_name(scene) in active}
+                for key, sources in pending_scenes.items()
+            }
+            pending = {key: entry for key, entry in pending.items() if retained[key]}
+            playlist.write_missing(
+                sorted(pending.values()), artist_catalog.SCENE_MISSING_FILE,
+                scene_sources={(entry[1], entry[2]): sorted(retained[key])
+                               for key, entry in pending.items()},
+            )
 
 
 def _order_matched(chart_source, matched, state: dict):
@@ -241,24 +427,25 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
     lines = [f"<b>{playlist_name}</b>",
              t("notify.summary", matched=len(matched), total=total)]
 
-    # Source/filter stats (if available) – shows what Last.fm adds net and how
-    # many foreign-genre songs the filter removed.
     stats = getattr(chart_source, "last_stats", None) or {}
-    stat_bits = []
-    if stats.get("deezer_new"):
-        stat_bits.append(f"Deezer {stats['deezer_new']}")
-    if stats.get("lastfm_new"):
-        stat_bits.append(f"Last.fm {stats['lastfm_new']}")
-    if stats.get("apple_new"):
-        stat_bits.append(f"Apple Music {stats['apple_new']}")
-    if stats.get("energy_new"):
-        stat_bits.append(f"Energy {stats['energy_new']}")
-    if stat_bits:
-        lines.append(t("notify.sources", sources=", ".join(stat_bits)))
+    source_lines = []
+    for kind, name in (("deezer", "🎧 Deezer"), ("lastfm", "📻 Last.fm"),
+                       ("apple", "🍎 Apple Music"), ("energy", "⚡ Energy")):
+        if f"{kind}_raw" not in stats:
+            continue
+        line = t("notify.source_item", name=name, received=stats[f"{kind}_raw"],
+                 additional=stats[f"{kind}_new"])
+        if stats[f"{kind}_failed"]:
+            line += " " + t("notify.source_failed", count=stats[f"{kind}_failed"])
+        source_lines.append(line)
+    if source_lines:
+        lines.extend(["", t("notify.source_header"), *source_lines,
+                      "", t("notify.source_explanation")])
+    filter_lines = []
     if stats.get("genre_filtered"):
-        lines.append(t("notify.genre_filtered", count=stats["genre_filtered"]))
+        filter_lines.append(t("notify.genre_filtered", count=stats["genre_filtered"]))
     if stats.get("artist_filtered"):
-        lines.append(t("notify.artist_filtered", count=stats["artist_filtered"]))
+        filter_lines.append(t("notify.artist_filtered", count=stats["artist_filtered"]))
 
     # Overview line first: the new/missing counts must survive the Pushover
     # budget cut, so they sit in the head (never cut). Order = detail order.
@@ -269,6 +456,9 @@ def _handle_notify(chart_source, matched, missing, state: dict) -> None:
     if missing:
         overview_parts.append(t("notify.overview.missing", count=len(missing)))
     overview = notify_budget.overview_line(overview_parts)
+    if source_lines and (filter_lines or overview):
+        lines.append("")
+    lines.extend(filter_lines)
     if overview:
         lines.append(overview)
 
@@ -310,13 +500,11 @@ def run_sync() -> tuple[dict, int, int, dict]:
     Run a single sync run over all chart sources.
 
     Returns a 4-tuple (counters, produced, attempted, health_map):
-      counters:   the UNCHANGED dashboard counter dict
-                  {"sources": ok_sources, "library_tracks": ...}. "sources"
-                  keeps its exact current meaning: the number of _sync_source
-                  calls that did NOT raise at the run-loop level (an "empty" and
-                  a caught run-loop exception both leave it unchanged, as today).
-      produced:   detector-internal count of sources that returned "ok".
-      attempted:  detector-internal count of configured sources (len(CHARTS)).
+      counters:   dashboard counters {"sources": ..., "library_tracks": ...}.
+                  "sources" counts successful CHARTS sources plus completed
+                  Deezer genre playlists.
+      produced:   detector-internal count of successful sources.
+      attempted:  configured CHARTS sources plus completed genre playlists.
       health_map: the per-source health map (already persisted this run).
 
     produced/attempted/health_map are detector-internal (G3) and are NEVER
@@ -325,7 +513,13 @@ def run_sync() -> tuple[dict, int, int, dict]:
     """
     logger.info(t("sync.run.start", sources=len(config.CHARTS)))
 
-    if not config.CHARTS:
+    _clear_scene_downloads()
+
+    selection = artist_catalog.load_selection()
+    if not config.CHARTS and not selection.get("genre_playlists"):
+        if any(selection.get(field) for field in
+               ("pending_scene_deletions", "disabled_scene_playlists", "scene_files")):
+            _apply_scene_playlist_changes()
         logger.warning(t("sync.run.no_sources"))
         # MEDIUM-1: match the 4-tuple arity. attempted == 0 means the
         # whole_run_empty guard (attempted > 0 and produced == 0) is False, so
@@ -334,16 +528,42 @@ def run_sync() -> tuple[dict, int, int, dict]:
         # sources.
         return {"sources": 0, "library_tracks": 0}, 0, 0, health.load()
 
+    _apply_scene_playlist_changes()
     # 1. Index the library ONCE (the expensive part, reused for all sources)
     lib = library.build_index(config.MUSIC_DIR)
     if not lib.tracks:
         logger.warning(t("sync.run.library_empty", dir=config.MUSIC_DIR))
+    if any("genre_id" not in rule for rule in selection.get("genre_playlists", {}).values()):
+        artist_catalog.record_library_genres(lib)
+    else:
+        artist_catalog.record_playlist_reservations()
+    _write_genre_playlists(lib)
+    genre_downloads, genre_rules, genre_errors = _sync_deezer_genres(lib)
+    if not config.CHARTS:
+        _write_scene_missing(genre_downloads, lambda artist, title: _library_path(lib, artist, title),
+                             genre_rules=genre_rules)
+        if genre_errors:
+            raise RuntimeError("Deezer genre playlists failed: " + "; ".join(genre_errors))
+        logger.info(t("sync.run.done"))
+        count = len(genre_rules)
+        return {"sources": count, "library_tracks": len(lib.tracks)}, count, count, health.load()
 
     # 2. Load state + health, process all sources, save both
     state = _load_state()
     health_map = health.load()
+    scenes: dict[str, list] = {}
+    filenames: dict[str, str] = {}
+    download_tracks = []
+    scene_sources_ok = True
+    manual_source = next((source for source in config.CHARTS
+                          if source.name == config.CHARTS_ARTIST_PLAYLIST), config.CHARTS[0])
     ok_sources = 0
     for chart_source in config.CHARTS:
+        chart_source._collect_artist_scenes = True
+        chart_source._scene_manual_feeds = chart_source is manual_source
+        chart_source.scene_tracks = {}
+        chart_source.scene_download_tracks = []
+        chart_source.scene_filenames = {}
         try:
             outcome = _sync_source(chart_source, lib, state)  # "ok"|"empty"|"error"
             if outcome == "ok":
@@ -351,8 +571,34 @@ def run_sync() -> tuple[dict, int, int, dict]:
         except Exception as e:
             logger.exception(t("sync.source.exception", name=chart_source.title, error=e))
             outcome = "error"  # a run-loop crash is an "error" outcome
+        finally:
+            del chart_source._collect_artist_scenes
+            del chart_source._scene_manual_feeds
+        if outcome == "error" or not getattr(chart_source, "scene_complete", True):
+            scene_sources_ok = False
+        else:
+            for scene, tracks in chart_source.scene_tracks.items():
+                scenes.setdefault(scene, []).extend(tracks)
+            filenames.update(chart_source.scene_filenames)
+            download_tracks.extend(chart_source.scene_download_tracks)
         # One place records the per-source outcome into the health counter.
         health._record_source_outcome(health_map, chart_source.name, outcome)
+    if scene_sources_ok:
+        scene_paths: dict[tuple[str, str], str | None] = {}
+
+        def find_path(artist: str, title: str) -> str | None:
+            key = (artist, title)
+            if key not in scene_paths:
+                scene_paths[key] = _library_path(lib, artist, title)
+            return scene_paths[key]
+
+        _write_scene_missing(download_tracks + genre_downloads, find_path, genre_rules=genre_rules)
+        _write_scene_playlists(scenes, find_path, filenames)
+    else:
+        logger.warning("Scene playlists were not regenerated because a chart source failed; "
+                       "the scene download queue remains empty.")
+        _write_scene_missing(genre_downloads, lambda artist, title: _library_path(lib, artist, title),
+                             genre_rules=genre_rules)
     _save_state(state)
     try:
         health.save(health_map)
@@ -360,13 +606,15 @@ def run_sync() -> tuple[dict, int, int, dict]:
         # Keep the in-memory verdict for this run; retry next run.
         logger.warning(t("sync.health.write_failed", error=e))
 
+    if genre_errors:
+        raise RuntimeError("Deezer genre playlists failed: " + "; ".join(genre_errors))
     logger.info(t("sync.run.done"))
     counters = {
-        "sources": ok_sources,
+        "sources": ok_sources + len(genre_rules),
         "library_tracks": len(lib.tracks),
     }
-    attempted = len(config.CHARTS)
-    return counters, ok_sources, attempted, health_map
+    attempted = len(config.CHARTS) + len(genre_rules)
+    return counters, ok_sources + len(genre_rules), attempted, health_map
 
 
 def _next_run_iso() -> str:

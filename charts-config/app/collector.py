@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -143,6 +144,43 @@ def search_deezer_artists(q: str) -> dict:
     except Exception as e:
         return {"ok": False, "detail": i18n.t(
             "config.conn.unreachable", err=e.__class__.__name__)}
+
+
+def deezer_artist_preview(artist_id: str) -> dict:
+    if not re.fullmatch(r"[0-9]{1,20}", artist_id):
+        return {"ok": False}
+    try:
+        response = httpx.get(
+            f"https://api.deezer.com/artist/{artist_id}/top",
+            params={"limit": 5}, timeout=8)
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        logger.warning("Deezer artist preview lookup failed for ID %s", artist_id)
+        return {"ok": False}
+    tracks = payload.get("data") if isinstance(payload, dict) else None
+    previews: list[dict[str, str]] = []
+    seen_titles: set[str] = set()
+    seen_paths: set[str] = set()
+    for track in tracks[:5] if isinstance(tracks, list) else []:
+        if not isinstance(track, dict):
+            continue
+        url, title = track.get("preview"), track.get("title")
+        if not isinstance(url, str) or not isinstance(title, str) or not title.strip():
+            continue
+        try:
+            parts = urlsplit(url)
+        except ValueError:
+            continue
+        if (parts.scheme == "https"
+                and re.fullmatch(r"cdnt?-preview\.dzcdn\.net", parts.netloc)
+                and parts.path.endswith(".mp3")
+                and parts.path not in seen_paths
+                and title.strip().casefold() not in seen_titles):
+            previews.append({"title": title.strip(), "url": url})
+            seen_titles.add(title.strip().casefold())
+            seen_paths.add(parts.path)
+    return {"ok": True, "previews": previews} if previews else {"ok": False}
 
 
 def verify_deezer_artist(artist_id: str) -> dict:

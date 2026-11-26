@@ -49,6 +49,21 @@ docker exec charts-digest python -m app.main --now
 
 ## Aufbau der Pushover-Meldung
 
+Eine Quellenübersicht ist durch eine Leerzeile von Zeitraum und Anzahl getrennt.
+
+Die Szenennamen aus dem Importprotokoll bleiben erhalten, etwa
+**🎸 Mundart-Pop**. Ein Song für mehrere Szenen erscheint einmal unter
+der kombinierten Herkunft. Sonderzeichen in diesen Namen werden für HTML
+maskiert. Bereits vorhandene alte Protokolle werden nicht umgeschrieben.
+Auch frühere `Mundart:`-Quellen werden mit Gitarre und ohne festen Prefix
+angezeigt. Einfache alte `Mundart:`- und neue `Playlist:`-Quellen mit
+demselben Szenennamen werden für den Bericht zusammengefasst und gemeinsame
+Songs innerhalb dieser Gruppe einmal gezählt. Kombinierte Quellen bleiben
+eigenständige Gruppen; das Importprotokoll wird dafür nicht geändert.
+Der alte technische Quellenname `.charts-scene-missing` erhält die
+lesbare Bezeichnung **🎸 Szenen-Tophits**, ohne eine unbekannte Zuordnung
+nachträglich zu erfinden. Die Hauptquelle `mundart` behält ihre Schweizer Flagge.
+
 Die ersten Zeilen der Meldung sind eine **Übersicht** mit jeder Quelle und ihrer Song-Anzahl, größte zuerst, eine Quelle pro Zeile (z. B. `⚡ Energy · 59`, `🙋 Manuell angefordert · 12`, `📤 Manuell hochgeladen · 8`; keine Trennlinie, vor dem ersten Quellen-Block steht eine Leerzeile). Layout der Übersicht (in allen Diensten gleich): bei einem Eintrag entfällt sie (der Block darunter trägt die Zahlen), bei zwei Einträgen steht sie in einer Zeile mit ` · `, ab drei Einträgen eine Zeile pro Eintrag. So geht keine Quelle verloren, auch wenn die Detailliste darunter gekürzt wird. Gruppen, die nicht mehr passen, stehen in der Schlusszeile „… und N weitere“ statt stillschweigend zu fehlen. `DIGEST_MAX_PER_SOURCE` behält seine Bedeutung (Limit pro Quelle mit eigenem Hinweis). Der Text hält immer Pushovers 1024-Zeichen-Limit ein (so gemessen, wie Pushover ihn erhält, HTML-escaped). Ist die Liste zu lang, wird nur zwischen ganzen Einträgen gekürzt und mit genau einer Zeile „… und N weitere“ abgeschlossen; Kopfzeile und Übersichtszeile werden nie abgeschnitten.
 
 ## Konfiguration (zentrale `.env`)

@@ -12,6 +12,115 @@ deployed together, so a single stack version is the honest unit.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-26
+
+### Added
+- Report missing manifest-song metadata in upgrade notifications and the
+  charts-config tag editor, using a dated import-backfill snapshot.
+- Official Deezer genre-chart playlists in charts-config: one genre and a
+  configurable source limit per playlist, library matching and missing downloads
+  through the existing pipeline.
+- Rename an existing scene without losing artist links; update its M3U
+  title and filename on the next sync.
+- Opt in to automatic downloads of missing Deezer top tracks per scene, with
+  a configurable per-artist limit through the existing slskd download pipeline.
+- Select a custom main playlist for artist and scene management with
+  `CHARTS_ARTIST_PLAYLIST`; add France to the Apple Music source finder.
+
+- **Mundart:** optional additional M3U playlists per approved scene without
+  changing `mundart.m3u`, and on-demand Deezer audio previews in charts-config.
+- **charts-config:** list generated scene playlists and safely queue individual
+  deletions.
+- **Mundart:** assign an artist to multiple scenes while keeping a single
+  target scene for the main playlist filter.
+
+### Changed
+- Allow filtering the missing-metadata list by field or unreadable tags.
+- Add source icons to download notification group headings.
+- Split missing-metadata overview counts by field and treat album values equal
+  to the song title as populated.
+- Retry unresolved manifest-song years after a 30-day cooldown, bypassing
+  cached resolver results without overwriting existing years.
+- Separate crowded source and status sections in sync, digest, recommendation
+  and download Pushover messages with blank lines.
+- Clarify Energy handoff themes and show received and additional candidates
+  for each active charts-sync provider, including zero and detected failures.
+- Group matching legacy `Mundart:` and current `Playlist:` scene sources in
+  the daily digest without rewriting import records or merging combined sources.
+- Use the single ♪ note consistently for individual songs in import
+  notifications, while keeping notification title icons unchanged.
+- Separate the Energy notification overview into library, own playlists and
+  named Energy feeds, without repeating counts or claiming playlist placement.
+- Clarify Energy handoffs and missing counts and download queue/retry status in
+  Pushover; show compact imported artist/title entries and marked names for
+  manual review, retaining source labels and filename fallback.
+- Format charts-import rejection notifications with a music note, a separate
+  reason line and spacing between files, retaining the existing quality details.
+- Balance the shared Energy library backlog across channels and rotate actual
+  download searches by last attempt, retaining all source budgets and quality
+  rules; report deduplicated feed handoff counts.
+- Clear an observed fully resolved Energy missing list and accept missing-list
+  positions above 999 in charts-download.
+- Improve Config form spacing with consistent genre control heights and
+  responsive field groups; give multiline environment values full-width,
+  taller editors without rewriting their content.
+- Replace the local genre-tag picker with official Deezer genre charts,
+  per-playlist limits (suggested 50), library matching and automatic missing
+  downloads through the existing named-playlist queue. Manage genre, limit,
+  name and permanent deletion in Config, including before the first sync.
+  Preserve legacy rules and existing M3Us on provider failures.
+- Use a consistent blue accent for regular actions throughout charts-config;
+  retain red deletion, green restoration and distinct navigation/audio controls.
+- Classify watchdog service-status alerts as permission, disk-space, read-only
+  filesystem or missing-path errors when explicit, otherwise a neutral service
+  error. Include the shortened status message and preserve quoted paths.
+- Permanently delete scene/genre rules and affected artist scene assignments,
+  remove remaining managed M3Us on the next sync, then retire the temporary
+  request. Protect active main-filter scenes and retain other scenes and music.
+- Lock shared selection writes across config and sync; prevent stale collected
+  scene output from recreating a deleted playlist or download request.
+- Show an explicit dark dashboard loading state, serialize browser polling,
+  retain existing data on refresh errors and check independent status groups
+  in parallel without blocking the web server event loop.
+- Stream actual dashboard check progress as localized waiting/checking/checked
+  text and a completed-group count; keep the existing JSON status API.
+- Use a neutral artist-scene default for new installations without changing
+  existing saved scene names or main-filter targets.
+- Generalize artist scenes across all configured charts-sync sources while
+  preserving main playlist filters. New scene M3Us use readable `charts-name.m3u`
+  filenames; migrate existing managed scene filenames without replacing
+  destinations or changing music files. Navidrome may re-import renamed M3Us.
+  Scene titles use the chosen
+  name without a mandatory Mundart prefix. Reject filename collisions.
+- Use guitar icons and readable legacy scene labels in the daily digest.
+- Carry scene names with missing top-track requests into download notifications,
+  import metadata and daily digests, preserving single-download deduplication
+  and the existing shared scene quota. Escape scene labels in HTML messages.
+- **charts-sync:** send a separate Pushover message with newly added tracks
+  for each changed Mundart scene playlist.
+- **charts-config:** group artist settings, scene playlists, and assignments
+  separately and show feedback when refreshing the playlist list.
+- **charts-config: move the Deezer artist search above the Mundart inventory.**
+  Linking or checking an identity from a row focuses the search field.
+
+### Fixed
+- Use a themed, responsive scene rename dialog with keyboard confirmation
+  and cancellation instead of an unstyleable browser prompt.
+- Apply renamed titles to older managed scene playlists even without
+  remaining artist assignments, preserving their existing entries.
+- Recognize managed scene playlists for renaming even without remaining
+  artist assignments.
+- Automatically process scene top-track requests without a manual provider
+  list, preserving the existing download filters and limits.
+- **charts-config:** distinguish the main playlist filter scene from the
+  additional scene playlists and clarify that deletion is queued.
+- **charts-config:** save artist and scene edits from either settings group
+  and warn before leaving the page with unsaved edits.
+- **charts-config:** require the JSON media type for artist, scene, and
+  environment editor write requests.
+- **charts-config:** match the per-artist scene download limit field to the
+  dark form controls.
+
 ## [2.4.0] - 2026-11-20
 
 ### Added

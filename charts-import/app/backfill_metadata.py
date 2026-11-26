@@ -18,8 +18,8 @@ Rules:
   * Never overwrite an existing value (curated/Lidarr album, resolver-set year,
     existing positive track number). A field is written ONLY when it is
     "missing" per ``missing_fields`` below.
-  * ``album == title`` (the single-as-album placeholder) and "Unknown Album"
-    count as a missing real album and MAY be filled with a resolved
+  * A present album is trusted even when it equals the title. Only an absent
+    album or "Unknown Album" is missing and eligible for a resolved
     non-compilation album.
   * One deliberate exception: a YouTube-sourced year (identified by the durable
     TXXX:CHARTS_SOURCE=youtube marker) MAY be REPLACED by the resolver's real
@@ -107,22 +107,16 @@ class BackfillResult:
     new_track: str = ""
 
 
-def _album_is_missing(album: str, title: str) -> bool:
+def _album_is_missing(album: str) -> bool:
     """
-    True when the album counts as a MISSING real album: absent/empty, equal to
-    the title (the single-as-album placeholder), or the literal "Unknown
-    Album". A non-empty album that differs from the title and is not "Unknown
-    Album" is treated as curated/Lidarr and never overwritten.
+    True when the album is absent/empty or the literal "Unknown Album".
+    Any present album, including one equal to the song title, is a valid value
+    and is never overwritten by the conservative fill path.
     """
     a = (album or "").strip()
     if not a:
         return True
-    al = a.lower()
-    if al == (title or "").strip().lower():
-        return True
-    if al == "unknown album":
-        return True
-    return False
+    return a.lower() == "unknown album"
 
 
 def read_state(path: str) -> "FileState | None":
@@ -172,7 +166,7 @@ def missing_fields(state: FileState, *, recorrect_albums: bool = False) -> Plan:
     """
     is_youtube = state.source == _YOUTUBE_MARKER
     has_year = bool(state.year)
-    album_present = not _album_is_missing(state.album, state.title)
+    album_present = not _album_is_missing(state.album)
 
     recorrect_album = False
     recorrect_heuristic = False
@@ -189,7 +183,7 @@ def missing_fields(state: FileState, *, recorrect_albums: bool = False) -> Plan:
     return Plan(
         fill_year=not has_year,
         replace_year=has_year and is_youtube,
-        fill_album=_album_is_missing(state.album, state.title),
+        fill_album=_album_is_missing(state.album),
         fill_track=state.track <= 0,
         is_youtube=is_youtube,
         recorrect_album=recorrect_album,
@@ -235,13 +229,8 @@ def apply_backfill(path: str, state: FileState, plan: Plan,
         and not resolve.is_compilation_title(resolved_album)
         and not resolve.is_junk_album_title(resolved_album)
         and not resolve.is_secondary_edition_title(resolved_album)
-        # A resolved album that merely equals the song TITLE is the
-        # single-as-album placeholder, not a real studio album. It is never a
-        # valid RE-CORRECTION target (overwriting a present album with the
-        # track's own name is never "strictly better" - e.g. the observed
-        # "Push The Feeling On -> Push The Feeling On"). The fill path already
-        # treats album==title as missing, so this only guards the recorrect
-        # path; a fill never reaches here with such a value as an improvement.
+        # A resolved album equal to the song title is not a useful correction
+        # target; avoid replacing a present album with the track name.
         and resolved_album.strip().lower() != (state.title or "").strip().lower())
 
     # --- decide the final album (never a compilation / never a secondary) ---
