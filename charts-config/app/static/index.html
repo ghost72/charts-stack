@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="title">charts-config</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/style.css?v=config42">
+<link rel="stylesheet" href="/static/style.css?v=config43">
 <script src="/static/genre-playlists.js?v=4"></script>
 </head>
 <body>
@@ -263,6 +263,16 @@
                   data-artist-save data-i18n="artists.save" disabled>Speichern</button>
         </div>
         <p class="artist-section-hint" data-i18n="artists.multiple_scenes_hint"></p>
+        <div class="artist-list-filters">
+          <label for="artist-list-search" data-i18n="artists.list_search"></label>
+          <input id="artist-list-search" type="search" autocomplete="off"
+                 data-i18n-ph="artists.list_search_placeholder">
+          <label for="artist-list-playlist" data-i18n="artists.list_playlist"></label>
+          <select id="artist-list-playlist">
+            <option value="" data-i18n="artists.list_all_playlists"></option>
+          </select>
+        </div>
+        <p class="artist-section-hint" data-i18n="artists.list_filter_hint"></p>
         <div id="artist-msg" class="artist-msg artist-save-message" role="status"></div>
         <div id="artist-list">
           <div class="muted-txt" data-i18n="artists.loading"></div>
@@ -1006,6 +1016,57 @@ function renderSceneDownloads() {
   for (const row of existing.values()) row.remove();
 }
 
+function artistFilterKey(value) {
+  return value.normalize("NFKC").toLowerCase().replace(/ß/g, "ss").replace(/\s+/g, " ").trim();
+}
+
+function refreshArtistPlaylistFilter() {
+  const select = document.getElementById("artist-list-playlist");
+  const selected = select.value;
+  const selectedLabel = select.selectedOptions[0]?.textContent || selected;
+  const genres = new Set(Object.keys(_artistSceneState?.genre_playlists || {}).map(artistFilterKey));
+  const scenes = new Map();
+  for (const name of Object.keys(_artistSceneState?.scene_filenames || {})) {
+    if (!genres.has(artistFilterKey(name))) scenes.set(artistFilterKey(name), name);
+  }
+  for (const field of document.querySelectorAll("#artist-list .artist-scene")) {
+    for (const name of field.value.split("\n").map(value => value.trim()).filter(Boolean)) {
+      scenes.set(artistFilterKey(name), name);
+    }
+  }
+  if (selected && !scenes.has(selected)) scenes.set(selected, selectedLabel);
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = t("artists.list_all_playlists");
+  select.replaceChildren(all);
+  for (const [key, name] of [...scenes].sort((a, b) => a[1].localeCompare(b[1]))) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = name;
+    select.append(option);
+  }
+  select.value = selected;
+}
+
+function applyArtistListFilters() {
+  const query = document.getElementById("artist-list-search").value
+    .normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  const playlist = document.getElementById("artist-list-playlist").value;
+  const rows = [...document.querySelectorAll("#artist-list tr[data-artist-key]")];
+  let visible = 0;
+  for (const row of rows) {
+    const name = row.dataset.artistName.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+    const scenes = row.querySelector(".artist-scene").value.split("\n").map(artistFilterKey);
+    const matches = name.includes(query) && (!playlist || scenes.includes(playlist));
+    row.hidden = !matches && !row.contains(document.activeElement);
+    if (!row.hidden) visible++;
+  }
+  const count = document.querySelector("#artist-list .artist-table-count");
+  if (count) count.textContent = query || playlist
+    ? t("artists.list_filtered_count", {visible, total: rows.length})
+    : t("artists.count", {count: rows.length});
+}
+
 function renderArtistCatalog(data, draft = artistDraft()) {
   _artistSceneState = data;
   renderGenreEditor(data);
@@ -1027,6 +1088,7 @@ function renderArtistCatalog(data, draft = artistDraft()) {
     restoreArtistDraft(draft);
     renderSceneDownloads();
     restoreArtistDraft(draft);
+    refreshArtistPlaylistFilter();
     updateArtistSaveControls();
     return;
   }
@@ -1041,7 +1103,7 @@ function renderArtistCatalog(data, draft = artistDraft()) {
       const count = Number(value && value.tracks);
       return `${esc(source)} (${Number.isFinite(count) ? count : 0})`;
     }).join("<br>") || t("artists.manual_source");
-    return `<tr role="row" data-artist-key="${key}" data-deezer-id="${verified ? esc(artist.deezer_id) : ""}">
+    return `<tr role="row" data-artist-key="${key}" data-artist-name="${name}" data-deezer-id="${verified ? esc(artist.deezer_id) : ""}">
       <td role="cell">${name}</td>
       <td role="cell">${sources}</td>
       <td role="cell" class="artist-identity">${identity}</td>
@@ -1060,7 +1122,7 @@ function renderArtistCatalog(data, draft = artistDraft()) {
     </tr>`;
   }).join("");
   box.innerHTML =
-    `<div class="muted-txt artist-table-count">${t("artists.count", {count: data.artists.length})}</div>` +
+    `<div class="muted-txt artist-table-count" role="status">${t("artists.count", {count: data.artists.length})}</div>` +
     `<div class="artist-table-wrap" tabindex="0" role="region"
           aria-labelledby="artist-assignments-heading"><table class="artist-table" role="table">
       <thead role="rowgroup"><tr role="row">
@@ -1075,6 +1137,8 @@ function renderArtistCatalog(data, draft = artistDraft()) {
   restoreArtistDraft(draft);
   renderSceneDownloads();
   restoreArtistDraft(draft);
+  refreshArtistPlaylistFilter();
+  applyArtistListFilters();
   updateArtistSaveControls();
   const tableWrap = box.querySelector(".artist-table-wrap");
   tableWrap.scrollLeft = scrollLeft;
@@ -1084,6 +1148,11 @@ function renderArtistCatalog(data, draft = artistDraft()) {
 function revealAddedArtist(deezerId) {
   const row = document.querySelector(
     `#artist-list tr[data-artist-key="${CSS.escape(`deezer:${deezerId}`)}"]`);
+  if (row?.hidden) {
+    document.getElementById("artist-list-search").value = "";
+    document.getElementById("artist-list-playlist").value = "";
+    applyArtistListFilters();
+  }
   if (!row || !row.getClientRects().length) return;
   row.tabIndex = -1;
   row.focus({preventScroll: true});
@@ -1400,6 +1469,7 @@ async function loadScenePlaylists(button = null, manualRefresh = false) {
       _artistSceneState = {..._artistSceneState, scene_filenames: catalog.scene_filenames,
         genre_playlists: catalog.genre_playlists, reserved_playlists: catalog.reserved_playlists,
         genre_catalog: catalog.genre_catalog};
+      refreshArtistPlaylistFilter();
     }
     box.replaceChildren();
     if (!data.playlists.length) box.textContent = t("artists.playlist_empty");
@@ -1480,6 +1550,11 @@ async function loadScenePlaylists(button = null, manualRefresh = false) {
 
 function initArtistScenes() {
   initGenrePlaylists();
+  document.getElementById("artist-list-search").addEventListener("input", applyArtistListFilters);
+  document.getElementById("artist-list-playlist").addEventListener("change", applyArtistListFilters);
+  document.getElementById("artist-list").addEventListener("focusout", () => {
+    requestAnimationFrame(applyArtistListFilters);
+  });
   document.getElementById("artist-delete-dialog").addEventListener("keydown", event => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -1512,7 +1587,11 @@ function initArtistScenes() {
       if (field.matches(".artist-scene")) row.querySelector(".artist-scene").value = field.value;
       else row.querySelector(".artist-enabled").checked = field.checked;
     }
-    if (field.matches(".artist-scene")) renderSceneDownloads();
+    if (field.matches(".artist-scene")) {
+      renderSceneDownloads();
+      refreshArtistPlaylistFilter();
+      applyArtistListFilters();
+    }
   });
   document.querySelector('[data-tab="artists"]')?.addEventListener(
     "click", () => { loadScenePlaylists(); loadGenreSource(); });

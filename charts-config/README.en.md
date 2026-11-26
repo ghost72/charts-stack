@@ -161,6 +161,11 @@ authenticated session and `Content-Type: application/json`.
 The table scrolls independently. Column headings and **Save changes** stay
 accessible while you edit a long list.
 The artist count and column headings sit outside the vertical scrolling area.
+Use **Artist** and **Scene playlist** to filter the table by name and assigned
+scene; the filters can be combined. Existing scenes without assignments are
+also listed. Genre playlists have no artist assignments and are not included.
+Hidden rows and unsaved edits are retained when saving; these filters do not
+change playlists or their contents.
 Under **Scene playlists**, **Delete permanently** removes the scene's artist
 assignments and download or genre rule. Artists and Deezer IDs remain;
 artists without another scene are disabled. Other scenes, music files and

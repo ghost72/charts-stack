@@ -344,6 +344,15 @@ body.login {
 .artist-msg { min-height: 1.3em; margin: 4px 0 8px; font-size: .82rem; }
 .artist-msg.error { color: var(--err); }
 .artist-msg.ok { color: var(--ok); }
+.artist-list-filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0;
+}
+.artist-list-filters input, .artist-list-filters select {
+  flex: 1 1 180px; min-width: 0; padding: 7px 9px;
+  border: 1px solid #3a3350; border-radius: 7px;
+  background: var(--bg); color: var(--fg); font-size: .85rem;
+  color-scheme: dark;
+}
 .artist-table-count { margin: 4px 0 10px; line-height: 1.5; }
 .artist-table-wrap { max-width: 100%; overflow-x: auto; }
 #artist-list .artist-table { display: block; width: 100%; min-width: 910px; }
@@ -363,6 +372,7 @@ body.login {
   align-items: center;
   border-bottom: 1px solid #453c5e;
 }
+#artist-list .artist-table tr[hidden] { display: none; }
 #artist-list .artist-table th, #artist-list .artist-table td {
   min-width: 0; padding: 7px 8px; text-align: left; overflow-wrap: anywhere;
 }

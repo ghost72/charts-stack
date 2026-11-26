@@ -218,7 +218,9 @@ A run consists of two steps:
    - Default: keep the newest `KEEP_LATEST` downloads, delete the rest.
    - Alternatively (`KEEP_LATEST=0`): delete downloads older than
      `RETENTION_DAYS`.
-   - Afterwards remove empty subfolders.
+   - Only recognized audio files count; hidden files and directories and
+     other file types are left untouched. `_rejected` has its own retention.
+   - Afterwards remove empty non-hidden subfolders.
 
 If the **Lidarr integration** is configured (`LIDARR_URL` + `LIDARR_API_KEY`),
 the newly imported artists are subsequently set to *unmonitored* in Lidarr (or
@@ -495,6 +497,11 @@ Cleans up the download folder and afterwards removes empty subfolders. Two
 strategies, `KEEP_LATEST` takes precedence: either keep the N newest downloads
 (`KEEP_LATEST`) or delete downloads older than `RETENTION_DAYS`. If both are
 `0`, nothing happens (cleanup disabled).
+Download cleanup considers only supported audio files outside hidden
+directories and quarantine. Hidden files, status and configuration files, and
+other file types are neither counted nor deleted. Downloaded non-audio files
+may need separate cleanup. The separate quarantine and upgrade-trash retention
+rules are unchanged.
 
 ### `replaygain.py`
 

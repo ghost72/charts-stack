@@ -167,6 +167,12 @@ Die Tabelle scrollt separat. Die Spaltenüberschriften und die Schaltfläche
 **Änderungen speichern** bleiben beim Bearbeiten langer Listen erreichbar.
 Die Künstlerzahl und die Spaltenüberschriften stehen ausserhalb des
 vertikalen Scrollbereichs der Künstlerzeilen.
+Mit **Künstler** und **Szenen-Playlist** lässt sich die Tabelle nach Namen
+und zugeordneten Szenen filtern; beide Filter sind kombinierbar. Der
+Playlistfilter zeigt auch bestehende Szenen ohne aktuelle Zuordnung. Er gilt
+nicht für Genre-Playlists, die keine Künstlerzuordnungen haben. Ausgeblendete
+Zeilen und ungespeicherte Eingaben bleiben beim Speichern erhalten; die Filter
+ändern weder die Playlist noch deren Inhalt.
 Unter **Szenen-Playlists** entfernt **Endgültig löschen** die Szene aus den
 Künstler-Zuordnungen sowie ihre Download- oder Genre-Regel. Künstler und
 Deezer-IDs bleiben erhalten; Künstler ohne verbleibende Szene werden deaktiviert.

@@ -16,6 +16,97 @@ from app import artist_scenes
 
 _LANG_DIR = pathlib.Path(i18n.__file__).resolve().parent.parent.parent / "lang"
 
+
+def test_artist_filters_keep_hidden_edits_in_save_payload():
+    html = pathlib.Path(artist_scenes.__file__).parent / "static" / "index.html"
+    proc = subprocess.run(["node", "-e", """
+const fs = require('fs'), vm = require('vm'), assert = require('node:assert/strict');
+const html = fs.readFileSync(process.argv[1], 'utf8');
+const fields = {
+  'artist-list-search': {value: ''},
+  'artist-list-playlist': {
+    value: '', children: [], get selectedOptions() {
+      return this.children.filter(option => option.value === this.value);
+    },
+    replaceChildren(...options) { this.children = options; },
+    append(option) { this.children.push(option); }
+  },
+  'artist-filter-enabled': {checked: false},
+  'artist-scene-playlists': {checked: false},
+  'artist-target-scene': {value: 'My artists'}
+};
+const row = (key, name, scenes, enabled) => ({
+  dataset: {artistKey: key, artistName: name}, hidden: false,
+  fields: {'.artist-scene': {value: scenes}, '.artist-enabled': {checked: enabled},
+           '.artist-evidence': {value: ''}},
+  querySelector(selector) { return this.fields[selector]; },
+  contains(element) { return Object.values(this.fields).includes(element); }
+});
+const rows = [
+  row('deezer:1', 'Gölä', 'Mundart-Pop\\nMundart-Rock', true),
+  row('deezer:2', 'Gotthard', 'Mundart-Rock', true),
+  row('deezer:3', 'Other', '', false)
+];
+const count = {textContent: ''};
+let posted;
+const document = {
+  activeElement: null,
+  getElementById(id) { return fields[id]; },
+  createElement() { return {value: '', textContent: ''}; },
+  querySelector(selector) { return selector === '#artist-list .artist-table-count' ? count : null; },
+  querySelectorAll(selector) {
+    if (selector === '#artist-list tr[data-artist-key]') return rows;
+    if (selector === '#artist-list .artist-scene') return rows.map(r => r.fields['.artist-scene']);
+    if (selector === '#artist-scene-downloads > div') return [];
+    throw new Error('Unexpected selector: ' + selector);
+  }
+};
+const context = vm.createContext({document,
+  _artistSceneState: {filter_enabled: false, scene_filenames: {
+    'Mundart-Rock': 'charts-mundart-rock.m3u', Jazz: 'charts-jazz.m3u'},
+    genre_playlists: {Jazz: {genre_id: '98'}}},
+  _artistSaving: false, t: (key, values) => key + JSON.stringify(values || {}),
+  sceneFilenamesConflict: () => false, artistFormValues: () => new Map(),
+  updateArtistSaveControls() {}, setArtistMessage() {}, artistDraft: () => new Map(),
+  renderArtistCatalog() {},
+  fetch: async (_url, options) => {
+    posted = JSON.parse(options.body);
+    return {ok: true, json: async () => ({ok: true})};
+  }
+});
+vm.runInContext(html.slice(html.indexOf('function artistFilterKey('),
+  html.indexOf('function renderArtistCatalog(')), context);
+vm.runInContext(html.slice(html.indexOf('async function saveArtistSelection('),
+  html.indexOf('async function showArtistPreview(')), context);
+(async () => {
+  context.refreshArtistPlaylistFilter();
+  assert.deepEqual(fields['artist-list-playlist'].children.map(o => o.value),
+    ['', 'mundart-pop', 'mundart-rock']);
+  fields['artist-list-search'].value = 'gola';
+  fields['artist-list-playlist'].value = 'mundart-rock';
+  context.applyArtistListFilters();
+  assert.deepEqual(rows.map(r => r.hidden), [false, true, true]);
+  assert.match(count.textContent, /"visible":1,"total":3/);
+  rows[1].fields['.artist-scene'].value = 'Mundart-Rock\\nExtra';
+  await context.saveArtistSelection();
+  assert.equal(posted.artists.length, 3);
+  assert.deepEqual(posted.artists[1].scenes, ['Mundart-Rock', 'Extra']);
+  context.refreshArtistPlaylistFilter();
+  assert.equal(fields['artist-list-playlist'].value, 'mundart-rock');
+  assert(fields['artist-list-playlist'].children.some(o => o.value === 'extra'));
+  fields['artist-list-search'].value = '';
+  document.activeElement = rows[0].fields['.artist-scene'];
+  rows[0].fields['.artist-scene'].value = 'Mundart-Pop';
+  context.applyArtistListFilters();
+  assert.equal(rows[0].hidden, false);
+  document.activeElement = null;
+  context.applyArtistListFilters();
+  assert.deepEqual(rows.map(r => r.hidden), [true, false, true]);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+""", str(html)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+
+
 def test_unusual_genre_classification_keeps_uncommon_names_selectable():
     javascript = pathlib.Path(artist_scenes.__file__).parent / "static" / "genre-playlists.js"
     proc = subprocess.run(["node", "-e", """
@@ -94,6 +185,7 @@ const state = {genre_playlists: {}, scene_filenames: {}, reserved_playlists: ['r
 let posts = [];
 const context = vm.createContext({document, _artistSceneState: state, _artistSaving: false, t: k => k,
   updateArtistSaveControls() {}, sceneFilenameKey: s => s.toLowerCase(),
+  refreshArtistPlaylistFilter() {},
   renderArtistCatalog(data) { context._artistSceneState = data; }, loadScenePlaylists: async () => true,
   fetch: async (url, options) => options.method === 'POST'
     ? (posts.push(JSON.parse(options.body)), {ok: true, json: async () => ({catalog: state})})

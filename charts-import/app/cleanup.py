@@ -41,10 +41,32 @@ def _iter_files_with_mtime(root: str) -> list[tuple[str, float]]:
     return result
 
 
-def _remove_empty_dirs(root: str) -> None:
+def _iter_downloads_with_mtime(root: str) -> list[tuple[str, float]]:
+    """Only audio downloads are eligible for the shared-folder cleanup."""
+    result: list[tuple[str, float]] = []
+    rejected = os.path.abspath(config.REJECTED_DIR)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames
+                       if not name.startswith(".")
+                       and os.path.abspath(os.path.join(dirpath, name)) != rejected]
+        for name in filenames:
+            if name.startswith(".") or os.path.splitext(name)[1].lower() not in config.AUDIO_EXTENSIONS:
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                result.append((path, os.path.getmtime(path)))
+            except OSError:
+                continue
+    return result
+
+
+def _remove_empty_dirs(root: str, *, protect_hidden: bool = False) -> None:
     """Removes empty subfolders below root (root itself stays)."""
     for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
         if os.path.abspath(dirpath) == os.path.abspath(root):
+            continue
+        if protect_hidden and any(
+                part.startswith(".") for part in os.path.relpath(dirpath, root).split(os.sep)):
             continue
         try:
             if not os.listdir(dirpath):
@@ -56,7 +78,7 @@ def _remove_empty_dirs(root: str) -> None:
 
 def _cleanup_keep_latest(keep: int) -> list[str]:
     """Keeps the 'keep' newest files, deletes all older ones."""
-    files = _iter_files_with_mtime(config.DOWNLOADS_DIR)
+    files = _iter_downloads_with_mtime(config.DOWNLOADS_DIR)
     if len(files) <= keep:
         logger.debug(t("import.cleanup.below_keep", count=len(files), keep=keep))
         return []
@@ -80,7 +102,7 @@ def _cleanup_by_age(days: int) -> list[str]:
     """Deletes files older than 'days' days."""
     cutoff = time.time() - days * 86400
     removed: list[str] = []
-    for path, mtime in _iter_files_with_mtime(config.DOWNLOADS_DIR):
+    for path, mtime in _iter_downloads_with_mtime(config.DOWNLOADS_DIR):
         if mtime < cutoff:
             try:
                 os.remove(path)
@@ -120,7 +142,7 @@ def cleanup_downloads() -> list[str]:
         logger.debug(t("import.cleanup.none_active"))
         return []
 
-    _remove_empty_dirs(config.DOWNLOADS_DIR)
+    _remove_empty_dirs(config.DOWNLOADS_DIR, protect_hidden=True)
     return removed
 
 

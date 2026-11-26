@@ -219,7 +219,10 @@ Ein Lauf besteht aus zwei Schritten:
 2. **Cleanup** (`cleanup.py`)
    - Standard: die neuesten `KEEP_LATEST` Downloads behalten, den Rest löschen.
    - Alternativ (`KEEP_LATEST=0`): Downloads älter als `RETENTION_DAYS` löschen.
-   - Danach leere Unterordner entfernen.
+   - Nur erkannte Audiodateien zählen; versteckte Dateien und Ordner sowie
+     andere Dateitypen bleiben unangetastet. `_rejected` hat eine eigene
+     Aufbewahrungsregel.
+   - Danach leere, nicht versteckte Unterordner entfernen.
 
 Ist die **Lidarr-Integration** konfiguriert (`LIDARR_URL` + `LIDARR_API_KEY`),
 werden die neu importierten Künstler anschließend in Lidarr auf *unmonitored*
@@ -513,6 +516,12 @@ Räumt den Download-Ordner auf und entfernt danach leere Unterordner. Zwei
 Strategien, `KEEP_LATEST` hat Vorrang: entweder die N neuesten Downloads
 behalten (`KEEP_LATEST`) oder Downloads älter als `RETENTION_DAYS` löschen. Sind
 beide `0`, passiert nichts (Aufräumen deaktiviert).
+Die Download-Bereinigung berücksichtigt ausschliesslich Audiodateien mit
+unterstützter Endung ausserhalb versteckter Ordner und der Quarantäne.
+Versteckte Dateien, Status- und Konfigurationsdateien sowie andere Dateitypen
+werden weder mitgezählt noch gelöscht. Nicht-Audiodateien aus Downloads müssen
+bei Bedarf separat bereinigt werden. Die separaten Regeln für Quarantäne und
+Upgrade-Papierkorb gelten unverändert.
 
 ### `replaygain.py`
 
